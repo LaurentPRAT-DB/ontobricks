@@ -440,13 +440,44 @@ class SyncedTableManager:
         """
         existing = self.get(name)
         if existing is not None:
-            logger.info("Synced table %s already exists — reusing", name)
-            return existing
+            existing_state = self._extract_state(existing)
+            if existing_state not in _TERMINAL_FAIL:
+                logger.info("Synced table %s already exists — reusing", name)
+                return existing
+            logger.warning(
+                "Synced table %s is in terminal state %s (%s) — attempting "
+                "to replace the broken registration",
+                name,
+                existing_state,
+                self._extract_status_message(existing) or "no status message",
+            )
+            try:
+                self._w().database.delete_synced_database_table(
+                    name=name, purge_data=True
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Could not delete broken synced table %s (%s) — "
+                    "trying a fallback registration name",
+                    name,
+                    exc,
+                )
+            else:
+                if self.get(name) is None:
+                    logger.info("Deleted broken synced table %s", name)
+                    existing = None
+                else:
+                    logger.warning(
+                        "Broken synced table %s is still visible after DELETE — "
+                        "trying a fallback registration name",
+                        name,
+                    )
 
         # ── Candidate names: primary first, then ghost-state fallbacks ────────
-        candidates = [name] + [
+        fallback_candidates = [
             f"{name}{sfx}" for sfx in self._GHOST_FALLBACK_SUFFIXES
         ]
+        candidates = ([name] if existing is None else []) + fallback_candidates
         actual_name = name  # updated when a fallback is used
 
         for candidate in candidates:
@@ -463,6 +494,15 @@ class SyncedTableManager:
             if candidate != name:
                 existing_fallback = self.get(candidate)
                 if existing_fallback is not None:
+                    fallback_state = self._extract_state(existing_fallback)
+                    if fallback_state in _TERMINAL_FAIL:
+                        logger.warning(
+                            "Synced table fallback %s is also in terminal state %s "
+                            "— trying the next candidate",
+                            candidate,
+                            fallback_state,
+                        )
+                        continue
                     logger.info(
                         "Synced table fallback %s already exists — reusing "
                         "(primary %s has a ghost control-plane reservation).",
@@ -738,7 +778,11 @@ class SyncedTableManager:
                     name,
                 )
                 self._wait_for_pipeline_update(
-                    pid, uid, remaining, cancel_check=cancel_check
+                    name,
+                    pid,
+                    uid,
+                    remaining,
+                    cancel_check=cancel_check,
                 )
             idle_pipeline_wait_done = True
 
@@ -890,6 +934,7 @@ class SyncedTableManager:
 
     def _wait_for_pipeline_update(
         self,
+        synced_table_name: str,
         pipeline_id: str,
         update_id: str,
         timeout_s: float,
@@ -905,6 +950,20 @@ class SyncedTableManager:
                 cancel_check,
                 f"waiting for pipeline update {update_id}",
             )
+            synced = self.get(synced_table_name)
+            if synced is None:
+                raise InfrastructureError(
+                    f"Synced table {synced_table_name} disappeared while waiting "
+                    f"for pipeline update {update_id}"
+                )
+            synced_state = self._extract_state(synced)
+            if synced_state in _TERMINAL_FAIL:
+                detail = self._extract_status_message(synced)
+                suffix = f": {detail}" if detail else ""
+                raise InfrastructureError(
+                    f"Synced table {synced_table_name} reached terminal failure "
+                    f"state {synced_state}{suffix}"
+                )
             try:
                 resp = self._w().pipelines.get_update(
                     pipeline_id=pipeline_id,
@@ -1061,6 +1120,13 @@ class SyncedTableManager:
         )
         raw = str(getattr(state, "name", state)).upper()
         return raw.removeprefix("SYNCED_TABLE_")
+
+    @staticmethod
+    def _extract_status_message(synced: Any) -> str:
+        status = getattr(synced, "data_synchronization_status", None)
+        if status is None:
+            return ""
+        return str(getattr(status, "message", "") or "").strip()
 
     @staticmethod
     def _is_not_found(exc: Exception) -> bool:

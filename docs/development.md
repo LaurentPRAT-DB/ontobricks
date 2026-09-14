@@ -23,7 +23,8 @@ This document describes all external dependencies used by OntoBricks, including 
 | **python-multipart** | ≥0.0.30 | Multipart form data parsing for file uploads in FastAPI | Apache-2.0 | [pypi.org/project/python-multipart](https://pypi.org/project/python-multipart/) |
 | **itsdangerous** | ≥2.1.0 | Cryptographic signing utilities (available for session security) | BSD-3-Clause | [palletsprojects.com/p/itsdangerous](https://palletsprojects.com/p/itsdangerous/) |
 | **aiofiles** | ≥23.0.0 | Async file I/O for Starlette static file serving | Apache-2.0 | [pypi.org/project/aiofiles](https://pypi.org/project/aiofiles/) |
-| **databricks-sql-connector** | ≥4.4.0 | Python SQL connector for Databricks SQL Warehouses | Apache-2.0 | [pypi.org/project/databricks-sql-connector](https://pypi.org/project/databricks-sql-connector/) |
+| **databricks-sql-connector[kernel]** | ≥4.4.0 | Python SQL connector with the native Kernel backend used for Lakehouse/RT Statement Execution API queries | Apache-2.0 | [pypi.org/project/databricks-sql-connector](https://pypi.org/project/databricks-sql-connector/) |
+| **databricks-sql-kernel** | ≥1.0.0,<2.0.0 | Native Rust SQL client core installed by the connector's `kernel` extra | Apache-2.0 | [pypi.org/project/databricks-sql-kernel](https://pypi.org/project/databricks-sql-kernel/) |
 | **databricks-sdk** | ≥0.20.0 | Databricks SDK for workspace API, OAuth authentication, and auto-auth in App mode | Apache-2.0 | [pypi.org/project/databricks-sdk](https://pypi.org/project/databricks-sdk/) |
 | **pyarrow** | ≥23.0.1 | Columnar in-memory data format (required by databricks-sql-connector) | Apache-2.0 | [arrow.apache.org/docs/python](https://arrow.apache.org/docs/python/) |
 | **RDFLib** | ≥7.6.0 | Python library for working with RDF (Resource Description Framework) | BSD-3-Clause | [rdflib.readthedocs.io](https://rdflib.readthedocs.io/) |

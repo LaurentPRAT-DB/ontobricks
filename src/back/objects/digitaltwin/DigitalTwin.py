@@ -2187,6 +2187,69 @@ class DigitalTwin:
         ).run()
 
     @staticmethod
+    def run_adjacency_refresh_task(
+        tm,
+        task_id: str,
+        settings,
+        domain_snap: DomainSnapshot,
+        *,
+        backend: str,
+    ) -> None:
+        """Rebuild only adjacency companions for the current graph relation."""
+        from back.core.graphdb import get_graphdb
+        from back.core.helpers import effective_graph_name
+
+        try:
+            tm.start_task(task_id, "Starting adjacency refresh...")
+            tm.update_progress(task_id, 20, "Opening graph backend")
+
+            store = get_graphdb(
+                domain_snap,
+                settings,
+                for_write=backend == "databricks",
+            )
+            if not store:
+                tm.fail_task(
+                    task_id,
+                    "Adjacency refresh failed: graph backend is not configured.",
+                )
+                return
+
+            if not getattr(store, "supports_adjacency", False):
+                tm.fail_task(
+                    task_id,
+                    (
+                        "Adjacency refresh failed: "
+                        f"{backend} backend does not support adjacency rebuild."
+                    ),
+                )
+                return
+
+            graph_name = effective_graph_name(domain_snap).strip()
+            if not graph_name:
+                tm.fail_task(
+                    task_id,
+                    "Adjacency refresh failed: graph name is not configured.",
+                )
+                return
+
+            tm.update_progress(
+                task_id,
+                70,
+                f"Rebuilding adjacency and entity-search indexes for {graph_name}",
+            )
+            store.rebuild_adjacency(graph_name)
+
+            tm.complete_task(
+                task_id,
+                result={"mode": "adjacency_only", "backend": backend},
+                message="Adjacency refresh completed",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Adjacency refresh task failed: %s", exc)
+            tm.fail_task(task_id, f"Adjacency refresh failed: {exc}")
+
+    @staticmethod
     def run_data_quality_task(
         tm,
         task_id: str,
@@ -3479,15 +3542,16 @@ class DigitalTwin:
     ) -> Dict[str, Any]:
         """Seed-search phase: return a flat entity list for the filter modal.
 
-        Fetches up to *max_preview* + 1 subjects matching the criteria so the
-        caller can detect capping without an extra count query.
+        Fetches up to *max_preview* + 1 indexed entity rows so the caller can
+        detect capping without an extra count query. Backends without a ready
+        entity-search index retain their SPO fallback.
 
         Returns a dict suitable for spreading into a ``{"success": True, ...}``
         response.
         """
         probe_limit = max_preview + 1
         try:
-            entity_set = store.find_seed_subjects(
+            entity_rows = store.find_preview_seeds(
                 graph_name,
                 entity_type=entity_type,
                 field=field,
@@ -3506,7 +3570,7 @@ class DigitalTwin:
                 )
             raise InfrastructureError("Error querying graph", detail=msg)
 
-        if not entity_set:
+        if not entity_rows:
             return {
                 "phase": "preview",
                 "seeds": [],
@@ -3515,15 +3579,9 @@ class DigitalTwin:
                 "message": "No entities found matching the filter criteria.",
             }
 
-        capped = len(entity_set) > max_preview
-        preview_uris = list(entity_set)[:max_preview]
-
-        try:
-            metadata = store.get_entity_metadata(graph_name, preview_uris)
-        except (ValidationError, InfrastructureError, NotFoundError):
-            raise
-        except Exception as e:
-            raise InfrastructureError("Error fetching entity metadata", detail=str(e))
+        total = len(entity_rows)
+        capped = total > max_preview
+        preview_rows = entity_rows[:max_preview]
 
         seeds = [
             {
@@ -3532,20 +3590,20 @@ class DigitalTwin:
                 "type_uri": m["type"],
                 "label": m["label"] or uri_local_name(m["uri"]),
             }
-            for m in metadata
+            for m in preview_rows
         ]
         seeds.sort(key=lambda s: (s["type"], s["label"]))
 
         logger.info(
             "Filter preview – %d seeds returned (total=%d, capped=%s)",
             len(seeds),
-            len(entity_set),
+            total,
             capped,
         )
         return {
             "phase": "preview",
             "seeds": seeds,
-            "total": len(entity_set),
+            "total": total,
             "capped": capped,
         }
 

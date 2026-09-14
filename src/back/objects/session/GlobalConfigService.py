@@ -159,7 +159,7 @@ class GlobalConfigService:
     def get_build_warehouse_use_sea(
         self, host: str, token: str, registry_cfg: Dict[str, str]
     ) -> bool:
-        """Return whether builds use the Statement Execution API."""
+        """Return whether builds use the Kernel Statement Execution API path."""
         return bool(self.get(host, token, registry_cfg, "warehouse_use_sea", False))
 
     def get_delta_warehouse_id(
@@ -177,8 +177,8 @@ class GlobalConfigService:
     ) -> bool:
         """Return ``graph_engine_config.lakehouse.use_sea`` (default ``False``).
 
-        ``True`` means the Lakehouse SQL client must use the Statement Execution
-        API (required for serverless Lakehouse/RT warehouses) instead of Thrift.
+        The key name is retained for compatibility. ``True`` means the SQL
+        client uses the native Kernel backend required by Lakehouse/RT.
         """
         from back.core.graphdb.engine_config import resolve_lakehouse_use_sea
 

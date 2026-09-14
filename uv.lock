@@ -1242,6 +1242,27 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/17/a2/7bd3b6f494fc68d4b54bc7ca41061efee078dc4d0ecbadcee2b05dfbfd1c/databricks_sql_connector-4.5.0-py3-none-any.whl", hash = "sha256:2b73a5e3688621873cec90ef27ca367ad30a28a8c03c65472638003440a5408c", size = 265151, upload-time = "2026-09-01T20:08:49.419Z" },
 ]
 
+[package.optional-dependencies]
+kernel = [
+    { name = "databricks-sql-kernel" },
+]
+
+[[package]]
+name = "databricks-sql-kernel"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyarrow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/75/5f/60a76390ed20a3dab44f9639734bf29dfac6d84235919580bc006c7e5d0b/databricks_sql_kernel-1.0.0.tar.gz", hash = "sha256:b5997b61fb4d323a914dbb369b5942b5d2723459a976111d4be1a463361f7c86", size = 990900, upload-time = "2026-08-31T22:09:22.325Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/b6/ff8b522a9cd1d06a43af0609078e489d66f488b0776c4d9cacb419ddf579/databricks_sql_kernel-1.0.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:91ba484b80cf95d72171abd1c9fac154273c7c16b460daa5a31201a0715ddb8e", size = 7241381, upload-time = "2026-08-31T22:09:13.581Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/04/d0e0dde62754177c9d43bf5fe6fa9a7e9f2e25b72ff9068d91029d99a8fe/databricks_sql_kernel-1.0.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:c837278d4f0a21d9a4d1dbc57929ea73ca288da2865fcf1a730a8cc18bb63af5", size = 6819564, upload-time = "2026-08-31T22:09:15.659Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/03/27860f3b38654ba3ea5b3f2ab2f6df2b73f1c73b4eea59858c38ff77b5db/databricks_sql_kernel-1.0.0-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:d3e05e0f5990797cf284340c2997e5cb14eaf5e3f4161485bab23e84d48fbbb9", size = 6236004, upload-time = "2026-08-31T22:09:17.273Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/70/511fec6a13973a16b7c8017ce3250a8e2a4f3b52a9a8a5eb36a19db65a6b/databricks_sql_kernel-1.0.0-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:4a330810de4d7fed46f4cd38024243276e5f5990d2253c051819dd03c023f5e4", size = 7675408, upload-time = "2026-08-31T22:09:19.351Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/d0/9033e4e2c1572746fc72ba9c3137796595f734f4523601c0b515ae096ba5/databricks_sql_kernel-1.0.0-cp39-abi3-win_amd64.whl", hash = "sha256:e1e5e2a5f4e0bc250d9afa16e6797a7a274d26c838b97295b47c32ca3f644e56", size = 6566789, upload-time = "2026-08-31T22:09:21.039Z" },
+]
+
 [[package]]
 name = "defusedxml"
 version = "0.7.1"
@@ -3517,7 +3538,7 @@ dependencies = [
     { name = "aiofiles" },
     { name = "apscheduler" },
     { name = "databricks-sdk" },
-    { name = "databricks-sql-connector" },
+    { name = "databricks-sql-connector", extra = ["kernel"] },
     { name = "fastapi" },
     { name = "itsdangerous" },
     { name = "jinja2" },
@@ -3589,7 +3610,7 @@ requires-dist = [
     { name = "aiofiles", specifier = ">=23.0.0" },
     { name = "apscheduler", specifier = ">=3.10,<4" },
     { name = "databricks-sdk", specifier = ">=0.20.0" },
-    { name = "databricks-sql-connector", specifier = ">=4.4.0" },
+    { name = "databricks-sql-connector", extras = ["kernel"], specifier = ">=4.4.0" },
     { name = "fastapi", specifier = ">=0.129.0" },
     { name = "itsdangerous", specifier = ">=2.1.0" },
     { name = "jinja2", specifier = ">=3.1.0" },

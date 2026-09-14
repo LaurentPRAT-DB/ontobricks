@@ -1,0 +1,92 @@
+"""SQL shape tests for shared adjacency helpers (no warehouse)."""
+
+from __future__ import annotations
+
+import pytest
+
+from back.core.graphdb.adjacency import (
+    expand_and_fetch_sql,
+    expand_entity_neighbors_sql,
+    typed_in_select,
+    typed_out_select,
+)
+from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
+
+
+def test_typed_out_select_excludes_type_and_label():
+    sql = typed_out_select("g._graph")
+    assert "g._graph" in sql
+    assert RDF_TYPE in sql
+    assert RDFS_LABEL in sql
+    assert "t.object LIKE 'http%'" in sql
+    assert "typed.subject = t.object" in sql
+    assert f"t.predicate != '{RDF_TYPE}'" in sql
+    assert f"t.predicate != '{RDFS_LABEL}'" in sql
+    assert "AS src" in sql
+    assert "AS dst" in sql
+
+
+def test_typed_in_select_reverses_endpoints():
+    sql = typed_in_select("g._graph")
+    assert "t.subject AS src" in sql or "AS src" in sql
+    assert "typed.subject = t.subject" in sql
+    assert f"t.predicate != '{RDF_TYPE}'" in sql
+    assert f"t.predicate != '{RDFS_LABEL}'" in sql
+
+
+def test_neighbors_sql_unions_out_and_in():
+    sql = expand_entity_neighbors_sql(
+        "t_adj_out", "t_adj_in", ["http://ex/a"], lambda s: s.replace("'", "''")
+    )
+    assert "FROM t_adj_out" in sql
+    assert "FROM t_adj_in" in sql
+    assert "http://ex/a" in sql
+    assert "UNION ALL" in sql
+    assert "SELECT DISTINCT entity FROM (" in sql
+    assert " UNION " not in sql.replace("UNION ALL", "")
+
+
+def test_neighbors_sql_rejects_empty_uris():
+    with pytest.raises(ValueError, match="At least one URI is required"):
+        expand_entity_neighbors_sql(
+            "t_adj_out", "t_adj_in", [], lambda s: s.replace("'", "''")
+        )
+
+
+def test_spark_expansion_uses_left_anti_join():
+    sql = expand_and_fetch_sql(
+        flavor="spark",
+        adj_out="o",
+        adj_in="i",
+        spo="g",
+        selected_uris=["http://ex/a"],
+        depth=2,
+        max_entities=10,
+        max_triples=100,
+        escape=lambda s: s.replace("'", "''"),
+    )
+    assert "LEFT ANTI JOIN" in sql
+    assert "FROM o " in sql or "FROM o\n" in sql or "FROM o t" in sql
+    assert "FROM i " in sql or "FROM i t" in sql
+    assert "FROM g " in sql or "FROM g triples" in sql
+    assert "level_2" in sql
+    assert "LIMIT 11" in sql
+    assert "LIMIT 101" in sql
+
+
+def test_postgres_expansion_uses_not_exists():
+    sql = expand_and_fetch_sql(
+        flavor="postgres",
+        adj_out="o",
+        adj_in="i",
+        spo="g",
+        selected_uris=["http://ex/O'Brien"],
+        depth=1,
+        max_entities=5,
+        max_triples=20,
+        escape=lambda s: s.replace("'", "''"),
+    )
+    assert "LEFT ANTI JOIN" not in sql
+    assert "NOT EXISTS" in sql
+    assert "O''Brien" in sql
+    assert "VALUES (" in sql or "VALUES" in sql

@@ -56,3 +56,110 @@ def test_prepare_translation_uses_configured_build_transport() -> None:
         warehouse_id="wh-build",
         use_sea=True,
     )
+
+
+def _minimal_run_pipeline(*, materialization: str = "table"):
+    pipe = DeltaTripleStoreBuildPipeline.__new__(DeltaTripleStoreBuildPipeline)
+    pipe.tm = MagicMock()
+    pipe.task_id = "task-run"
+    pipe.domain = SimpleNamespace(
+        info={"name": "dom"},
+        current_version=3,
+        delta={"catalog": "cat", "schema": "sch"},
+    )
+    pipe.settings = SimpleNamespace()
+    pipe.domain_snap = SimpleNamespace(
+        current_version=3, ontology={}, assignment={}
+    )
+    pipe.domain_name = "dom"
+    pipe.view_table = "cat.sch.triplestore_dom_V3"
+    pipe.data_table = "cat.sch.triplestore_dom_V3_data"
+    pipe.materialization = materialization
+    pipe.host = "host"
+    pipe.token = "token"
+    pipe.warehouse_id = "wh"
+    pipe.parts = ["cat", "sch", "triplestore_dom_V3"]
+    pipe._build_recorded = False
+    pipe.start_time = 0.0
+    pipe.phase_times = {}
+    pipe.is_api = False
+    pipe.build_kind = "ui"
+    pipe.entity_mappings = []
+    pipe.relationship_mappings = []
+    pipe.spark_sql = "SELECT 1"
+    pipe.triple_count = 5
+    pipe.source_client = MagicMock()
+    pipe.inferred_table = "cat.sch.triplestore_dom_V3_inferred"
+    pipe.graph_view = "cat.sch.triplestore_dom_V3_graph"
+
+    pipe._prepare_translation = MagicMock(return_value=True)
+    pipe._create_view = MagicMock(return_value=True)
+    pipe._materialize_data_table = MagicMock(return_value=True)
+    pipe._ensure_inferred_companion = MagicMock()
+    pipe._truncate_inferred = MagicMock()
+    pipe._ensure_graph_view = MagicMock()
+    pipe._complete_task = MagicMock()
+    pipe._is_cancelled = MagicMock(return_value=False)
+    pipe._record_build_run = MagicMock()
+    pipe._log_phase = MagicMock()
+    return pipe
+
+
+@pytest.mark.unit
+def test_run_builds_adjacency_index_after_graph_view() -> None:
+    pipe = _minimal_run_pipeline(materialization="table")
+
+    order = []
+
+    def _mark_graph_view():
+        order.append("graph_view")
+
+    pipe._ensure_graph_view = MagicMock(side_effect=_mark_graph_view)
+
+    with patch(
+        "back.core.graphdb.delta.DeltaTripleStoreBuildPipeline.DeltaFlatStore"
+    ) as store_cls, patch("back.core.graphdb.delta.materialize.optimize_table"):
+        store = store_cls.return_value
+        store.rebuild_adjacency.side_effect = lambda _table: order.append("adjacency")
+        pipe.run()
+
+    store_cls.assert_called_once_with(
+        pipe.source_client, domain=pipe.domain, settings=pipe.settings
+    )
+    store.rebuild_adjacency.assert_called_once_with(pipe.graph_view)
+    assert order == ["graph_view", "adjacency"]
+
+
+@pytest.mark.unit
+def test_run_fails_when_adjacency_ctas_fails() -> None:
+    pipe = _minimal_run_pipeline(materialization="view")
+
+    with patch(
+        "back.core.graphdb.delta.DeltaTripleStoreBuildPipeline.DeltaFlatStore"
+    ) as store_cls:
+        store_cls.return_value.rebuild_adjacency.side_effect = RuntimeError(
+            "adjacency failure"
+        )
+        pipe.run()
+
+    pipe.tm.fail_task.assert_called_once()
+    fail_msg = pipe.tm.fail_task.call_args.args[1]
+    assert "adjacency failure" in fail_msg
+
+
+@pytest.mark.unit
+def test_run_in_table_mode_optimizes_data_before_adjacency() -> None:
+    pipe = _minimal_run_pipeline(materialization="table")
+    order = []
+
+    with patch(
+        "back.core.graphdb.delta.DeltaTripleStoreBuildPipeline.DeltaFlatStore"
+    ) as store_cls, patch(
+        "back.core.graphdb.delta.materialize.optimize_table",
+        side_effect=lambda *_args, **_kwargs: order.append("data_optimize"),
+    ):
+        store = store_cls.return_value
+        store.rebuild_adjacency.side_effect = lambda _table: order.append("adjacency")
+        pipe.run()
+
+    assert order == ["data_optimize", "adjacency"]

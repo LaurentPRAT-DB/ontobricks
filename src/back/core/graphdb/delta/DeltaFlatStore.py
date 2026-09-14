@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 
 from back.core.graphdb.GraphDBBackend import GraphDBBackend
+from back.core.graphdb.adjacency import expand_and_fetch_sql
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.delta import _table_naming, materialize
 from back.core.helpers import sql_escape as _escape_sql_string, validate_table_name
@@ -23,6 +24,8 @@ class DeltaFlatStore(GraphDBBackend):
     """
 
     supports_materialized_inference_purge = True
+    supports_adjacency = True
+    supports_entity_search = True
 
     def __init__(
         self,
@@ -80,6 +83,84 @@ class DeltaFlatStore(GraphDBBackend):
         if resolved:
             return resolved
         return table_name
+
+    def sql_flavor(self) -> str:
+        return "spark"
+
+    def adjacency_table_ids(self, table_name: str) -> tuple[str, str]:
+        if self._domain is not None:
+            adj_out = _table_naming.adj_out_fqn(self._domain, self._settings)
+            adj_in = _table_naming.adj_in_fqn(self._domain, self._settings)
+            if adj_out and adj_in:
+                return (adj_out, adj_in)
+        if "." not in table_name or table_name.count(".") != 2:
+            return ("", "")
+        cat, sch, base = table_name.split(".", 2)
+        for suffix in (
+            _table_naming.data_suffix(),
+            _table_naming.graph_suffix(),
+            _table_naming.inferred_suffix(),
+            _table_naming.analytics_suffix(),
+            _table_naming.adj_out_suffix(),
+            _table_naming.adj_in_suffix(),
+            _table_naming.entity_search_suffix(),
+        ):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        return (
+            f"{cat}.{sch}.{base}{_table_naming.adj_out_suffix()}",
+            f"{cat}.{sch}.{base}{_table_naming.adj_in_suffix()}",
+        )
+
+    def entity_search_table_id(self, table_name: str) -> str:
+        if self._domain is not None:
+            search = _table_naming.entity_search_fqn(self._domain, self._settings)
+            if search:
+                return search
+        if "." not in table_name or table_name.count(".") != 2:
+            return ""
+        cat, sch, base = table_name.split(".", 2)
+        for suffix in (
+            _table_naming.data_suffix(),
+            _table_naming.graph_suffix(),
+            _table_naming.inferred_suffix(),
+            _table_naming.analytics_suffix(),
+            _table_naming.adj_out_suffix(),
+            _table_naming.adj_in_suffix(),
+            _table_naming.entity_search_suffix(),
+        ):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        return f"{cat}.{sch}.{base}{_table_naming.entity_search_suffix()}"
+
+    def rebuild_adjacency(self, table_name: str) -> None:
+        relation = self._sql_relation(table_name)
+        adj_out, adj_in = self.adjacency_table_ids(table_name)
+        search = self.entity_search_table_id(table_name)
+        if not adj_out or not adj_in or not search:
+            logger.warning("Skipping graph-index rebuild, unresolved table ids for %s", table_name)
+            return
+        for direction, adj_fqn in (("out", adj_out), ("in", adj_in)):
+            materialize.drop_relation(self._client, adj_fqn, kind="view")
+            self._client.execute_statement(
+                materialize.build_adj_ctas_sql(relation, adj_fqn, direction)
+            )
+            try:
+                materialize.optimize_table(self._client, adj_fqn)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "OPTIMIZE adjacency table failed for %s: %s", adj_fqn, exc
+                )
+        materialize.drop_relation(self._client, search, kind="view")
+        self._client.execute_statement(
+            materialize.build_entity_search_ctas_sql(relation, search)
+        )
+        try:
+            materialize.optimize_table(self._client, search)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OPTIMIZE entity-search table failed for %s: %s", search, exc)
 
     def _writable_table_fqn(self, table_name: str) -> str:
         """Route app writes to the inferred companion table (Lakebase ``__app`` analogue)."""
@@ -223,6 +304,7 @@ class DeltaFlatStore(GraphDBBackend):
         inferred = self._writable_table_fqn(table_name)
         count = self.count_triples(inferred)
         materialize.truncate_table(self._client, inferred)
+        self.rebuild_adjacency(table_name)
         logger.info("Purged %d materialized triples from %s", count, inferred)
         return count
 
@@ -367,43 +449,57 @@ class DeltaFlatStore(GraphDBBackend):
         max_triples = max(1, int(max_triples))
 
         relation = self._sql_relation(table_name)
-        seed_values = ", ".join(
-            f"('{self._sql_escape(uri)}')" for uri in dict.fromkeys(selected_uris)
-        )
-        ctes = [f"level_0(entity) AS (VALUES {seed_values})"]
-        ctes.extend(self._expansion_level_ctes(relation, depth, max_entities))
+        if self.adjacency_ready(table_name):
+            adj_out, adj_in = self.adjacency_table_ids(table_name)
+            sql = expand_and_fetch_sql(
+                flavor=self.sql_flavor(),
+                adj_out=self._sql_relation(adj_out),
+                adj_in=self._sql_relation(adj_in),
+                spo=relation,
+                selected_uris=selected_uris,
+                depth=depth,
+                max_entities=max_entities,
+                max_triples=max_triples,
+                escape=self._sql_escape,
+            )
+        else:
+            seed_values = ", ".join(
+                f"('{self._sql_escape(uri)}')" for uri in dict.fromkeys(selected_uris)
+            )
+            ctes = [f"level_0(entity) AS (VALUES {seed_values})"]
+            ctes.extend(self._expansion_level_ctes(relation, depth, max_entities))
 
-        levels = " UNION ALL ".join(
-            f"SELECT entity FROM level_{level}" for level in range(depth + 1)
-        )
-        ctes.extend(
-            [
-                (
-                    "entity_probe AS ("
-                    f"SELECT DISTINCT entity FROM ({levels}) discovered "
-                    f"LIMIT {max_entities + 1})"
-                ),
-                (
-                    "entities AS ("
-                    f"SELECT entity FROM entity_probe LIMIT {max_entities})"
-                ),
-                (
-                    "entity_stats AS ("
-                    "SELECT COUNT(*) AS _ob_expanded_count FROM entity_probe)"
-                ),
-            ]
-        )
-        sql = (
-            "WITH "
-            + ", ".join(ctes)
-            + " "
-            + "SELECT triples.subject, triples.predicate, triples.object, "
-            + "stats._ob_expanded_count "
-            + f"FROM {relation} triples "
-            + "JOIN entities ON entities.entity = triples.subject "
-            + "CROSS JOIN entity_stats stats "
-            + f"LIMIT {max_triples + 1}"
-        )
+            levels = " UNION ALL ".join(
+                f"SELECT entity FROM level_{level}" for level in range(depth + 1)
+            )
+            ctes.extend(
+                [
+                    (
+                        "entity_probe AS ("
+                        f"SELECT DISTINCT entity FROM ({levels}) discovered "
+                        f"LIMIT {max_entities + 1})"
+                    ),
+                    (
+                        "entities AS ("
+                        f"SELECT entity FROM entity_probe LIMIT {max_entities})"
+                    ),
+                    (
+                        "entity_stats AS ("
+                        "SELECT COUNT(*) AS _ob_expanded_count FROM entity_probe)"
+                    ),
+                ]
+            )
+            sql = (
+                "WITH "
+                + ", ".join(ctes)
+                + " "
+                + "SELECT triples.subject, triples.predicate, triples.object, "
+                + "stats._ob_expanded_count "
+                + f"FROM {relation} triples "
+                + "JOIN entities ON entities.entity = triples.subject "
+                + "CROSS JOIN entity_stats stats "
+                + f"LIMIT {max_triples + 1}"
+            )
 
         rows = self.execute_query(sql) or []
         discovered_count = (

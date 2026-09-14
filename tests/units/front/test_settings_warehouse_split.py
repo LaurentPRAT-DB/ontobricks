@@ -5,6 +5,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SETTINGS_JS = REPO_ROOT / "src/front/static/config/js/settings.js"
+SETTINGS_TEMPLATE = REPO_ROOT / "src/front/templates/settings.html"
 
 
 def test_lakehouse_controls_sync_query_state_with_rt_toggle() -> None:
@@ -13,6 +14,12 @@ def test_lakehouse_controls_sync_query_state_with_rt_toggle() -> None:
     assert "querySelect.disabled = !useRt;" in js
     assert "deltaBuildWarehouseSelect" in js
     assert "deltaUseSea')?.addEventListener('change'" in js
+
+
+def test_lakehouse_rt_help_names_kernel_backend() -> None:
+    template = SETTINGS_TEMPLATE.read_text(encoding="utf-8")
+    assert "native Kernel backend" in template
+    assert "deprecated SEA backend" not in template
 
 
 def test_non_rt_save_clears_query_override() -> None:

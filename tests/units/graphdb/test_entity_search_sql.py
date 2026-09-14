@@ -1,0 +1,86 @@
+"""SQL shape tests for the shared entity-search index helpers."""
+
+from __future__ import annotations
+
+import pytest
+
+from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
+from back.core.graphdb.entity_search import (
+    entity_search_select,
+    is_asserted_only_relation,
+    preview_select_sql,
+)
+
+
+pytestmark = pytest.mark.unit
+
+
+def _escape(value: str) -> str:
+    return value.replace("'", "''")
+
+
+def test_asserted_only_suffixes() -> None:
+    assert is_asserted_only_relation("cat.sch.g_data") is True
+    assert is_asserted_only_relation("g_x_v1_sync") is True
+    assert is_asserted_only_relation("cat.sch.g_graph") is False
+    assert is_asserted_only_relation("Domain_V1") is False
+
+
+def test_entity_search_select_projects_typed_instances() -> None:
+    sql = entity_search_select("g._graph")
+    assert sql.count("g._graph") == 2
+    assert f"predicate = '{RDF_TYPE}'" in sql
+    assert f"predicate = '{RDFS_LABEL}'" in sql
+    assert "AS uri" in sql
+    assert "AS type_uri" in sql
+    assert "AS label" in sql
+    assert "AS uri_lc" in sql
+    assert "AS label_lc" in sql
+    assert "LEFT JOIN" in sql
+    assert sql.count("GROUP BY subject") == 2
+
+
+def test_preview_sql_any_contains_and_limit() -> None:
+    sql = preview_select_sql(
+        search_table="g_entity_search",
+        entity_type="",
+        field="any",
+        match_type="contains",
+        value="Jac",
+        limit=501,
+        escape=_escape,
+    )
+    assert "FROM g_entity_search" in sql
+    assert "label_lc LIKE '%jac%'" in sql
+    assert "uri_lc LIKE '%jac%'" in sql
+    assert "ORDER BY type_uri, label" in sql
+    assert "LIMIT 501" in sql
+
+
+def test_preview_sql_type_and_exact_label() -> None:
+    sql = preview_select_sql(
+        search_table="g_entity_search",
+        entity_type="http://ex/Person",
+        field="label",
+        match_type="exact",
+        value="Ada",
+        limit=10,
+        escape=_escape,
+    )
+    where = sql.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
+    assert "type_uri = 'http://ex/Person'" in where
+    assert "label_lc = 'ada'" in where
+    assert "uri_lc" not in where
+
+
+def test_preview_sql_rejects_non_positive_limit() -> None:
+    with pytest.raises(ValueError, match="limit must be greater than zero"):
+        preview_select_sql(
+            search_table="g_entity_search",
+            entity_type="",
+            field="any",
+            match_type="contains",
+            value="x",
+            limit=0,
+            escape=_escape,
+        )

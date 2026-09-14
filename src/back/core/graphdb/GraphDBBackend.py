@@ -17,11 +17,16 @@ querying, reasoning, graph traversal, and analytics.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple
 
 from back.core.logging import get_logger
 from back.core.helpers import sql_escape as _shared_sql_escape
+from back.core.graphdb.adjacency import expand_entity_neighbors_sql
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
+from back.core.graphdb.entity_search import (
+    is_asserted_only_relation,
+    preview_select_sql,
+)
 
 logger = get_logger(__name__)
 
@@ -34,6 +39,8 @@ class GraphDBBackend(ABC):
     """
 
     supports_materialized_inference_purge = False
+    supports_adjacency = False
+    supports_entity_search = False
 
     # ------------------------------------------------------------------
     # Core abstract methods
@@ -839,6 +846,70 @@ class GraphDBBackend(ABC):
         rows = self.execute_query(sql)
         return {r["subject"] for r in rows}
 
+    def find_preview_seeds(
+        self,
+        table_name: str,
+        entity_type: str = "",
+        field: str = "any",
+        match_type: str = "contains",
+        value: str = "",
+        limit: int = 0,
+    ) -> List[Dict[str, str]]:
+        """Return Preview rows with URI, type URI, and label."""
+        probe_limit = int(limit) if limit else 0
+        search_table = ""
+        if (
+            self.supports_entity_search
+            and not is_asserted_only_relation(table_name)
+            and probe_limit > 0
+        ):
+            search_table = self.entity_search_table_id(table_name)
+        if search_table:
+            try:
+                rows = self.execute_query(
+                    preview_select_sql(
+                        search_table=self._sql_relation(search_table),
+                        entity_type=entity_type,
+                        field=field,
+                        match_type=match_type,
+                        value=value,
+                        limit=probe_limit,
+                        escape=self._sql_escape,
+                    )
+                ) or []
+                return [
+                    {
+                        "uri": row["uri"],
+                        "type": row.get("type_uri") or "",
+                        "label": row.get("label") or "",
+                    }
+                    for row in rows
+                ]
+            except Exception as exc:  # noqa: BLE001
+                message = str(exc).lower()
+                if (
+                    "table_or_view_not_found" not in message
+                    and "does not exist" not in message
+                    and "undefined table" not in message
+                ):
+                    raise
+                logger.info(
+                    "Entity-search table is unavailable; using SPO Preview fallback: %s",
+                    exc,
+                )
+
+        subjects = list(
+            self.find_seed_subjects(
+                table_name,
+                entity_type=entity_type,
+                field=field,
+                match_type=match_type,
+                value=value,
+                limit=probe_limit,
+            )
+        )
+        return self.get_entity_metadata(table_name, subjects)
+
     def find_subjects_by_patterns(
         self, table_name: str, like_patterns: List[str]
     ) -> Set[str]:
@@ -1005,28 +1076,72 @@ class GraphDBBackend(ABC):
 
         Only returns URIs that have an ``rdf:type`` assertion (real entity
         instances, not class or property URIs).
+
+        When :meth:`adjacency_ready` is true, reads clustered adjacency
+        tables; otherwise falls back to the legacy SPO scan.
         """
         if not entity_uris:
             return set()
-        in_clause = ", ".join(f"'{self._sql_escape(e)}'" for e in entity_uris)
-        sql = (
-            f"SELECT DISTINCT e.entity FROM ("
-            f"  SELECT object AS entity FROM {self._sql_relation(table_name)} "
-            f"  WHERE subject IN ({in_clause}) "
-            f"  AND object LIKE 'http%' "
-            f"  AND predicate != '{RDF_TYPE}' "
-            f"  AND predicate != '{RDFS_LABEL}' "
-            f"  UNION "
-            f"  SELECT subject AS entity FROM {self._sql_relation(table_name)} "
-            f"  WHERE object IN ({in_clause}) "
-            f"  AND predicate != '{RDF_TYPE}' "
-            f"  AND predicate != '{RDFS_LABEL}'"
-            f") e "
-            f"INNER JOIN {self._sql_relation(table_name)} t "
-            f"ON t.subject = e.entity AND t.predicate = '{RDF_TYPE}'"
-        )
+        if self.adjacency_ready(table_name):
+            adj_out, adj_in = self.adjacency_table_ids(table_name)
+            sql = expand_entity_neighbors_sql(
+                self._sql_relation(adj_out),
+                self._sql_relation(adj_in),
+                list(entity_uris),
+                self._sql_escape,
+            )
+        else:
+            in_clause = ", ".join(f"'{self._sql_escape(e)}'" for e in entity_uris)
+            rel = self._sql_relation(table_name)
+            sql = (
+                f"SELECT DISTINCT e.entity FROM ("
+                f"  SELECT object AS entity FROM {rel} "
+                f"  WHERE subject IN ({in_clause}) "
+                f"  AND object LIKE 'http%' "
+                f"  AND predicate != '{RDF_TYPE}' "
+                f"  AND predicate != '{RDFS_LABEL}' "
+                f"  UNION "
+                f"  SELECT subject AS entity FROM {rel} "
+                f"  WHERE object IN ({in_clause}) "
+                f"  AND predicate != '{RDF_TYPE}' "
+                f"  AND predicate != '{RDFS_LABEL}'"
+                f") e "
+                f"INNER JOIN {rel} t "
+                f"ON t.subject = e.entity AND t.predicate = '{RDF_TYPE}'"
+            )
         rows = self.execute_query(sql) or []
         return {r["entity"] for r in rows}
+
+    def sql_flavor(self) -> Optional[Literal["spark", "postgres"]]:
+        """SQL dialect for adjacency helpers, or *None* when not applicable."""
+        return None
+
+    def adjacency_table_ids(self, table_name: str) -> tuple[str, str]:
+        """Return ``(adj_out, adj_in)`` table identifiers for *table_name*."""
+        return ("", "")
+
+    def rebuild_adjacency(self, table_name: str) -> None:
+        """Materialise graph indexes for *table_name*. Default is a no-op."""
+
+    def adjacency_ready(self, table_name: str) -> bool:
+        """Whether adjacency tables exist and neighbour expansion can use them."""
+        if not self.supports_adjacency:
+            return False
+        adj_out, adj_in = self.adjacency_table_ids(table_name)
+        if not adj_out or not adj_in:
+            return False
+        return self.table_exists(adj_out) and self.table_exists(adj_in)
+
+    def entity_search_table_id(self, table_name: str) -> str:
+        """Return the entity-search table identifier for *table_name*."""
+        return ""
+
+    def entity_search_ready(self, table_name: str) -> bool:
+        """Whether Preview can use the entity-search snapshot."""
+        if not self.supports_entity_search or is_asserted_only_relation(table_name):
+            return False
+        search_table = self.entity_search_table_id(table_name)
+        return bool(search_table) and self.table_exists(search_table)
 
     # ------------------------------------------------------------------
     # Capability flags — reasoning engines use these instead of isinstance

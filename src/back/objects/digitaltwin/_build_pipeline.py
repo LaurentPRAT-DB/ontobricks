@@ -896,8 +896,25 @@ class _BuildPipeline:
             self.graph_name,
         )
         self.store.optimize_table(self.graph_name)
+        self._rebuild_adjacency_if_supported()
         self._log_phase("graph_insert", t_insert)
         return True
+
+    def _rebuild_adjacency_if_supported(self) -> None:
+        if self.store is None:
+            return
+        if getattr(self.store, "supports_adjacency", False) is not True:
+            return
+        sql_flavor_fn = getattr(self.store, "sql_flavor", None)
+        flavor = sql_flavor_fn() if callable(sql_flavor_fn) else None
+        if flavor != "postgres":
+            return
+        logger.info(
+            "[DT-BUILD %s] rebuilding adjacency tables for %s",
+            self.task_id,
+            self.graph_name,
+        )
+        self.store.rebuild_adjacency(self.graph_name)
 
     def _stream_triples_into_store(
         self,
@@ -1284,6 +1301,20 @@ class _BuildPipeline:
                 self.graph_name,
                 exc,
             )
+        try:
+            self._rebuild_adjacency_if_supported()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "[DT-BUILD %s] step 7/7 FAILED: adjacency rebuild failed for %s: %s",
+                self.task_id,
+                self.graph_name,
+                exc,
+            )
+            self.tm.fail_task(
+                self.task_id,
+                f"Could not rebuild Lakebase adjacency tables: {exc}",
+            )
+            return False
 
         self.triple_count = self._count_view_triples()
         if self.triple_count == 0:

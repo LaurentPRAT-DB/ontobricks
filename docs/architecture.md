@@ -277,10 +277,10 @@ To add a new generation template, add an entry to `WIZARD_TEMPLATES` in `src/sha
 | Setting | Description | Modified By |
 |---------|-------------|-------------|
 | `warehouse_id` | Build SQL Warehouse ID used for mapping views, DDL, and materialization | Admin only |
-| `warehouse_use_sea` | Whether the build warehouse uses the Statement Execution API transport | Admin only |
+| `warehouse_use_sea` | Compatibility key selecting the native Kernel backend for build queries | Admin only |
 | `use_cloud_fetch` | Whether SQL clients download result files via CloudFetch (default on) | Admin only |
 | `graph_engine_config.lakehouse.warehouse_id` | Optional Lakehouse query warehouse, including Lakehouse//RT | Admin only |
-| `graph_engine_config.lakehouse.use_sea` | Query transport; required for Lakehouse//RT | Admin only |
+| `graph_engine_config.lakehouse.use_sea` | Compatibility key selecting Kernel; required for Lakehouse//RT | Admin only |
 | `default_base_uri` | Default ontology base URI domain | Admin only |
 | `default_emoji` | Default class icon emoji (e.g. `📦`) | Admin only |
 | `ui_branding` | Versioned object: `app_title`, `primary_color`, `logo_data_url` (empty = bundled favicon) | Admin only (`GET`/`POST /settings/ui-branding`) |
@@ -831,6 +831,42 @@ surface exposes ontology information only.
 | **Databricks Graph DB** | `graph` (engine `databricks`) | Same Delta objects as the triple store (no second copy) | Spark SQL | The mapped snapshot itself |
 | **Neo4j Graph DB** | `graph` (engine `neo4j`) | Bolt-connected Neo4j (Aura / self-hosted); flat-triple nodes per store | Cypher | Mirror of the mapped snapshot |
 
+### Backend capability and object lifecycle
+
+Build always creates the Unity Catalog triple-store family in the registry
+`catalog.schema`. The Graph DB then either *is* those objects (Lakehouse) or
+*mirrors* them (Lakebase, Neo4j). **Copy** below means a physical snapshot of
+rows; **no copy** means a VIEW that re-reads the source on each query.
+
+| Capability | Lakehouse · table (copy) | Lakehouse · views only (no mapped copy) | Lakebase · `app_managed` | Lakebase · `managed_synced` | Neo4j |
+|------------|--------------------------|-----------------------------------------|--------------------------|-----------------------------|-------|
+| Chosen where | Domain → Knowledge Graph, backend `databricks`, materialization `table` | Same backend, materialization `view` | Domain backend `lakebase`; Settings → Lakebase `sync_mode` | Same backend, `sync_mode=managed_synced` | Domain backend `neo4j` |
+| Mapped triples | `_data` **TABLE** — CTAS from the R2RML VIEW, then `OPTIMIZE` / Liquid Clustering | `_data` **VIEW** — pass-through over the R2RML VIEW; no row copy | UC `_data` is always a **TABLE** (analytics needs a Delta scan). Postgres `_sync` is a second copy loaded by the app (`COPY FROM STDIN`) | UC `_data` **TABLE**. Postgres `_sync` is a second copy kept by Lakeflow | UC `_data` **TABLE**. Neo4j nodes are a second copy (`MERGE`) |
+| Inferred / app writes | `_inferred` **TABLE** (truncated on full Build, then refilled) | Same `_inferred` **TABLE** — inferred rows have no source table | Postgres `__app` companion; UC `_inferred` still exists for the UC family | Same `__app` companion; Lakeflow never writes it | Stored as Neo4j triples in the same store label; no `_adj_*` |
+| Interactive read façade | `_graph` VIEW = `_data UNION ALL _inferred` | Same `_graph` VIEW (each read re-runs mapping SQL through `_data`) | Postgres union view `g_<dom>_v<n>` = `_sync UNION ALL __app` | Same union view | Bolt / Cypher against the store |
+| Explorer hop + Preview indexes | `_adj_out`, `_adj_in`, `_entity_search` **TABLES** (always copies of a projection) | Same three **TABLES** — views-only does **not** leave indexes as views | Same three **TABLES** in the Postgres graph schema | Same three Postgres tables | None — native traversal / search |
+| Who creates objects | Build SQL Warehouse DDL | Same warehouse (DDL only for `_data`; indexes still CTAS) | Build warehouse for UC; FastAPI/psycopg for Postgres | Build warehouse for UC schema; Lakeflow for `_sync`; app for `__app`, union view, indexes | Build warehouse for UC; Bolt for Neo4j |
+| Full **Build** | Recreates gateway VIEW, replaces `_data`, truncates `_inferred`, refreshes `_graph`, rebuilds indexes | Recreates gateway + `_data` VIEW, truncates `_inferred`, rebuilds indexes from live `_graph` | Recreates UC family as tables, reloads `_sync`, truncates `__app`, rebuilds indexes | Recreates UC family, triggers Lakeflow full refresh into `_sync`, truncates `__app`, rebuilds indexes | Recreates UC family, `MERGE`s mapped triples into Neo4j |
+| **Refresh adjacency** | Rebuilds the three indexes from the existing `_graph` snapshot; does **not** recopy `_data`. Runs on the **Build SQL Warehouse**, never Lakehouse/RT | Rebuilds indexes from live `_graph` (source changes are visible in the next index snapshot) | Rebuilds indexes from the current Postgres union view | Same | Not available |
+| When new source rows appear in Explorer hops | Next full **Build** | Next **Refresh adjacency** or Build (indexes stay a snapshot) | Next Refresh adjacency or Build | Next Refresh adjacency or Build (after Lakeflow has updated `_sync`) | Immediately after Build `MERGE` |
+| Analytics | Scans `_data` TABLE | Temporary `…_analytics` TABLE for the run, then drop | Always scans UC `_data` TABLE, not Postgres | Same | Same UC `_data` TABLE |
+
+`none` (ontology-only) creates none of these objects.
+
+**Copy vs no-copy, more precisely:**
+
+1. **Mapped triples** — only Lakehouse `view` avoids duplicating source-mapped
+   rows. Lakehouse `table`, Lakebase, and Neo4j all freeze mapped triples
+   (Lakebase and Neo4j freeze them twice: UC `_data` plus the engine store).
+2. **Inferred triples** — always stored (Delta `_inferred` or Lakebase
+   `__app`). There is no live source to view over.
+3. **Graph indexes** — always stored tables when the backend supports them,
+   even in Lakehouse views-only. Traversal and Preview never re-walk the
+   mapping SQL per hop.
+
+Cross-kind switch (`_data` TABLE ↔ VIEW) drops the stale relation first;
+Databricks cannot `CREATE OR REPLACE` a table over a view or the reverse.
+
 ### Lakehouse Unity Catalog objects
 
 Every successful **Knowledge Graph → Build** creates (or refreshes) four related objects that share the base name `triplestore_<safe_domain>_V<version>` in the domain's registry `catalog.schema`. Naming helpers live in `src/back/core/graphdb/delta/_table_naming.py`; the CTAS / companion SQL is in `materialize.py`.
@@ -865,6 +901,50 @@ Switching a domain between modes needs the stale relation of the other kind drop
 
 **Analytics outputs** (node metrics, `_summary`, `_type_profiles`, …) are a separate family written by the Lakeflow analytics job. They *read* `_data`; they are not part of the graph store. For a view-only domain the job cannot scan `_data` directly — its iterative BFS would re-derive the mapping on every pass — so `JobMetrics.analytics_snapshot` materialises a disposable `…_analytics` table for the run and drops it in a `finally`. A leftover from a run that died is grouped with its domain in Settings → Lakehouse for purging.
 
+#### Adjacency index objects
+
+In addition to the four-object triple-store family, **Build** produces three
+graph-index tables for Explorer:
+
+| Object | Kind | Clustering | Created when | Used by |
+|--------|------|------------|--------------|---------|
+| `triplestore_<domain>_V<n>_adj_out` | Delta TABLE | `CLUSTER BY (src)` | End of Build (after `_data` in table mode; from `_graph` in view mode) | Outgoing hops — Explorer expansion, `expand_entity_neighbors` |
+| `triplestore_<domain>_V<n>_adj_in`  | Delta TABLE | `CLUSTER BY (dst)` | same | Reverse (incoming) hops |
+| `triplestore_<domain>_V<n>_entity_search` | Delta TABLE | `CLUSTER BY (type_uri)` | same | Preview search — one row per typed entity |
+
+Lakebase stores equivalent `_adj_out`, `_adj_in`, and `_entity_search` tables.
+The entity table carries normalized URI/label fields and type metadata. Both `app_managed`
+and `managed_synced` modes share the same three-object Postgres layout
+(`_sync` bulk-data table, `__app` companion, reader-facing union view);
+`rebuild_adjacency` always reads from the reader-facing union view regardless
+of mode.
+Neo4j uses native Bolt traversal/search and has no graph-index companions.
+
+The **Refresh adjacency** action (builder/admin, Lakehouse and Lakebase only)
+reindexes `_adj_out`, `_adj_in`, and `_entity_search` without rematerializing
+`_data`. Preview uses `_entity_search` when Inferred is enabled; asserted-only
+Preview keeps the SPO path. For Lakehouse, the refresh opens the Delta backend
+in write mode: `GraphDBFactory` resolves the configured Build SQL Warehouse and
+its transport instead of the optional Lakehouse/RT query warehouse. This
+separation is required because Lakehouse/RT supports the Explorer read path but
+rejects the `CREATE OR REPLACE TABLE` DDL used by graph-index refreshes.
+
+- **`view` materialization** — adjacency CTAS runs from the live `_graph` VIEW (which itself re-executes the R2RML SQL against source tables, since `_data` is a pass-through view).  Source changes are therefore captured at refresh time, but traversal still uses the adjacency snapshot and does **not** update automatically — a **Refresh adjacency** or full **Build** is required.
+- **`table` materialization** — adjacency is reindexed from the *existing* `_data` snapshot; new source rows do **not** appear until a full **Build** runs.
+- **Lakebase** — reindexes from the current reader-facing union view; because Lakebase graph data is always live in Postgres, the rebuild captures the current graph state without a stale `_data` snapshot to overcome.  Traversal still uses the adjacency snapshot until the next Refresh adjacency or Build.
+
+> Lakehouse `_adj_out`, `_adj_in`, and `_entity_search` are replaced
+> sequentially, not via one cross-table atomic swap. If all indexes must be
+> read from the same instant, avoid overlap with Build/Refresh and read after
+> the task finishes.
+>
+> On a `table`-mode Lakehouse domain, Explorer expansion (adjacency-driven) and
+> a raw SPARQL scan of `_graph` can diverge between builds: expansion sees the
+> adjacency snapshot while SPARQL sees `_graph` including `_inferred`.  A full
+> **Build** reconciles both.
+
+Full detail: [`docs/graphdb-integration.md` § Adjacency index objects](graphdb-integration.md#adjacency-index-objects).
+
 ### Backend Abstraction
 
 The Delta, Lakebase, and Neo4j paths each implement the single `GraphDBBackend` base (`src/back/core/graphdb/GraphDBBackend.py`) — `DeltaFlatStore`, `LakebaseFlatStore`, and `Neo4jStore` respectively. The base exposes the same surface for:
@@ -879,7 +959,7 @@ The single `GraphDBFactory` returns the per-domain engine — Delta (`databricks
 
 Lakebase Postgres is one of three shipped Graph DB engines (alongside the Delta/`databricks` store and Neo4j). The implementation lives in `src/back/core/graphdb/lakebase/` (`LakebaseFlatStore`, `LakebaseBase`, `SyncedTableManager`).
 
-**Storage model** — one flat `(subject, predicate, object)` table per domain version inside a configurable Postgres schema (default `ontobricks_graph`) on the App-bound Lakebase database. Connection comes from the same OAuth/M2M credential the registry hybrid backend uses.
+**Storage model** — per graph version, a three-object layout inside a configurable Postgres schema (default `ontobricks_graph`) on the App-bound Lakebase database: bulk `_sync`, writable `__app`, reader-facing union view `g_<dom>_v<n>`. Connection comes from the same OAuth/M2M credential the registry hybrid backend uses. See [Backend capability and object lifecycle](#backend-capability-and-object-lifecycle).
 
 **Two write modes** (Lakebase only), configured under **Settings → Back end → Lakebase**:
 

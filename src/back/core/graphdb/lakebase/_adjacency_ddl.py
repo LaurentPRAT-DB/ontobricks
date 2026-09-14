@@ -1,0 +1,129 @@
+"""DDL helpers for Lakebase adjacency tables."""
+
+from __future__ import annotations
+
+import hashlib
+from typing import Any
+
+from back.core.graphdb.adjacency import typed_in_select, typed_out_select
+from back.core.graphdb.entity_search import entity_search_select
+from back.core.graphdb.lakebase._companion_ddl import view_phy
+
+_PG_IDENTIFIER_MAX_BYTES = 63
+_HASH_HEX_LEN = 10
+
+
+def _bounded_identifier(base: str, suffix: str) -> str:
+    candidate = f"{base}{suffix}"
+    if len(candidate.encode("utf-8")) <= _PG_IDENTIFIER_MAX_BYTES:
+        return candidate
+    digest = hashlib.sha1(candidate.encode("utf-8")).hexdigest()[:_HASH_HEX_LEN]
+    reserved = len(f"_{digest}{suffix}".encode("utf-8"))
+    prefix_budget = max(1, _PG_IDENTIFIER_MAX_BYTES - reserved)
+    trimmed = base.encode("utf-8")[:prefix_budget].decode("utf-8", errors="ignore")
+    return f"{trimmed}_{digest}{suffix}"
+
+
+def adj_out_phy(graph_name: str) -> str:
+    return _bounded_identifier(view_phy(graph_name), "_adj_out")
+
+
+def adj_in_phy(graph_name: str) -> str:
+    return _bounded_identifier(view_phy(graph_name), "_adj_in")
+
+
+def entity_search_phy(graph_name: str) -> str:
+    return _bounded_identifier(view_phy(graph_name), "_entity_search")
+
+
+def adjacency_index_name(table_name: str, key: str) -> str:
+    suffix = f"_{key}_idx"
+    return _bounded_identifier(table_name, suffix)
+
+
+def ensure_adjacency_tables(cur: Any, adj_out: str, adj_in: str) -> None:
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {adj_out} (
+            src TEXT NOT NULL,
+            predicate TEXT NOT NULL,
+            dst TEXT NOT NULL,
+            PRIMARY KEY (src, predicate, dst)
+        )
+        """
+    )
+    cur.execute(
+        f"CREATE INDEX IF NOT EXISTS {adjacency_index_name(adj_out, 'src')} "
+        f"ON {adj_out} (src)"
+    )
+
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {adj_in} (
+            dst TEXT NOT NULL,
+            predicate TEXT NOT NULL,
+            src TEXT NOT NULL,
+            PRIMARY KEY (dst, predicate, src)
+        )
+        """
+    )
+    cur.execute(
+        f"CREATE INDEX IF NOT EXISTS {adjacency_index_name(adj_in, 'dst')} "
+        f"ON {adj_in} (dst)"
+    )
+
+
+def ensure_entity_search_table(cur: Any, search: str) -> None:
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {search} (
+            uri TEXT NOT NULL PRIMARY KEY,
+            type_uri TEXT NOT NULL,
+            label TEXT NOT NULL,
+            uri_lc TEXT NOT NULL,
+            label_lc TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        f"CREATE INDEX IF NOT EXISTS {adjacency_index_name(search, 'type')} "
+        f"ON {search} (type_uri)"
+    )
+    cur.execute(
+        f"CREATE INDEX IF NOT EXISTS {adjacency_index_name(search, 'label')} "
+        f"ON {search} (label_lc text_pattern_ops)"
+    )
+    cur.execute(
+        f"CREATE INDEX IF NOT EXISTS {adjacency_index_name(search, 'uri')} "
+        f"ON {search} (uri_lc text_pattern_ops)"
+    )
+
+
+def rebuild_adjacency_data(cur: Any, union_view: str, adj_out: str, adj_in: str) -> None:
+    cur.execute(f"TRUNCATE {adj_out}")
+    cur.execute(
+        f"INSERT INTO {adj_out} (src, predicate, dst) "
+        f"{typed_out_select(union_view)}"
+    )
+    cur.execute(f"TRUNCATE {adj_in}")
+    cur.execute(
+        f"INSERT INTO {adj_in} (dst, predicate, src) "
+        f"{typed_in_select(union_view)}"
+    )
+
+
+def rebuild_entity_search_data(cur: Any, union_view: str, search: str) -> None:
+    cur.execute(f"TRUNCATE {search}")
+    cur.execute(
+        f"INSERT INTO {search} (uri, type_uri, label, uri_lc, label_lc) "
+        f"{entity_search_select(union_view)}"
+    )
+
+
+def analyze_adjacency_tables(cur: Any, adj_out: str, adj_in: str) -> None:
+    cur.execute(f"ANALYZE {adj_out}")
+    cur.execute(f"ANALYZE {adj_in}")
+
+
+def analyze_entity_search_table(cur: Any, search: str) -> None:
+    cur.execute(f"ANALYZE {search}")

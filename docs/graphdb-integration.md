@@ -72,15 +72,19 @@ Regardless of which Graph DB engine the domain uses, **Knowledge Graph → Build
 
 | Suffix / name | Kind | Created by | Consumed by |
 |---------------|------|------------|-------------|
-| *(no suffix)* `triplestore_<domain>_V<n>` | VIEW | Build — `CREATE OR REPLACE VIEW` from the R2RML SQL | Source for the `_data` CTAS; governance / lineage of the mapping |
-| `_data` | Delta TABLE | Build — `CREATE OR REPLACE TABLE … AS SELECT … FROM <view>`, `CLUSTER BY (predicate, subject)` | Graph Analytics (Lakeflow job); bulk half of `_graph`; Lakehouse engine reads |
+| *(no suffix)* `triplestore_<domain>_V<n>` | VIEW | Build — `CREATE OR REPLACE VIEW` from the R2RML SQL | Source for `_data`; governance / lineage of the mapping |
+| `_data` | Delta TABLE *or* VIEW | **table** mode: `CREATE OR REPLACE TABLE … AS SELECT … FROM <view>`, `CLUSTER BY (predicate, subject)`. **view** mode: pass-through `CREATE OR REPLACE VIEW` (no row copy). Lakebase and Neo4j domains always get the TABLE. | Graph Analytics (Lakeflow job); bulk half of `_graph`; Lakehouse engine reads |
 | `_inferred` | Delta TABLE | Build — `CREATE TABLE IF NOT EXISTS` (same SPO shape); truncated on full rebuild | Reasoning / cohort / app writes |
 | `_graph` | VIEW | Build — `_data UNION ALL _inferred` | Explorer, filters, stats, GraphQL when inferred triples are included |
+
+Which objects are copies vs views, and how Lakebase / Neo4j add a second
+store, is tabulated in
+[Architecture → Backend capability and object lifecycle](architecture.md#backend-capability-and-object-lifecycle).
 
 ```text
 source tables
     → R2RML VIEW          (live mapping)
-    → _data TABLE         (mapped snapshot)
+    → _data               (TABLE: mapped snapshot, or VIEW: no copy)
          ↘
            _graph VIEW    (interactive graph reads)
          ↗
@@ -88,6 +92,61 @@ source tables
 ```
 
 The mapped snapshot (`_data`) is what makes KPIs identical across backends: Lakebase and Neo4j mirror those triples into their own stores, but analytics always scores `_data`, never the engine-local copy and never `_inferred`. If `_data` is missing (typical for domains last built before the materialise step was unconditional), analytics refuses the run and tells the user to rebuild — it must not be reported as a warehouse connectivity failure.
+
+#### Adjacency index objects
+
+After the `_graph` VIEW is created, **Build** also materialises three graph
+indexes: two adjacency tables for hop queries and one compact entity-search
+table for Explorer Preview. These are separate companions, not part of the
+four-object triple-store family above:
+
+| Object | Kind | Clustering / index | Created when | Used by |
+|--------|------|--------------------|--------------|---------|
+| `triplestore_<domain>_V<n>_adj_out` | Delta TABLE | `CLUSTER BY (src)` | End of Build (after `_data` CTAS in table mode; from `_graph` view in view mode) | Explorer hops, `expand_entity_neighbors` — outgoing direction |
+| `triplestore_<domain>_V<n>_adj_in`  | Delta TABLE | `CLUSTER BY (dst)` | same | reverse hops |
+| `triplestore_<domain>_V<n>_entity_search` | Delta TABLE | `CLUSTER BY (type_uri)` | same | Explorer Preview — one row per typed entity |
+
+**Lakebase graph-index tables** use `_adj_out`, `_adj_in`, and
+`_entity_search` suffixes. The entity index stores normalized URI and label
+columns alongside type metadata. Both `app_managed` and `managed_synced`
+modes use the same three-object Postgres layout per graph version
+(`_sync` bulk-data table, `__app` writable companion, and the reader-facing
+union view `g_<dom>_v<n>`).  `rebuild_adjacency` always reads from that
+reader-facing union view regardless of mode.
+
+**Neo4j** has none of these companion tables. Native Bolt graph traversal and
+search remain unchanged; no adjacency refresh action is available.
+
+#### Adjacency-only refresh
+
+Beyond the full **Build**, a **Refresh adjacency** action (builder / admin
+only) rebuilds `_adj_out`, `_adj_in`, and `_entity_search` without
+rematerializing `_data` or touching inferred triples. The entity-search
+snapshot powers Preview when **Inferred** is enabled; asserted-only searches
+fall back to the asserted SPO relation. Lakehouse rebuild DDL always runs on
+the configured **Build SQL Warehouse**, never on the Lakehouse/RT query
+warehouse, because Lakehouse/RT does not support `CREATE OR REPLACE TABLE`.
+The semantics differ by mode:
+
+| Mode | What "Refresh adjacency" does | When source data appears in traversal |
+|------|-------------------------------|---------------------------------------|
+| **Lakehouse — `view` materialization** | Reruns the adjacency CTAS from the live `_graph` VIEW (which itself re-executes the R2RML SQL). Source-table changes propagate immediately because `_data` is a pass-through view. | After the next adjacency refresh (source rows are live via `_data`; adjacency tables are a snapshot of `_graph` at refresh time) |
+| **Lakehouse — `table` materialization** | Reindexes from the *existing* `_graph` snapshot — `_data` is **not** rebuilt. New source rows are not visible in traversal until a full **Build** runs. | After the next full **Build** only |
+| **Lakebase** | Reindexes `_adj_out`, `_adj_in`, and `_entity_search` from the current reader-facing union view in one data-load transaction. | After the next Refresh adjacency or Build |
+| **Neo4j** | *(not available)* | N/A — Neo4j uses native traversal, no adjacency tables exist |
+
+> **Delta consistency note:** Lakehouse graph-index rebuild replaces
+> `_adj_out`, `_adj_in`, and `_entity_search` sequentially, not as
+> a cross-table atomic swap. If a point-in-time read must see both directions
+> from the same snapshot, avoid running reads concurrently with Build/Refresh
+> and read after the task completes.
+>
+> **Important:** On a Lakehouse domain in `table` materialization mode, the
+> Explorer's entity expansion (which uses adjacency tables) and a raw SPARQL
+> scan of `_graph` can disagree between builds.  Expansion reflects the
+> adjacency snapshot; SPARQL scans `_graph` which always includes `_inferred`.
+> A full **Build** is required to ingest source-table changes into `_data` and
+> therefore into the adjacency snapshot.
 
 Canonical prose also lives in [`architecture.md` § Lakehouse Unity Catalog objects](architecture.md#lakehouse-unity-catalog-objects).
 
@@ -564,6 +623,12 @@ ingest in synced mode:
    finishes (so we do not mistake a stale ``ONLINE`` synced-table status for the
    new build). If ``start_update`` was skipped because another update was already
    active, it falls back to ``wait_get_pipeline_idle`` plus synced-table polling.
+   The update wait also polls the synced-table status and fails immediately on
+   terminal states such as ``OFFLINE_FAILED``. On the next build, ``ensure``
+   attempts to delete the broken registration; when the Lakebase control plane
+   rejects deletion, it registers the replacement under the first available
+   ``_b`` / ``_c`` / ``_d`` fallback suffix and returns that actual name to the
+   remaining build steps.
 6. `LakebaseFlatStore.ensure_synced_union_view(name)` — union view after the ``_sync`` table
    exists in Postgres (``CREATE OR REPLACE VIEW`` references the synced table).
 7. On full rebuild, `TRUNCATE` the companion so reasoning + cohort start

@@ -316,9 +316,9 @@ def resolve_lakehouse_warehouse_id(cfg: Optional[Mapping[str, Any]]) -> str:
 
 
 def resolve_lakehouse_use_sea(cfg: Optional[Mapping[str, Any]]) -> bool:
-    """Return ``lakehouse.use_sea`` (default ``False`` — Thrift transport).
+    """Return the persisted Lakehouse/RT transport flag.
 
-    ``True`` selects the Statement Execution API, required for serverless
-    Lakehouse/RT SQL warehouses.
+    The ``use_sea`` key is retained for registry compatibility. ``True`` now
+    selects the native Kernel backend for Statement Execution API queries.
     """
     return _coerce_bool(lakehouse_section(cfg).get("use_sea"), default=False)

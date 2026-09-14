@@ -74,6 +74,8 @@ class GraphDBFactory:
         settings: Optional[Any] = None,
         engine: Optional[str] = None,
         engine_config: Optional[Dict[str, Any]] = None,
+        *,
+        for_write: bool = False,
     ) -> Optional[Any]:
         """Create a graph DB backend.
 
@@ -84,12 +86,13 @@ class GraphDBFactory:
                     ``"delta"``, or ``"view"`` (raw read-only Delta store).
             engine_config: Engine-specific JSON configuration set by the
                            admin in Settings > Graph DB.
+            for_write: Use the build SQL warehouse for Delta DDL and writes.
 
         Returns:
             GraphDBBackend instance or *None* if configuration is incomplete.
         """
         if engine is None:
-            return self._create_auto(domain, settings)
+            return self._create_auto(domain, settings, for_write=for_write)
 
         if engine == "view":
             return self._create_delta_view(domain, settings)
@@ -110,7 +113,7 @@ class GraphDBFactory:
             )
 
         if engine == "delta":
-            return self._create_delta(domain, settings)
+            return self._create_delta(domain, settings, for_write=for_write)
 
         logger.warning("Unknown graph DB engine: %s", engine)
         return None
@@ -184,7 +187,11 @@ class GraphDBFactory:
             return None
 
     def _create_auto(
-        self, domain: Any, settings: Optional[Any] = None
+        self,
+        domain: Any,
+        settings: Optional[Any] = None,
+        *,
+        for_write: bool = False,
     ) -> Optional[Any]:
         """Resolve the engine from global/registry config and dispatch.
 
@@ -196,7 +203,13 @@ class GraphDBFactory:
             return None
         ts_backend = self._resolve_triple_store_backend(domain, settings)
         if ts_backend == "databricks":
-            return self.create(domain, settings, engine="delta", engine_config={})
+            return self.create(
+                domain,
+                settings,
+                engine="delta",
+                engine_config={},
+                for_write=for_write,
+            )
 
         engine = self._resolve_graph_engine(domain, settings) or "lakebase"
         engine_config = self._resolve_graph_engine_config(domain, settings)
@@ -485,6 +498,8 @@ class GraphDBFactory:
         self,
         domain: Any,
         settings: Optional[Any] = None,
+        *,
+        for_write: bool = False,
     ) -> Optional[Any]:
         """Instantiate :class:`DeltaFlatStore` on SQL Warehouse."""
         try:
@@ -494,7 +509,7 @@ class GraphDBFactory:
             logger.warning("Delta graph engine unavailable: %s", exc)
             return None
 
-        client = create_databricks_client(domain, settings)
+        client = create_databricks_client(domain, settings, for_write=for_write)
         if client is None:
             return None
         try:
@@ -546,6 +561,8 @@ class GraphDBFactory:
         settings: Optional[Any] = None,
         engine: Optional[str] = None,
         engine_config: Optional[Dict[str, Any]] = None,
+        *,
+        for_write: bool = False,
     ) -> Optional[Any]:
         """Convenience wrapper using the package singleton factory instance."""
         return _get_factory_singleton().create(
@@ -553,6 +570,7 @@ class GraphDBFactory:
             settings=settings,
             engine=engine,
             engine_config=engine_config,
+            for_write=for_write,
         )
 
 

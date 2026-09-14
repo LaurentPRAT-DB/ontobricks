@@ -195,9 +195,10 @@ class DatabricksAuth:
         else:
             self.use_cloud_fetch = bool(use_cloud_fetch)
 
-        # Statement Execution API (SEA) transport. Opt-in; required for
-        # serverless Lakehouse/RT warehouses which reject the Thrift protocol.
-        self.use_sea = bool(use_sea)
+        # ``use_sea`` is the persisted compatibility key for Lakehouse/RT.
+        # The deprecated Python SEA backend is intentionally not used: route
+        # these connections through the supported native Kernel backend.
+        self.use_kernel = bool(use_sea)
 
         if self.auth_mode == "cli":
             logger.info(
@@ -308,8 +309,8 @@ class DatabricksAuth:
             "_socket_timeout": _SQL_SOCKET_TIMEOUT,
         }
         params["use_cloud_fetch"] = self.can_use_cloud_fetch()
-        if self.use_sea:
-            params["use_sea"] = True
+        if self.use_kernel:
+            params["use_kernel"] = True
         if self.is_app_mode and self.client_id and self.client_secret:
             params["access_token"] = self.get_oauth_token()
         elif self.token:
@@ -391,8 +392,8 @@ class DatabricksAuth:
                 "_socket_timeout": _CLOUD_FETCH_PROBE_TIMEOUT_SECONDS,
                 "use_cloud_fetch": True,
             }
-            if self.use_sea:
-                probe_params["use_sea"] = True
+            if self.use_kernel:
+                probe_params["use_kernel"] = True
             if self.is_app_mode and self.client_id and self.client_secret:
                 probe_params["access_token"] = self.get_oauth_token()
             elif self.token:

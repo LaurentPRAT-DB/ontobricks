@@ -3036,6 +3036,7 @@ var SigmaGraph = (function () {
                 '&depth=' + encodeURIComponent(depth) + '&limit=2000' +
                 '&include_inferred=' + includeInferredHop;
             _showGraphLoading('Expanding neighbours (' + depth + ' hop)…');
+            await _waitForGraphLoadingPaint();
             try {
                 var resp = await fetch(url, { credentials: 'same-origin' });
                 var data = await resp.json();

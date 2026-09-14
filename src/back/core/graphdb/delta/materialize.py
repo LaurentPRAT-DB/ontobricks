@@ -15,8 +15,10 @@ triples have no source to be derived from.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
+from back.core.graphdb.adjacency import typed_in_select, typed_out_select
+from back.core.graphdb.entity_search import entity_search_select
 from back.core.helpers import validate_table_name
 from back.core.logging import get_logger
 
@@ -50,6 +52,38 @@ def build_data_view_sql(view_fqn: str, data_fqn: str) -> str:
     return (
         f"CREATE OR REPLACE VIEW {data_fqn} AS "
         f"SELECT subject, predicate, object FROM {view_fqn}"
+    )
+
+
+def build_adj_ctas_sql(
+    spo_fqn: str, adj_fqn: str, direction: Literal["out", "in"]
+) -> str:
+    """Spark SQL to materialize an adjacency table from an SPO relation."""
+    validate_table_name(spo_fqn)
+    validate_table_name(adj_fqn)
+    if direction == "out":
+        select_sql = typed_out_select(spo_fqn)
+        cluster_key = "src"
+    elif direction == "in":
+        select_sql = typed_in_select(spo_fqn)
+        cluster_key = "dst"
+    else:
+        raise ValueError(f"Unsupported adjacency direction: {direction}")
+    return (
+        f"CREATE OR REPLACE TABLE {adj_fqn} USING DELTA "
+        f"CLUSTER BY ({cluster_key}) "
+        f"AS {select_sql}"
+    )
+
+
+def build_entity_search_ctas_sql(spo_fqn: str, search_fqn: str) -> str:
+    """Spark SQL to materialize the entity-search companion."""
+    validate_table_name(spo_fqn)
+    validate_table_name(search_fqn)
+    return (
+        f"CREATE OR REPLACE TABLE {search_fqn} USING DELTA "
+        "CLUSTER BY (type_uri) "
+        f"AS {entity_search_select(spo_fqn)}"
     )
 
 

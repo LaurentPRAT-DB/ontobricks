@@ -28,9 +28,10 @@ dependencies = [
     "itsdangerous>=2.1.0",
     "jinja2>=3.1.0",
     "aiofiles>=23.0.0",
-    # 4.4.0 raises its Thrift floor to 0.24.0, fixing the current Thrift
-    # certificate-validation, memory-amplification, and allocation advisories.
-    "databricks-sql-connector>=4.4.0",
+    # The Kernel extra provides the supported native Statement Execution API
+    # backend required by Lakehouse Real-Time warehouses. Version 4.4.0 also
+    # raises the Thrift security floor to thrift 0.24.0.
+    "databricks-sql-connector[kernel]>=4.4.0",
     "databricks-sdk>=0.20.0",
     # pyarrow>=23.0.1: Arrow C++ IPC use-after-free (CVE-2026-25087 /
     # GHSA-rgxp-2hwp-jwgg). The Python binding doesn't expose the affected

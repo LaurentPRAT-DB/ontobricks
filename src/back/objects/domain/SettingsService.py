@@ -412,8 +412,8 @@ class SettingsService:
     ) -> Dict[str, Any]:
         """Persist Delta triple-store warehouse selection in global config.
 
-        *use_sea* toggles the Statement Execution API transport (required for
-        serverless Lakehouse/RT warehouses); it is stored alongside the id.
+        *use_sea* is the compatibility key that enables the native Kernel
+        Statement Execution API path required by Lakehouse/RT warehouses.
         """
         if warehouse_id is None:
             raise ValidationError("No warehouse ID provided")

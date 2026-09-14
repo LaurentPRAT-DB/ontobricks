@@ -264,13 +264,11 @@ class TestExecuteStatementRetry:
         assert mock_connect.call_count == 2
 
 
-class TestSeaStatementTimeout:
-    """On the SEA backend (Lakehouse/RT warehouses) a ``SET STATEMENT_TIMEOUT``
-    statement returns HTTP 500 when cloud-fetch is off, so it must be skipped;
-    classic Thrift warehouses keep the server-side bound."""
+class TestKernelStatementTimeout:
+    """Lakehouse/RT reads use Kernel and rely on its request timeout."""
 
     @patch("databricks.sql.connect")
-    def test_skips_set_timeout_on_sea(self, mock_connect, monkeypatch):
+    def test_skips_set_timeout_on_kernel(self, mock_connect, monkeypatch):
         monkeypatch.delenv("DATABRICKS_APP_PORT", raising=False)
         mock_conn, mock_cursor = _make_connect_mock(
             description=[("x",)], fetchall_rows=[(1,)]
@@ -283,6 +281,7 @@ class TestSeaStatementTimeout:
             warehouse_id="wh-rt",
             use_sea=True,
         )
+        assert auth.use_kernel is True
         sw = SQLWarehouse(auth)
         rows = sw.execute_query("SELECT x FROM t", statement_timeout_s=30)
         assert rows == [{"x": 1}]

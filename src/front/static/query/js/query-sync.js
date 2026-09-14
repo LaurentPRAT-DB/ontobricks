@@ -4,6 +4,7 @@
  */
 
 const SYNC_TASK_KEY = 'ontobricks_sync_task';
+const ADJ_REFRESH_TASK_KEY = 'ontobricks_adjacency_refresh_task';
 
 function _syncTripleStoreBackend() {
     try {
@@ -20,6 +21,7 @@ let syncIsReady = false;
 
 /** Whether a sync task is currently running */
 let syncIsRunning = false;
+let adjacencyRefreshRunning = false;
 
 /** Whether the triple store table has data */
 let tripleStoreHasData = false;
@@ -44,7 +46,7 @@ let tripleStoreStatusPending = false;
 function _canStartBuild() {
     const permitted = !(window.OB && typeof window.OB.canRefreshGraph === 'function'
         && !window.OB.canRefreshGraph());
-    return syncIsReady && permitted;
+    return syncIsReady && permitted && !adjacencyRefreshRunning;
 }
 
 /**
@@ -587,6 +589,7 @@ async function initSyncSection() {
         if (typeof refreshNavbarIndicators === 'function') refreshNavbarIndicators();
 
         await checkAndResumeSyncTask();
+        await checkAndResumeAdjacencyRefreshTask();
     } finally {
         if (overlay) overlay.classList.add('d-none');
     }
@@ -729,6 +732,23 @@ function renderTripleStoreStatus(data) {
     }
 }
 
+function _syncAdjacencyRefreshVisible(backend) {
+    return backend === 'lakebase';
+}
+
+function _updateSyncAdjacencyActionState() {
+    var btn = document.getElementById('syncAdjacencyRefreshBtn');
+    if (!btn) return;
+    var backend = String(_syncTripleStoreBackend() || 'lakebase').toLowerCase();
+    var visible = _syncAdjacencyRefreshVisible(backend);
+    btn.classList.toggle('d-none', !visible);
+    btn.disabled = !visible
+        || !syncIsReady
+        || !tripleStoreHasData
+        || syncIsRunning
+        || adjacencyRefreshRunning;
+}
+
 /**
  * Enable or disable the Data section sidebar menus (Quality, Triples, Graph Viewer).
  *
@@ -738,9 +758,10 @@ function renderTripleStoreStatus(data) {
  *   3. The triple store has data (tripleStoreHasData)
  */
 function updateDataMenus() {
-    const canAccess = syncIsReady && !syncIsRunning && tripleStoreHasData;
+    const canAccess = syncIsReady && !syncIsRunning && !adjacencyRefreshRunning && tripleStoreHasData;
     console.log('[Sync] updateDataMenus: syncIsReady=' + syncIsReady +
                 ', syncIsRunning=' + syncIsRunning +
+                ', adjacencyRefreshRunning=' + adjacencyRefreshRunning +
                 ', tripleStoreHasData=' + tripleStoreHasData +
                 ' -> canAccess=' + canAccess);
 
@@ -758,6 +779,8 @@ function updateDataMenus() {
             // Set a tooltip explaining why the menu is disabled
             if (syncIsRunning) {
                 link.setAttribute('title', 'Synchronization in progress…');
+            } else if (adjacencyRefreshRunning) {
+                link.setAttribute('title', 'Adjacency refresh in progress…');
             } else if (!syncIsReady) {
                 link.setAttribute('title', 'Ontology and mapping assignments must be configured first');
             } else if (tripleStoreStatusPending) {
@@ -769,6 +792,7 @@ function updateDataMenus() {
     });
 
     updateKgReadyIndicators();
+    _updateSyncAdjacencyActionState();
 }
 
 /**
@@ -905,6 +929,119 @@ async function checkAndResumeSyncTask() {
     }
 }
 
+async function checkAndResumeAdjacencyRefreshTask() {
+    const taskId = sessionStorage.getItem(ADJ_REFRESH_TASK_KEY);
+    if (!taskId) return;
+    try {
+        const response = await fetch(`/tasks/${taskId}`, { credentials: 'same-origin' });
+        const data = await response.json();
+        if (!data.success || !data.task) {
+            sessionStorage.removeItem(ADJ_REFRESH_TASK_KEY);
+            return;
+        }
+        const task = data.task;
+        if (task.status === 'running' || task.status === 'pending') {
+            adjacencyRefreshRunning = true;
+            showSyncProgress();
+            updateSyncProgress(task.progress || 0, task.current_step_description || task.message || '');
+            updateDataMenus();
+            monitorAdjacencyRefreshTask(taskId);
+            return;
+        }
+    } catch (_) {
+        // best effort resume only
+    }
+    sessionStorage.removeItem(ADJ_REFRESH_TASK_KEY);
+}
+
+async function startSyncAdjacencyRefresh() {
+    const backend = String(_syncTripleStoreBackend() || 'lakebase').toLowerCase();
+    if (!_syncAdjacencyRefreshVisible(backend)) {
+        return;
+    }
+    if (!syncIsReady || !tripleStoreHasData || syncIsRunning || adjacencyRefreshRunning) {
+        return;
+    }
+
+    adjacencyRefreshRunning = true;
+    updateDataMenus();
+    showSyncProgress();
+    updateSyncProgress(0, 'Starting adjacency refresh...');
+
+    try {
+        const response = await fetch('/dtwin/adjacency/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+            credentials: 'same-origin',
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success || !data.task_id) {
+            throw new Error(data.message || data.detail || 'Adjacency refresh failed to start');
+        }
+        sessionStorage.setItem(ADJ_REFRESH_TASK_KEY, data.task_id);
+        if (typeof refreshTasks === 'function') refreshTasks();
+        monitorAdjacencyRefreshTask(data.task_id);
+    } catch (error) {
+        adjacencyRefreshRunning = false;
+        hideSyncProgress();
+        updateDataMenus();
+        showNotification('Adjacency refresh failed to start: ' + (error.message || error), 'error');
+    }
+}
+
+async function monitorAdjacencyRefreshTask(taskId) {
+    const pollInterval = 1500;
+    while (true) {
+        try {
+            await new Promise(r => setTimeout(r, pollInterval));
+            const response = await fetch(`/tasks/${taskId}`, { credentials: 'same-origin' });
+            const data = await response.json();
+            if (!data.success || !data.task) throw new Error('Task not found');
+            const task = data.task;
+            updateSyncProgress(task.progress || 0, task.current_step_description || task.message || '');
+            if (task.status === 'completed') {
+                sessionStorage.removeItem(ADJ_REFRESH_TASK_KEY);
+                adjacencyRefreshRunning = false;
+                hideSyncProgress();
+                showNotification('Adjacency refreshed successfully!', 'success');
+                checkTripleStoreStatus(true);
+                _loadDtExistence();
+                if (typeof refreshDigitalTwinStatus === 'function') refreshDigitalTwinStatus();
+                if (typeof refreshTasks === 'function') refreshTasks();
+                updateDataMenus();
+                break;
+            }
+            if (task.status === 'failed') {
+                sessionStorage.removeItem(ADJ_REFRESH_TASK_KEY);
+                adjacencyRefreshRunning = false;
+                hideSyncProgress();
+                showNotification(
+                    'Adjacency refresh failed: ' + (task.error || task.message || 'Unknown error'),
+                    'error'
+                );
+                updateDataMenus();
+                break;
+            }
+            if (task.status === 'cancelled') {
+                sessionStorage.removeItem(ADJ_REFRESH_TASK_KEY);
+                adjacencyRefreshRunning = false;
+                hideSyncProgress();
+                showNotification('Adjacency refresh was cancelled', 'warning');
+                updateDataMenus();
+                break;
+            }
+        } catch (error) {
+            sessionStorage.removeItem(ADJ_REFRESH_TASK_KEY);
+            adjacencyRefreshRunning = false;
+            hideSyncProgress();
+            showNotification('Adjacency refresh monitoring failed: ' + (error.message || error), 'error');
+            updateDataMenus();
+            break;
+        }
+    }
+}
+
 /**
  * Show a confirmation modal before building an editable Knowledge Graph.
  * Frozen versions skip this step because their design cannot be saved.
@@ -979,6 +1116,10 @@ async function startTripleStoreSync() {
             'Build is unavailable — builder access and an unlocked domain are required.',
             'warning'
         );
+        return;
+    }
+    if (adjacencyRefreshRunning) {
+        showNotification('Adjacency refresh is running. Wait for it to finish first.', 'warning');
         return;
     }
 
@@ -1888,6 +2029,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             var act = btn.getAttribute('data-sync-action');
             if (act === 'refresh-triple-store') checkTripleStoreStatus(true);
             else if (act === 'start-triple-store-sync') startTripleStoreSync();
+            else if (act === 'refresh-adjacency-only') startSyncAdjacencyRefresh();
         });
     }
 

@@ -392,6 +392,57 @@ async def start_triplestore_sync(
     return {"success": True, "task_id": task.id, "message": "Sync started"}
 
 
+@router.post(
+    "/adjacency/refresh",
+    dependencies=[Depends(require(ROLE_BUILDER, scope="domain"))],
+)
+async def refresh_adjacency_only(
+    request: Request,
+    session_mgr: SessionManager = Depends(get_session_manager),
+    settings: Settings = Depends(get_settings),
+):
+    """Start an adjacency-only refresh task for Lakebase/Lakehouse graphs."""
+    import threading
+
+    from back.core.graphdb.GraphDBFactory import GraphDBFactory
+    from back.core.task_manager import get_task_manager
+
+    domain = get_domain(session_mgr)
+    backend = GraphDBFactory._resolve_graph_backend(domain)
+    if backend in ("neo4j", "none"):
+        raise ValidationError(
+            "Adjacency refresh is only available for lakebase and databricks graph backends."
+        )
+    if backend not in ("lakebase", "databricks"):
+        raise ValidationError(
+            f"Adjacency refresh is not available for graph backend '{backend}'."
+        )
+
+    domain_snap = DomainSnapshot(domain)
+    tm = get_task_manager()
+    task = tm.create_task(
+        name="Adjacency Refresh",
+        task_type="adjacency_refresh",
+        steps=[
+            {"name": "open", "description": "Opening graph backend"},
+            {"name": "adjacency", "description": "Rebuilding adjacency indexes"},
+        ],
+    )
+
+    def run_refresh():
+        DigitalTwin.run_adjacency_refresh_task(
+            tm,
+            task.id,
+            settings,
+            domain_snap,
+            backend=backend,
+        )
+
+    thread = threading.Thread(target=run_refresh, daemon=True)
+    thread.start()
+    return {"success": True, "task_id": task.id, "message": "Adjacency refresh started"}
+
+
 @router.post("/sync/load")
 async def load_triplestore(
     request: Request,

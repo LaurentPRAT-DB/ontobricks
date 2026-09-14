@@ -52,3 +52,31 @@ class TestCreateDatabricksClientUseSea:
             delta_base.create_databricks_client(MagicMock(), settings=MagicMock())
 
         assert captured.get("use_sea") is False
+
+    def test_write_client_uses_build_warehouse_and_transport(self):
+        captured = {}
+
+        class FakeClient:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        with patch.object(
+            delta_base,
+            "get_build_sql_credentials",
+            return_value=("https://h", "tok", "wh-build"),
+        ), patch.object(
+            delta_base, "resolve_build_use_sea", return_value=False
+        ), patch.object(
+            delta_base,
+            "resolve_delta_warehouse_id",
+            side_effect=AssertionError("query warehouse must not be resolved"),
+        ), patch(
+            "back.core.databricks.DatabricksClient", FakeClient
+        ):
+            client = delta_base.create_databricks_client(
+                MagicMock(), settings=MagicMock(), for_write=True
+            )
+
+        assert client is not None
+        assert captured["warehouse_id"] == "wh-build"
+        assert captured["use_sea"] is False

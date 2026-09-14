@@ -4,9 +4,12 @@
  */
 
 const DBX_BUILD_TASK_KEY = 'ontobricks_databricks_build_task';
+const DBX_ADJ_REFRESH_TASK_KEY = 'ontobricks_databricks_adjacency_refresh_task';
 
 let dbxBuildReady = false;
 let dbxBuildRunning = false;
+let dbxAdjacencyRefreshRunning = false;
+let dbxGraphHasData = false;
 
 function _tsxBackend() {
     try {
@@ -89,6 +92,23 @@ function applyTripleStoreBackendPanels() {
     if (dbxPanel) dbxPanel.classList.toggle('d-none', !isDbx);
 }
 
+function _updateDbxAdjacencyButton() {
+    const btn = document.getElementById('dbxAdjacencyRefreshBtn');
+    if (!btn) return;
+    const backend = String(_tsxBackend() || 'lakebase').toLowerCase();
+    const visible = backend === 'databricks';
+    if (backend !== 'databricks') {
+        btn.classList.add('d-none');
+        btn.disabled = true;
+        return;
+    }
+    btn.classList.toggle('d-none', !visible);
+    btn.disabled = !dbxBuildReady
+        || !dbxGraphHasData
+        || dbxBuildRunning
+        || dbxAdjacencyRefreshRunning;
+}
+
 /**
  * Name the storage kind of ``…_data`` everywhere the page refers to it.
  *
@@ -166,6 +186,7 @@ async function loadDatabricksBuildInfo() {
         }
 
         const ts = data.triplestore_status || {};
+        dbxGraphHasData = !!(ts.has_data);
         const count = ts.count != null ? ts.count : 0;
         const statusCard = document.getElementById('dbxBuildStatusCard');
         if (statusCard) {
@@ -181,7 +202,8 @@ async function loadDatabricksBuildInfo() {
         }
 
         const btn = document.getElementById('dbxBuildStartBtn');
-        if (btn) btn.disabled = !dbxBuildReady || dbxBuildRunning;
+        if (btn) btn.disabled = !dbxBuildReady || dbxBuildRunning || dbxAdjacencyRefreshRunning;
+        _updateDbxAdjacencyButton();
 
         const statusText = document.getElementById('dbxBuildStatusText');
         if (statusText) {
@@ -204,7 +226,7 @@ function _apiErrorMessage(data, fallback) {
 }
 
 async function startDatabricksBuild() {
-    if (!dbxBuildReady || dbxBuildRunning) return;
+    if (!dbxBuildReady || dbxBuildRunning || dbxAdjacencyRefreshRunning) return;
     const btn = document.getElementById('dbxBuildStartBtn');
     if (btn) btn.disabled = true;
     dbxBuildRunning = true;
@@ -226,10 +248,114 @@ async function startDatabricksBuild() {
     } catch (e) {
         dbxBuildRunning = false;
         if (btn) btn.disabled = !dbxBuildReady;
+        _updateDbxAdjacencyButton();
         const msg = e.message || String(e);
         _showDbxBuildResult('error', '<strong>Build could not start.</strong> ' + _dbxEscape(msg));
         _dbxNotify('Build failed to start: ' + msg, 'error');
     }
+}
+
+async function startDatabricksAdjacencyRefresh() {
+    if (!dbxBuildReady || dbxBuildRunning || dbxAdjacencyRefreshRunning || !dbxGraphHasData) {
+        return;
+    }
+    const btn = document.getElementById('dbxAdjacencyRefreshBtn');
+    if (btn) btn.disabled = true;
+    dbxAdjacencyRefreshRunning = true;
+    _hideDbxBuildResult();
+    _resetDbxProgressBar();
+
+    const progressArea = document.getElementById('dbxBuildProgressArea');
+    const step = document.getElementById('dbxBuildProgressStep');
+    if (progressArea) progressArea.classList.remove('d-none');
+    if (step) step.textContent = 'Starting adjacency refresh...';
+
+    try {
+        const resp = await fetch('/dtwin/adjacency/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: '{}',
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success || !data.task_id) {
+            throw new Error(_apiErrorMessage(data, 'Adjacency refresh could not start'));
+        }
+        sessionStorage.setItem(DBX_ADJ_REFRESH_TASK_KEY, data.task_id);
+        pollDatabricksAdjacencyTask(data.task_id);
+    } catch (e) {
+        dbxAdjacencyRefreshRunning = false;
+        _finishDbxProgressBar('failed');
+        const msg = e.message || String(e);
+        _showDbxBuildResult(
+            'error',
+            '<strong>Adjacency refresh could not start.</strong><div class="mt-1">' + _dbxEscape(msg) + '</div>'
+        );
+        _dbxNotify('Adjacency refresh failed to start: ' + msg, 'error');
+        _updateDbxAdjacencyButton();
+    }
+}
+
+function pollDatabricksAdjacencyTask(taskId) {
+    const progressArea = document.getElementById('dbxBuildProgressArea');
+    const bar = document.getElementById('dbxBuildProgressBar');
+    const step = document.getElementById('dbxBuildProgressStep');
+    if (progressArea) progressArea.classList.remove('d-none');
+
+    const timer = setInterval(async () => {
+        try {
+            const resp = await fetch('/tasks/' + encodeURIComponent(taskId), { credentials: 'same-origin' });
+            const data = await resp.json();
+            if (!resp.ok || !data.success || !data.task) {
+                throw new Error(_apiErrorMessage(data, 'Task not found'));
+            }
+            const task = data.task;
+            const pct = task.progress != null ? task.progress : 0;
+            if (bar) {
+                bar.style.width = pct + '%';
+                bar.textContent = pct + '%';
+            }
+            if (step) step.textContent = _taskStepMessage(task);
+
+            if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+                clearInterval(timer);
+                sessionStorage.removeItem(DBX_ADJ_REFRESH_TASK_KEY);
+                dbxAdjacencyRefreshRunning = false;
+                _finishDbxProgressBar(task.status);
+                if (task.status === 'completed') {
+                    _showDbxBuildResult(
+                        'success',
+                        '<strong>Adjacency refresh succeeded.</strong><div class="mt-1">' + _dbxEscape(task.message || '') + '</div>'
+                    );
+                    _dbxNotify('Adjacency refreshed successfully', 'success');
+                } else if (task.status === 'failed') {
+                    const err = task.error || task.message || 'Unknown error';
+                    _showDbxBuildResult(
+                        'error',
+                        '<strong>Adjacency refresh failed.</strong><div class="mt-1">' + _dbxEscape(err) + '</div>'
+                    );
+                    _dbxNotify('Adjacency refresh failed: ' + err, 'error');
+                } else {
+                    _showDbxBuildResult('warning', '<strong>Adjacency refresh cancelled.</strong>');
+                    _dbxNotify('Adjacency refresh cancelled', 'warning');
+                }
+                if (typeof refreshTasks === 'function') refreshTasks();
+                await loadDatabricksBuildInfo();
+            }
+        } catch (e) {
+            clearInterval(timer);
+            sessionStorage.removeItem(DBX_ADJ_REFRESH_TASK_KEY);
+            dbxAdjacencyRefreshRunning = false;
+            _finishDbxProgressBar('failed');
+            const msg = e.message || String(e);
+            _showDbxBuildResult(
+                'error',
+                '<strong>Could not monitor adjacency refresh.</strong><div class="mt-1">' + _dbxEscape(msg) + '</div>'
+            );
+            _dbxNotify('Adjacency refresh monitoring failed: ' + msg, 'error');
+            _updateDbxAdjacencyButton();
+        }
+    }, 1500);
 }
 
 function _finishDbxBuild(task) {
@@ -237,6 +363,7 @@ function _finishDbxBuild(task) {
     dbxBuildRunning = false;
     const btn = document.getElementById('dbxBuildStartBtn');
     if (btn) btn.disabled = !dbxBuildReady;
+    _updateDbxAdjacencyButton();
     _finishDbxProgressBar(task.status);
 
     if (task.status === 'failed') {
@@ -307,6 +434,7 @@ function pollDatabricksBuildTask(taskId) {
             dbxBuildRunning = false;
             const btn = document.getElementById('dbxBuildStartBtn');
             if (btn) btn.disabled = !dbxBuildReady;
+            _updateDbxAdjacencyButton();
             _finishDbxProgressBar('failed');
             const msg = e.message || String(e);
             _showDbxBuildResult(
@@ -319,11 +447,37 @@ function pollDatabricksBuildTask(taskId) {
     }, 1500);
 }
 
-document.addEventListener('DOMContentLoaded', function () {
+async function checkAndResumeDatabricksTask(taskKey, onRunningTask, onTerminalTask) {
+    const taskId = sessionStorage.getItem(taskKey);
+    if (!taskId) return false;
+    try {
+        const resp = await fetch('/tasks/' + encodeURIComponent(taskId), { credentials: 'same-origin' });
+        const data = await resp.json();
+        if (!resp.ok || !data.success || !data.task) {
+            sessionStorage.removeItem(taskKey);
+            return false;
+        }
+        const task = data.task;
+        if (task.status === 'running' || task.status === 'pending') {
+            onRunningTask(taskId, task);
+            return true;
+        }
+        sessionStorage.removeItem(taskKey);
+        if (typeof onTerminalTask === 'function') onTerminalTask(task);
+        return false;
+    } catch (_) {
+        sessionStorage.removeItem(taskKey);
+        return false;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async function () {
     applyTripleStoreBackendPanels();
+    _updateDbxAdjacencyButton();
 
     document.getElementById('dbxBuildRefreshBtn')?.addEventListener('click', loadDatabricksBuildInfo);
     document.getElementById('dbxBuildStartBtn')?.addEventListener('click', startDatabricksBuild);
+    document.getElementById('dbxAdjacencyRefreshBtn')?.addEventListener('click', startDatabricksAdjacencyRefresh);
 
     document.addEventListener('sidebarSectionChanged', function (e) {
         if (e.detail?.section === 'sync' && _tsxBackend() === 'databricks') {
@@ -331,11 +485,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    const resumed = sessionStorage.getItem(DBX_BUILD_TASK_KEY);
-    if (resumed) {
-        dbxBuildRunning = true;
-        pollDatabricksBuildTask(resumed);
-    }
+    await checkAndResumeDatabricksTask(
+        DBX_BUILD_TASK_KEY,
+        function (taskId) {
+            dbxBuildRunning = true;
+            pollDatabricksBuildTask(taskId);
+        },
+        function (task) {
+            _finishDbxBuild(task);
+        }
+    );
+    await checkAndResumeDatabricksTask(
+        DBX_ADJ_REFRESH_TASK_KEY,
+        function (taskId) {
+            dbxAdjacencyRefreshRunning = true;
+            pollDatabricksAdjacencyTask(taskId);
+        }
+    );
 
     if (_tsxBackend() === 'databricks') {
         loadDatabricksBuildInfo();

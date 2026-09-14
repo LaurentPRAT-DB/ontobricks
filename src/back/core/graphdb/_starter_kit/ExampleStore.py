@@ -88,6 +88,20 @@ class ExampleStore(GraphDBBackend):
         """Query language identifier (``'sql'``, ``'cypher'``, ``'gremlin'``, …)."""
         return "sql"  # TODO: change to your engine's dialect
 
+    # supports_adjacency = False  # inherited default; set True if you materialise adj tables
+    #
+    # def sql_flavor(self) -> Optional[Literal["spark", "postgres"]]:
+    #     """Return ``'postgres'`` or ``'spark'`` when adjacency SQL applies."""
+    #     ...
+    #
+    # def adjacency_table_ids(self, table_name: str) -> tuple[str, str]:
+    #     """Return ``(adj_out, adj_in)`` identifiers for neighbour expansion."""
+    #     ...
+    #
+    # def rebuild_adjacency(self, table_name: str) -> None:
+    #     """Build adjacency and entity-search tables from the readable SPO relation."""
+    #     ...
+
     # ======================================================================
     #  GraphDBBackend — connection management  (MUST implement)
     # ======================================================================

@@ -32,11 +32,11 @@ _POOL_MAX_SIZE = 8
 _POOL_MAX_IDLE_SECS = 300
 
 # Transient-failure retry policy. Serverless "Lakehouse/RT" warehouses reject
-# the Thrift protocol and are driven over the Statement Execution API (SEA);
-# while such a warehouse cold-starts or auto-scales, the SEA endpoint briefly
-# returns HTTP 5xx. A stale pooled connection (session recycled server-side)
-# raises similar transport errors. Both clear on a reconnect, so we retry the
-# whole borrow+execute on a *fresh* connection before surfacing the error.
+# the Thrift protocol and use the Statement Execution API through the native
+# Kernel backend. While such a warehouse cold-starts or auto-scales, the HTTP
+# endpoint can briefly return 5xx. A stale pooled connection (session recycled
+# server-side) raises similar transport errors. Both clear on a reconnect, so
+# retry the whole borrow+execute on a fresh connection before surfacing it.
 _SQL_MAX_ATTEMPTS = 3
 # Backoff (seconds) applied *between* attempts: attempt1->2, attempt2->3.
 _SQL_RETRY_BACKOFF_S = (1.5, 4.0)
@@ -248,18 +248,13 @@ class SQLWarehouse:
         """
         self._require_warehouse()
         bounded = bool(statement_timeout_s and int(statement_timeout_s) > 0)
-        # The deprecated SEA backend (mandatory for serverless Lakehouse/RT
-        # warehouses, which reject Thrift) returns HTTP 500 on a
-        # ``SET STATEMENT_TIMEOUT`` statement whenever cloud-fetch (external
-        # links) is disabled — which broke the entire graph read path
-        # ("Error querying graph"). Skip the server-side bound on SEA and rely
-        # on the client-side ``_socket_timeout`` instead. Classic Thrift
-        # warehouses keep the server-side bound unchanged.
-        if bounded and bool(getattr(self._auth, "use_sea", False)):
+        # Lakehouse/RT uses the Kernel backend and relies on its request
+        # timeout. Avoid issuing a session-level SET that this execution path
+        # does not guarantee; classic Thrift warehouses retain the SQL bound.
+        if bounded and bool(getattr(self._auth, "use_kernel", False)):
             logger.debug(
-                "execute_query: skipping SET STATEMENT_TIMEOUT on SEA connection "
-                "(unsupported by the SEA backend without cloud-fetch); relying "
-                "on the client socket timeout."
+                "execute_query: skipping SET STATEMENT_TIMEOUT on Kernel connection; "
+                "relying on the Kernel request timeout."
             )
             bounded = False
 

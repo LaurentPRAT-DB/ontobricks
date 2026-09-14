@@ -28,6 +28,15 @@ def test_canvas_contains_one_accessible_shared_loading_overlay() -> None:
     assert 'aria-live="polite"' in html
 
 
+def test_loading_overlay_is_outside_sigma_managed_container() -> None:
+    html = _read(PARTIAL)
+    container_open = html.index('<div id="sgContainer"')
+    container_close = html.index("</div>", container_open)
+    loading = html.index('<div id="sgLoading"')
+    context_menu = html.index("<!-- Node Context Menu")
+    assert container_open < container_close < loading < context_menu
+
+
 def test_obsolete_filter_and_neighbor_indicators_are_removed() -> None:
     html = _read(PARTIAL)
     assert 'id="sgGraphFilterInfo"' not in html
@@ -47,7 +56,7 @@ def test_overlay_css_blocks_the_whole_canvas_with_shared_tokens() -> None:
     assert "color-mix" not in block
     assert "transparent" not in block
     assert ".sg-loading-overlay.is-active" in css
-    hide_block = css.split('#sgContainer[aria-busy="true"] > :not(#sgLoading)', 1)[1]
+    hide_block = css.split('#sgContainer[aria-busy="true"]', 1)[1]
     assert "visibility: hidden;" in hide_block.split("}", 1)[0]
     assert ".sg-expand-spinner" not in css
 
@@ -117,7 +126,10 @@ def test_neighbor_expansion_uses_overlay_and_error_notification() -> None:
     hop = js.split("expandHop: async function", 1)[1].split(
         "// --- Group expand / collapse ---", 1
     )[0]
-    assert "'Expanding neighbours (' + depth + ' hop)…'" in hop
+    show = hop.index("'Expanding neighbours (' + depth + ' hop)…'")
+    paint = hop.index("await _waitForGraphLoadingPaint();", show)
+    request = hop.index("await fetch(url", show)
+    assert show < paint < request
     assert "_setGraphLoadingStep('Rendering graph…');" in hop
     assert "finally {" in hop
     assert "_hideGraphLoading();" in hop.split("finally {", 1)[1]

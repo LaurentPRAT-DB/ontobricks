@@ -688,10 +688,11 @@ class CohortBuilder:
         # Delete by URI prefix — wipes both cohort entity triples (subject
         # under prefix) and membership triples (predicate=inCohort<RuleId>,
         # object under prefix).  Implementation lives on the backend.
+        deleted = 0
         delete_fn = getattr(self._store, "delete_cohort_triples", None)
         if callable(delete_fn):
             try:
-                delete_fn(self._graph_name, prefix, in_cohort)
+                deleted = int(delete_fn(self._graph_name, prefix, in_cohort) or 0)
             except Exception as exc:
                 logger.warning(
                     "CohortBuilder: delete_cohort_triples failed for %s: %s",
@@ -700,9 +701,23 @@ class CohortBuilder:
                 )
 
         triples = self._build_cohort_triples(rule, result)
+        inserted = 0
         if not triples:
-            return 0
-        return int(self._store.insert_triples(self._graph_name, triples))
+            inserted = 0
+        else:
+            inserted = int(self._store.insert_triples(self._graph_name, triples))
+        if (
+            (deleted != 0 or inserted > 0)
+            and getattr(self._store, "supports_adjacency", False) is True
+        ):
+            logger.info(
+                "CohortBuilder: rebuilding adjacency index after cohort materialization "
+                "(deleted=%d, inserted=%d)",
+                deleted,
+                inserted,
+            )
+            self._store.rebuild_adjacency(self._graph_name)
+        return inserted
 
     def materialize_to_uc(
         self,

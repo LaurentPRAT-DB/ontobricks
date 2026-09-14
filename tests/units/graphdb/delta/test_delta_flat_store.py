@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from back.core.graphdb.delta.DeltaFlatStore import DeltaFlatStore
 
 
@@ -85,6 +86,61 @@ class TestDeltaFlatStoreInferredRouting:
             client, "cat.sch.triplestore_mydomain_V1_inferred"
         )
 
+    def test_rebuild_adjacency_also_builds_entity_search(self):
+        client = MagicMock()
+        domain = _domain()
+        store = DeltaFlatStore(client, domain=domain)
+
+        store.rebuild_adjacency("MyDomain_V1")
+
+        statements = [call[0][0] for call in client.execute_statement.call_args_list]
+        assert any(
+            "CREATE OR REPLACE TABLE cat.sch.triplestore_mydomain_V1_adj_out"
+            in sql
+            for sql in statements
+        )
+        assert any(
+            "CREATE OR REPLACE TABLE cat.sch.triplestore_mydomain_V1_adj_in"
+            in sql
+            for sql in statements
+        )
+        assert any(
+            "CREATE OR REPLACE TABLE cat.sch.triplestore_mydomain_V1_entity_search"
+            in sql
+            for sql in statements
+        )
+        assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_adj_out" in statements
+        assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_adj_in" in statements
+        assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_entity_search" in statements
+
+    def test_rebuild_adjacency_keeps_going_when_optimize_fails(self):
+        client = MagicMock()
+        domain = _domain()
+        store = DeltaFlatStore(client, domain=domain)
+
+        with patch(
+            "back.core.graphdb.delta.materialize.optimize_table",
+            side_effect=RuntimeError("optimize failed"),
+        ), patch(
+            "back.core.graphdb.delta.DeltaFlatStore.logger.warning"
+        ) as mock_warning:
+            store.rebuild_adjacency("MyDomain_V1")
+
+        statements = [call[0][0] for call in client.execute_statement.call_args_list]
+        assert any("_adj_out USING DELTA" in sql for sql in statements)
+        assert any("_adj_in USING DELTA" in sql for sql in statements)
+        assert any("_entity_search USING DELTA" in sql for sql in statements)
+        assert mock_warning.call_count == 3
+
+    def test_rebuild_adjacency_still_fails_when_ctas_fails(self):
+        client = MagicMock()
+        domain = _domain()
+        store = DeltaFlatStore(client, domain=domain)
+        client.execute_statement.side_effect = RuntimeError("ctas failed")
+
+        with pytest.raises(RuntimeError, match="ctas failed"):
+            store.rebuild_adjacency("MyDomain_V1")
+
 
 class TestDeltaSingleStatementExpansion:
     RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -94,6 +150,7 @@ class TestDeltaSingleStatementExpansion:
     def _store(rows=None):
         store = DeltaFlatStore(MagicMock())
         store.execute_query = MagicMock(return_value=rows or [])
+        store.table_exists = MagicMock(return_value=False)
         return store
 
     def test_depth_three_uses_one_statement_and_three_levels(self):
@@ -189,3 +246,19 @@ class TestDeltaSingleStatementExpansion:
 
         assert result["expanded_count"] == 10
         assert result["capped"] is True
+
+    def test_when_adj_ready_expansion_uses_adj_tables_for_hops(self):
+        store = DeltaFlatStore(MagicMock(), domain=_domain())
+        store.execute_query = MagicMock(return_value=[])
+        store.table_exists = MagicMock(return_value=True)
+
+        store.expand_and_fetch_subgraph(
+            "cat.sch.triplestore_mydomain_V1_data", ["http://ex/a"], 2, 50, 100
+        )
+
+        sql = store.execute_query.call_args.args[0]
+        assert "FROM cat.sch.triplestore_mydomain_V1_adj_out t" in sql
+        assert "FROM cat.sch.triplestore_mydomain_V1_adj_in t" in sql
+        assert "FROM cat.sch.triplestore_mydomain_V1_data triples" in sql
+        assert "t.subject = frontier.entity" not in sql
+        assert "t.object = frontier.entity" not in sql

@@ -28,6 +28,7 @@ def test_base_backend_rejects_generated_purge():
 def test_delta_counts_and_truncates_only_inferred_companion():
     client = MagicMock()
     store = DeltaFlatStore(client, domain=MagicMock(), settings=MagicMock())
+    store.rebuild_adjacency = MagicMock()
 
     with (
         patch.object(
@@ -44,12 +45,34 @@ def test_delta_counts_and_truncates_only_inferred_companion():
 
     count.assert_called_once_with("cat.sch.sales_inferred")
     truncate.assert_called_once_with(client, "cat.sch.sales_inferred")
+    store.rebuild_adjacency.assert_called_once_with("sales_V3")
+
+
+def test_delta_purge_surfaces_adjacency_rebuild_failure():
+    client = MagicMock()
+    store = DeltaFlatStore(client, domain=MagicMock(), settings=MagicMock())
+    store.rebuild_adjacency = MagicMock(side_effect=RuntimeError("adjacency failed"))
+
+    with (
+        patch.object(
+            store,
+            "_writable_table_fqn",
+            return_value="cat.sch.sales_inferred",
+        ),
+        patch.object(store, "count_triples", return_value=17),
+        patch(
+            "back.core.graphdb.delta.DeltaFlatStore.materialize.truncate_table"
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="adjacency failed"):
+            store.purge_materialized_triples("sales_V3")
 
 
 def test_lakebase_counts_and_truncates_only_app_companion():
     store = object.__new__(LakebaseFlatStore)
     store._sync_mode = "app_managed"
     store.count_triples = MagicMock(return_value=9)
+    store.rebuild_adjacency = MagicMock()
     cursor = MagicMock()
     cursor_context = MagicMock()
     cursor_context.__enter__.return_value = cursor
@@ -67,3 +90,26 @@ def test_lakebase_counts_and_truncates_only_app_companion():
 
     store.count_triples.assert_called_once_with("g_sales_v3__app")
     truncate.assert_called_once_with(cursor, "g_sales_v3__app")
+    store.rebuild_adjacency.assert_called_once_with("sales_V3")
+
+
+def test_lakebase_purge_surfaces_adjacency_rebuild_failure():
+    store = object.__new__(LakebaseFlatStore)
+    store._sync_mode = "app_managed"
+    store.count_triples = MagicMock(return_value=9)
+    store.rebuild_adjacency = MagicMock(side_effect=RuntimeError("adjacency failed"))
+    cursor = MagicMock()
+    cursor_context = MagicMock()
+    cursor_context.__enter__.return_value = cursor
+    cursor_context.__exit__.return_value = False
+    store._cursor = MagicMock(return_value=cursor_context)
+
+    with (
+        patch.object(store, "companion_phy", return_value="g_sales_v3__app"),
+        patch(
+            "back.core.graphdb.lakebase.LakebaseFlatStore."
+            "_companion_ddl.truncate_companion"
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="adjacency failed"):
+            store.purge_materialized_triples("sales_V3")

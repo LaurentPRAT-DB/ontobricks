@@ -6,7 +6,9 @@ from typing import Any, Optional, Tuple
 
 from back.core.databricks import is_databricks_app
 from back.core.helpers import (
+    get_build_sql_credentials,
     get_databricks_host_and_token,
+    resolve_build_use_sea,
     resolve_delta_warehouse_id,
     resolve_lakehouse_use_sea,
     resolve_use_cloud_fetch,
@@ -19,15 +21,21 @@ logger = get_logger(__name__)
 def create_databricks_client(
     domain: Any,
     settings: Optional[Any] = None,
+    *,
+    for_write: bool = False,
 ) -> Optional[Any]:
-    """Return a :class:`DatabricksClient` or *None* if configuration is incomplete."""
+    """Return a Delta client using the query or build warehouse as requested."""
     try:
         from back.core.databricks import DatabricksClient
 
         if settings is not None:
-            host, token = get_databricks_host_and_token(domain, settings)
-            warehouse_id = resolve_delta_warehouse_id(domain, settings)
-            use_sea = resolve_lakehouse_use_sea(domain, settings)
+            if for_write:
+                host, token, warehouse_id = get_build_sql_credentials(domain, settings)
+                use_sea = resolve_build_use_sea(domain, settings)
+            else:
+                host, token = get_databricks_host_and_token(domain, settings)
+                warehouse_id = resolve_delta_warehouse_id(domain, settings)
+                use_sea = resolve_lakehouse_use_sea(domain, settings)
             use_cloud_fetch = resolve_use_cloud_fetch(domain, settings)
         else:
             db = getattr(domain, "databricks", None) or {}

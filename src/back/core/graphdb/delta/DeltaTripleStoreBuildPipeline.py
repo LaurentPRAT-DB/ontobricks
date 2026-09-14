@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 
 from back.core.errors import OntoBricksError, OperationCancelledError
 from back.core.graphdb.GraphDBFactory import GraphDBFactory
+from back.core.graphdb.delta.DeltaFlatStore import DeltaFlatStore
 from back.core.graphdb.delta import _table_naming, materialize
 from back.core.logging import get_logger
 from back.objects.digitaltwin._build_pipeline import collect_domain_stats
@@ -134,6 +135,10 @@ class DeltaTripleStoreBuildPipeline:
                 t_phase = time.time()
                 materialize.optimize_table(self.source_client, self.data_table)
                 self._log_phase("optimize", t_phase)
+
+            t_phase = time.time()
+            self._rebuild_adjacency_index()
+            self._log_phase("rebuild_adjacency", t_phase)
 
             self._complete_task()
         except OperationCancelledError as exc:
@@ -327,6 +332,16 @@ class DeltaTripleStoreBuildPipeline:
             self.data_table,
             self.inferred_table,
         )
+
+    def _rebuild_adjacency_index(self) -> None:
+        source = getattr(self, "graph_view", "") or self.data_table
+        if not source:
+            return
+        self.tm.advance_step(self.task_id, "Building adjacency index...")
+        store = DeltaFlatStore(
+            self.source_client, domain=self.domain, settings=self.settings
+        )
+        store.rebuild_adjacency(source)
 
     def _complete_task(self) -> None:
         duration = time.time() - self.start_time

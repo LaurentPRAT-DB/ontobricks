@@ -11,6 +11,9 @@ _SUFFIX_DATA = "_data"
 _SUFFIX_INFERRED = "_inferred"
 _SUFFIX_GRAPH = "_graph"
 _SUFFIX_ANALYTICS = "_analytics"
+_SUFFIX_ADJ_OUT = "_adj_out"
+_SUFFIX_ADJ_IN = "_adj_in"
+_SUFFIX_ENTITY_SEARCH = "_entity_search"
 
 
 def view_fqn(domain: Any, settings: Any = None) -> str:
@@ -59,6 +62,33 @@ def analytics_snapshot_fqn(domain: Any, settings: Any = None) -> str:
     return f"{cat}.{sch}.{base}{_SUFFIX_ANALYTICS}"
 
 
+def adj_out_fqn(domain: Any, settings: Any = None) -> str:
+    """Outgoing adjacency table FQN (``..._adj_out``)."""
+    view = view_fqn(domain, settings)
+    if not view or view.count(".") != 2:
+        return ""
+    cat, sch, base = view.split(".", 2)
+    return f"{cat}.{sch}.{base}{_SUFFIX_ADJ_OUT}"
+
+
+def adj_in_fqn(domain: Any, settings: Any = None) -> str:
+    """Incoming adjacency table FQN (``..._adj_in``)."""
+    view = view_fqn(domain, settings)
+    if not view or view.count(".") != 2:
+        return ""
+    cat, sch, base = view.split(".", 2)
+    return f"{cat}.{sch}.{base}{_SUFFIX_ADJ_IN}"
+
+
+def entity_search_fqn(domain: Any, settings: Any = None) -> str:
+    """Entity-search table FQN (``..._entity_search``)."""
+    view = view_fqn(domain, settings)
+    if not view or view.count(".") != 2:
+        return ""
+    cat, sch, base = view.split(".", 2)
+    return f"{cat}.{sch}.{base}{_SUFFIX_ENTITY_SEARCH}"
+
+
 def graph_suffix() -> str:
     return _SUFFIX_GRAPH
 
@@ -73,3 +103,15 @@ def inferred_suffix() -> str:
 
 def analytics_suffix() -> str:
     return _SUFFIX_ANALYTICS
+
+
+def adj_out_suffix() -> str:
+    return _SUFFIX_ADJ_OUT
+
+
+def adj_in_suffix() -> str:
+    return _SUFFIX_ADJ_IN
+
+
+def entity_search_suffix() -> str:
+    return _SUFFIX_ENTITY_SEARCH

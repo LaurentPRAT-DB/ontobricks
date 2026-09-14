@@ -518,6 +518,11 @@ class ReasoningService:
             optimize_fn = getattr(self._store, "optimize_inferred_companion", None)
             if callable(optimize_fn):
                 optimize_fn(table_name)
+            if getattr(self._store, "supports_adjacency", False) is True:
+                logger.info(
+                    "Rebuilding adjacency index after %d inferred triples", count
+                )
+                self._store.rebuild_adjacency(table_name)
         logger.info("Materialised %d inferred triples into %s", count, table_name)
         return count
 
