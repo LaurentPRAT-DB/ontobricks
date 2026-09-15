@@ -57,6 +57,9 @@ ONTOLOGY_BUSINESS_RULES_CSS = (
 REGISTRY_TEAMS_CSS = (
     REPO_ROOT / "src/front/static/registry/css/registry-teams.css"
 )
+REGISTRY_MODAL_TEMPLATE = (
+    REPO_ROOT / "src/front/templates/partials/layout/registry_modal.html"
+)
 FRONTEND_RULE = REPO_ROOT / ".cursor/11-frontend-design.mdc"
 CLAUDE_GUIDE = REPO_ROOT / "CLAUDE.md"
 FRONTEND_SKILL = REPO_ROOT / ".claude/skills/frontend-design/SKILL.md"
@@ -374,6 +377,24 @@ def test_domain_runs_uses_the_card_integrated_tab_pattern():
     content_tag = template[template.rindex("<div", 0, anchor) : anchor]
     assert "tab-content p-3" in content_tag
     assert "ob-tab-content" not in content_tag
+
+
+def test_registry_modal_uses_the_shared_tab_rail():
+    template = _read(REGISTRY_MODAL_TEMPLATE)
+    assert '<div class="ob-tabs-wrap">' in template
+    assert (
+        'class="nav nav-tabs ob-tabs" id="registryModalTabs"'
+        in template
+    )
+    anchor = template.index('id="registryModalTabContent"')
+    content_tag = template[template.rindex("<div", 0, anchor) : anchor]
+    assert "tab-content p-3" in content_tag
+    assert "ob-tab-content" not in content_tag
+
+    css = _read(COMPONENTS_CSS)
+    assert ".ob-tabs-wrap > .nav-tabs.ob-tabs" in css
+    assert "margin-right: 0" in css
+    assert ".modal-body > .ob-tabs-wrap" in css
 
 
 def test_frontend_rule_defines_card_integrated_page_tabs():

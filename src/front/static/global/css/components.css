@@ -1016,10 +1016,12 @@
     -webkit-overflow-scrolling: touch;
 }
 
-/* A card already supplies its own horizontal inset. */
+/* A card or modal already supplies its own horizontal inset. */
 .card-body > .nav-tabs.ob-tabs,
 .card-header > .nav-tabs.ob-tabs,
-.card > .nav-tabs.ob-tabs {
+.card > .nav-tabs.ob-tabs,
+.modal-body > .nav-tabs.ob-tabs,
+.ob-tabs-wrap > .nav-tabs.ob-tabs {
     margin-right: 0;
 }
 
@@ -1077,7 +1079,8 @@
     min-height: 0;
 }
 
-.sidebar-section > .content-section > .ob-tabs-wrap {
+.sidebar-section > .content-section > .ob-tabs-wrap,
+.modal-body > .ob-tabs-wrap {
     flex: 1;
     min-height: 0;
     overflow: hidden;

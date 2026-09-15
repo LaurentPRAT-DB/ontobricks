@@ -411,6 +411,59 @@ Tests:
 - Full non-scenario suite: `uv run --frozen pytest -q -m "not scenario"` →
   `6121 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 51.29s`.
 
+## Align Registry modal tabs with the shared rail
+
+Context: The Registry popup already used Bootstrap tabs for Browse and
+Bridges, but wrapped the panes in the independent `.ob-tab-content` card
+and kept the page-level 12px rail inset. That made the strip read as a
+nested boxed surface instead of the shared transparent underline rail
+used by Domain / Ontology / Settings tabs.
+
+Changes:
+
+1. src/front/templates/partials/layout/registry_modal.html
+   Wrapped Browse/Bridges in `ob-tabs-wrap` and a plain padded
+   `tab-content`, flush with the modal body.
+2. src/front/static/global/css/components.css
+   Zeroed the rail inset inside modals and `ob-tabs-wrap`, and let a
+   modal-body wrap fill remaining height.
+3. tests/units/front/test_clarity_design_contract.py
+   Added a structural contract for the Registry modal tab rail.
+4. tests/units/api/test_ui_rendering.py
+   Asserted rendered home HTML uses `ob-tabs` and not `ob-tab-content`.
+
+Modified files:
+- src/front/templates/partials/layout/registry_modal.html
+- src/front/static/global/css/components.css
+- tests/units/front/test_clarity_design_contract.py
+- tests/units/api/test_ui_rendering.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` →
+`6122 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.41s`.
+
+## Make the Registry Bridges canvas fill the modal height
+
+Context: After moving the Registry modal onto the shared tab rail, the
+Bridges D3 canvas stayed near its 280px floor with a large empty gap
+below it. The pane sized with `height: 100%`, which collapses unless
+every ancestor carries a definite height — inside the nested modal flex
+chain it did not resolve.
+
+Changes:
+
+1. src/front/static/global/css/registry-modal.css
+   Made `#registryModalTabContent` a flex column and switched the Browse
+   and Bridges panes from `height: 100%` to `flex: 1` sizing, so the
+   canvas fills down to the modal bottom regardless of ancestor height.
+
+Modified files:
+- src/front/static/global/css/registry-modal.css
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` →
+`6125 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.62s`.
+
 ## Publish Lakehouse build progress promptly
 
 Context: Lakehouse build stages were timestamped correctly on the server, but
@@ -453,3 +506,34 @@ Tests:
   delays were 301–304 milliseconds before adjacency and 1003 milliseconds
   during adjacency; maximum concurrent requests was 1; terminal and failed
   responses scheduled no retry; desktop and 375-pixel layouts passed.
+
+## Relocate Registry Create and operational status
+
+Context: The Registry modal put Create a New Domain in the header, while
+Import/Export lived in the Browse section toolbar and the operational
+status sat above the domain list. Users look for domain actions together
+and want the health line in the header.
+
+Changes:
+
+1. src/front/templates/partials/layout/registry_modal.html
+   Replaced the header Create button with `#registryStatus`.
+2. src/front/templates/partials/registry/_registry_domains.html
+   Placed Create a New Domain before Export and Import in the Browse
+   section header.
+3. src/front/static/global/css/registry-modal.css
+   Constrained the header status so it stays right-aligned without
+   crowding the close control.
+4. tests/units/front/test_registry_operational_status.py
+   Asserted status in the modal header and Create-before-Export/Import
+   order.
+
+Modified files:
+- src/front/templates/partials/layout/registry_modal.html
+- src/front/templates/partials/registry/_registry_domains.html
+- src/front/static/global/css/registry-modal.css
+- tests/units/front/test_registry_operational_status.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` →
+`6126 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.07s`.

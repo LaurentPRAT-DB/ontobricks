@@ -296,8 +296,13 @@ class TestSettingsPage:
         assert _find(tags, id_="registryModalToggle") is not None
         tabs = _find(tags, id_="registryModalTabs")
         assert tabs is not None
-        assert "mb-3" not in _class_tokens(tabs.get("class", ""))
-        assert _find(tags, id_="registryModalTabContent", class_="ob-tab-content") is not None
+        tab_classes = _class_tokens(tabs.get("class", ""))
+        assert "mb-3" not in tab_classes
+        assert "nav-tabs" in tab_classes
+        assert "ob-tabs" in tab_classes
+        content = _find(tags, id_="registryModalTabContent")
+        assert content is not None
+        assert "ob-tab-content" not in _class_tokens(content.get("class", ""))
         assert 'id="registryDropdown"' not in html
 
     def test_registry_legacy_url_redirects(self, client):
