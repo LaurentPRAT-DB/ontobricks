@@ -732,14 +732,31 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    const IMPORT_NAME_PATTERN = /^[A-Z][A-Za-z0-9]{0,63}$/;
+
+    function sanitizeImportFolder(name) {
+        return name.trim().toLowerCase().replace(/[ -]/g, '_').replace(/[^a-z0-9_]/g, '') ||
+            'untitled_domain';
+    }
+
+    function syncImportActionControls(row) {
+        const input = row.querySelector('.import-obx-name');
+        const conflictActions = row.querySelector('.import-obx-conflict-actions');
+        const createAction = row.querySelector('.import-obx-create-action');
+        const targetsExisting = row.dataset.exists === '1' &&
+            sanitizeImportFolder(input?.value || '') === row.dataset.name;
+        conflictActions?.classList.toggle('d-none', !targetsExisting);
+        createAction?.classList.toggle('d-none', targetsExisting);
+    }
+
     function openImportObxModal() {
         const modalEl = document.getElementById('importObxModal');
         if (!modalEl) return;
-        document.getElementById('importObxStep1').style.display = '';
-        document.getElementById('importObxStep2').style.display = 'none';
+        document.getElementById('importObxStep1').classList.remove('d-none');
+        document.getElementById('importObxStep2').classList.add('d-none');
         document.getElementById('importObxFile').value = '';
-        document.getElementById('importObxPreviewError').style.display = 'none';
-        document.getElementById('btnImportObxConfirm').style.display = 'none';
+        document.getElementById('importObxPreviewError').classList.add('d-none');
+        document.getElementById('btnImportObxConfirm').classList.add('d-none');
         showStackedModal(modalEl);
     }
 
@@ -747,7 +764,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const file = e.target.files?.[0];
         const errEl = document.getElementById('importObxPreviewError');
         if (!file) return;
-        errEl.style.display = 'none';
+        errEl.classList.add('d-none');
         try {
             const form = new FormData();
             form.append('file', file);
@@ -759,22 +776,21 @@ document.addEventListener('DOMContentLoaded', function () {
             const data = await resp.json();
             if (!resp.ok || !data.success) {
                 errEl.textContent = data.message || 'Could not read the .obx file';
-                errEl.style.display = '';
+                errEl.classList.remove('d-none');
                 return;
             }
             renderImportObxPreview(data);
         } catch (err) {
             errEl.textContent = 'Network error: ' + err.message;
-            errEl.style.display = '';
+            errEl.classList.remove('d-none');
         }
     });
 
     function renderImportObxPreview(data) {
-        document.getElementById('importObxStep1').style.display = 'none';
-        document.getElementById('importObxStep2').style.display = '';
+        document.getElementById('importObxStep1').classList.add('d-none');
+        document.getElementById('importObxStep2').classList.remove('d-none');
         const obxConfirmBtn = document.getElementById('btnImportObxConfirm');
         obxConfirmBtn.classList.remove('d-none');
-        obxConfirmBtn.style.display = '';
 
         const meta = document.getElementById('importObxMeta');
         meta.innerHTML =
@@ -793,39 +809,44 @@ document.addEventListener('DOMContentLoaded', function () {
             const statusBadge = d.exists
                 ? '<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>Exists</span>'
                 : '<span class="badge bg-success-subtle text-success border-success">New</span>';
-            const defaultAction = d.exists ? 'skip' : 'overwrite';
-            return '<tr class="import-obx-row" data-name="' + escapeHtml(d.name) + '" data-suggested="' + escapeHtml(d.suggested_new_name || '') + '">' +
+            const importName = d.exists
+                ? (d.suggested_new_name || d.display_name || d.name)
+                : (d.display_name || d.name);
+            const actionControls = d.exists
+                ? '<div class="btn-group btn-group-sm import-obx-conflict-actions" role="group">' +
+                      actionRadio(idx, 'skip', 'Skip', true, false) +
+                      actionRadio(idx, 'overwrite', 'Overwrite', false, false) +
+                  '</div>' +
+                  '<span class="small text-muted import-obx-create-action d-none">' +
+                      '<i class="bi bi-plus-circle me-1"></i>Create new</span>'
+                : '<span class="small text-muted import-obx-create-action">' +
+                      '<i class="bi bi-plus-circle me-1"></i>Create new</span>';
+            return '<tr class="import-obx-row" data-name="' + escapeHtml(d.name) + '" data-exists="' + (d.exists ? '1' : '0') + '">' +
                 '<td><i class="bi bi-box me-1 text-primary"></i>' + escapeHtml(d.name) +
                     (d.original_name && d.original_name !== d.name
                         ? '<div class="small text-muted">from <code>' + escapeHtml(d.original_name) + '</code></div>'
                         : '') +
                 '</td>' +
+                '<td>' +
+                    '<input type="text" class="form-control form-control-sm import-obx-name" ' +
+                        'value="' + escapeHtml(importName) + '" required maxlength="64" ' +
+                        'pattern="[A-Z][A-Za-z0-9]*" autocomplete="off" spellcheck="false" ' +
+                        'aria-label="Imported domain name">' +
+                    '<div class="invalid-feedback">Use a unique CamelCase alphanumeric name.</div>' +
+                '</td>' +
                 '<td>' + versionBadges + '</td>' +
                 '<td>' + statusBadge + '</td>' +
-                '<td>' +
-                    '<div class="d-flex flex-column gap-1">' +
-                        '<div class="btn-group btn-group-sm" role="group">' +
-                            actionRadio(idx, 'skip', 'Skip', defaultAction === 'skip', !d.exists) +
-                            actionRadio(idx, 'overwrite', 'Overwrite', defaultAction === 'overwrite', false) +
-                            actionRadio(idx, 'rename', 'Rename', false, !d.exists) +
-                        '</div>' +
-                        '<input type="text" class="form-control form-control-sm import-obx-rename" ' +
-                            'value="' + escapeHtml(d.suggested_new_name || '') + '" ' +
-                            'placeholder="new name" style="display:none;">' +
-                    '</div>' +
-                '</td>' +
+                '<td>' + actionControls + '</td>' +
             '</tr>';
         }).join('');
 
         tbody.querySelectorAll('.import-obx-row').forEach(row => {
-            const rename = row.querySelector('.import-obx-rename');
-            row.querySelectorAll('input[type="radio"]').forEach(radio => {
-                radio.addEventListener('change', () => {
-                    if (rename) rename.style.display = radio.value === 'rename' && radio.checked ? '' : (
-                        row.querySelector('input[type="radio"]:checked')?.value === 'rename' ? '' : 'none'
-                    );
-                });
+            const input = row.querySelector('.import-obx-name');
+            input?.addEventListener('input', () => {
+                input.classList.remove('is-invalid');
+                syncImportActionControls(row);
             });
+            syncImportActionControls(row);
         });
     }
 
@@ -834,7 +855,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return '<input type="radio" class="btn-check" name="obx-action-' + rowIdx + '" ' +
                     'id="' + id + '" value="' + value + '" ' +
                     (checked ? 'checked' : '') + ' ' + (disabled ? 'disabled' : '') + '>' +
-                '<label class="btn btn-outline-' + (value === 'overwrite' ? 'warning' : value === 'rename' ? 'primary' : 'secondary') +
+                '<label class="btn btn-outline-' + (value === 'overwrite' ? 'warning' : 'secondary') +
                     '" for="' + id + '">' + escapeHtml(label) + '</label>';
     }
 
@@ -843,14 +864,47 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!file) { showNotification('Pick a .obx file first', 'warning'); return; }
 
         const decisions = [];
+        const targetFolders = new Set();
+        let namesValid = true;
         document.querySelectorAll('#importObxTableBody .import-obx-row').forEach(row => {
-            const action = row.querySelector('input[type="radio"]:checked')?.value || 'skip';
-            const decision = { name: row.dataset.name, action };
-            if (action === 'rename') {
-                decision.new_name = row.querySelector('.import-obx-rename')?.value?.trim() || row.dataset.suggested;
+            const nameInput = row.querySelector('.import-obx-name');
+            const importName = nameInput?.value.trim() || '';
+            const sourceFolder = row.dataset.name;
+            const targetFolder = sanitizeImportFolder(importName);
+            const duplicate = targetFolders.has(targetFolder);
+            const valid = IMPORT_NAME_PATTERN.test(importName) && !duplicate;
+
+            nameInput?.classList.toggle('is-invalid', !valid);
+            if (!valid) {
+                namesValid = false;
+                return;
             }
-            decisions.push(decision);
+            targetFolders.add(targetFolder);
+
+            if (sourceFolder !== targetFolder) {
+                decisions.push({
+                    name: sourceFolder,
+                    action: 'rename',
+                    new_name: importName
+                });
+            } else if (row.dataset.exists === '1') {
+                decisions.push({
+                    name: sourceFolder,
+                    action: row.querySelector('input[type="radio"]:checked')?.value || 'skip'
+                });
+            } else {
+                decisions.push({ name: sourceFolder, action: 'overwrite' });
+            }
         });
+
+        if (!namesValid) {
+            showNotification(
+                'Use a unique CamelCase alphanumeric name for every imported domain',
+                'warning'
+            );
+            document.querySelector('#importObxTableBody .import-obx-name.is-invalid')?.focus();
+            return;
+        }
 
         const overwrites = decisions.filter(d => d.action === 'overwrite').length;
         if (overwrites > 0) {
