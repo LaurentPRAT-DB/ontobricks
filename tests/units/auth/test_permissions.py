@@ -3,9 +3,10 @@
 import importlib
 import json
 import time
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
+import requests
 
 # Work around __init__.py re-export shadowing the module path.
 _PS_MOD = importlib.import_module("back.objects.registry.PermissionService")
@@ -237,6 +238,40 @@ class TestExtractCanManage:
 
     def test_empty_payload(self, svc):
         assert svc._extract_can_manage({}) == []
+
+
+class TestCanManagePrincipalsRest:
+    def test_forbidden_fallback_does_not_emit_warning(self, svc):
+        response = Mock(status_code=403)
+        response.raise_for_status.side_effect = requests.HTTPError(
+            "403 Client Error: Forbidden", response=response
+        )
+        with (
+            patch("requests.get", return_value=response),
+            patch.object(_PS_MOD.logger, "debug") as debug,
+            patch.object(_PS_MOD.logger, "warning") as warning,
+        ):
+            assert svc._can_manage_principals_rest("https://host", "token", "app") is None
+
+        debug.assert_called_once_with(
+            "REST admin check forbidden for app %s; using fallback",
+            "app",
+        )
+        warning.assert_not_called()
+
+    def test_unexpected_http_failure_still_emits_warning(self, svc):
+        response = Mock(status_code=500)
+        response.raise_for_status.side_effect = requests.HTTPError(
+            "500 Server Error", response=response
+        )
+        with (
+            patch("requests.get", return_value=response),
+            patch.object(_PS_MOD.logger, "warning") as warning,
+        ):
+            assert svc._can_manage_principals_rest("https://host", "token", "app") is None
+
+        warning.assert_called_once()
+        assert warning.call_args[0][0] == "REST admin check failed: %s"
 
 
 class TestGetUserGroups:

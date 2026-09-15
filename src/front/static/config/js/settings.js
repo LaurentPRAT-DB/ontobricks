@@ -172,8 +172,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
             currentWarehouseId = data.warehouse_id;
             warehouseLocked = !!data.warehouse_locked;
-            const buildUseSea = document.getElementById('buildUseSea');
-            if (buildUseSea) buildUseSea.checked = !!data.warehouse_use_sea;
             const useCloudFetch = document.getElementById('useCloudFetch');
             if (useCloudFetch) {
                 useCloudFetch.checked = data.use_cloud_fetch !== false;
@@ -447,7 +445,6 @@ document.addEventListener('DOMContentLoaded', function () {
         const selected = Array.from(buildSelect.options)
             .find((option) => option.value === warehouseId);
         const warehouseType = selected?.dataset?.warehouseType || '';
-        const useSea = !!document.getElementById('buildUseSea')?.checked;
         try {
             const resp = await fetch('/settings/select-build-warehouse', {
                 method: 'POST',
@@ -456,7 +453,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 body: JSON.stringify({
                     warehouse_id: warehouseId,
                     warehouse_type: warehouseType,
-                    use_sea: useSea,
                 }),
             });
             const result = await resp.json();

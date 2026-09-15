@@ -140,7 +140,7 @@ async def select_build_warehouse(
     return config_service.select_build_warehouse(
         data.get("warehouse_id"),
         data.get("warehouse_type"),
-        bool(data.get("use_sea", False)),
+        False,
         email,
         user_token,
         session_mgr,

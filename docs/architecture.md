@@ -277,7 +277,7 @@ To add a new generation template, add an entry to `WIZARD_TEMPLATES` in `src/sha
 | Setting | Description | Modified By |
 |---------|-------------|-------------|
 | `warehouse_id` | Build SQL Warehouse ID used for mapping views, DDL, and materialization | Admin only |
-| `warehouse_use_sea` | Compatibility key selecting the native Kernel backend for build queries | Admin only |
+| `warehouse_use_sea` | Legacy compatibility key; always persisted and resolved as `false` because build SQL uses Thrift | Internal compatibility only |
 | `use_cloud_fetch` | Whether SQL clients download result files via CloudFetch (default on) | Admin only |
 | `graph_engine_config.lakehouse.warehouse_id` | Optional Lakehouse query warehouse, including Lakehouse//RT | Admin only |
 | `graph_engine_config.lakehouse.use_sea` | Compatibility key selecting Kernel; required for Lakehouse//RT | Admin only |
@@ -925,7 +925,7 @@ reindexes `_adj_out`, `_adj_in`, and `_entity_search` without rematerializing
 `_data`. Preview uses `_entity_search` when Inferred is enabled; asserted-only
 Preview keeps the SPO path. For Lakehouse, the refresh opens the Delta backend
 in write mode: `GraphDBFactory` resolves the configured Build SQL Warehouse and
-its transport instead of the optional Lakehouse/RT query warehouse. This
+the fixed Thrift transport instead of the optional Lakehouse/RT query warehouse. This
 separation is required because Lakehouse/RT supports the Explorer read path but
 rejects the `CREATE OR REPLACE TABLE` DDL used by graph-index refreshes.
 

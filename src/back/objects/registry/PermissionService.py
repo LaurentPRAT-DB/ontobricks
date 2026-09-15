@@ -383,6 +383,12 @@ class PermissionService:
                 headers=headers,
                 timeout=5,
             )
+            if resp.status_code == 403:
+                logger.debug(
+                    "REST admin check forbidden for app %s; using fallback",
+                    app_name,
+                )
+                return None
             resp.raise_for_status()
             return self._extract_can_manage(resp.json())
         except Exception as e:

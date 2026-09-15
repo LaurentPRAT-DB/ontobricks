@@ -1520,7 +1520,7 @@ three rebuildable graph-index tables.
 
 **Settings → Lakehouse → SQL Warehouse** owns both compute roles:
 
-- **Build SQL Warehouse** — classic or serverless warehouse (never Lakehouse//RT) used for mapping views, materialization, and other writes. You can override the Databricks App `sql-warehouse` resource default from this selector.
+- **Build SQL Warehouse** — classic or serverless warehouse (never Lakehouse//RT) used for mapping views, materialization, and other writes. Build SQL always uses the Thrift transport; SEA/Kernel is not configurable for this role. You can override the Databricks App `sql-warehouse` resource default from this selector.
 - **Query SQL Warehouse** — disabled by default and mirrored from Build. Enable **Use Lakehouse//RT for queries** to choose a distinct warehouse for Knowledge Graph reads. RT warehouses reject `CREATE VIEW` / CTAS, so Build and **Refresh adjacency** never use the Query warehouse. Disabling the option and applying restores Build for reads.
 
 **Settings → Databricks → Use CloudFetch** controls whether SQL clients download result files via CloudFetch. Leave it on unless Databricks Apps cannot reach the CloudFetch storage host; then Explorer can time out after SQL has already finished.

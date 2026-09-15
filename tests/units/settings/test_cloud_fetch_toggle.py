@@ -30,9 +30,6 @@ class TestCurrentConfigIncludesCloudFetch:
             "back.objects.domain.SettingsService.resolve_warehouse_id",
             return_value="wh-build",
         ), patch(
-            "back.objects.domain.SettingsService.resolve_build_use_sea",
-            return_value=False,
-        ), patch(
             "back.objects.domain.SettingsService.resolve_use_cloud_fetch",
             return_value=False,
         ), patch.object(SettingsService, "is_warehouse_locked", return_value=False):
@@ -96,8 +93,7 @@ class TestUiWiring:
         block = html.split('id="useCloudFetch"')[1][:900]
         assert "Use CloudFetch" in block
         assert "settings-badge-admin-note" in block
-        before = html.split('id="useCloudFetch"')[0][-800:]
-        assert 'id="buildUseSea"' in before
+        assert 'id="buildUseSea"' not in html
 
     def test_help_text_explains_apps_egress(self):
         html = SETTINGS_HTML.read_text(encoding="utf-8")
@@ -108,6 +104,7 @@ class TestUiWiring:
         assert "useCloudFetch" in js
         assert "data.use_cloud_fetch" in js
         assert "cloudFetchHydrated" in js
+        assert "buildUseSea" not in js
 
     def test_saved_by_shared_handler_including_unchecked(self):
         js = SETTINGS_JS.read_text(encoding="utf-8")

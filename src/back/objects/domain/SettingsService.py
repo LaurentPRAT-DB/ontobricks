@@ -30,7 +30,6 @@ from back.core.helpers import (
     get_databricks_host_and_token,
     normalize_ui_branding,
     resolve_app_registry_context,
-    resolve_build_use_sea,
     resolve_default_base_uri,
     resolve_delta_warehouse_id,
     resolve_use_cloud_fetch,
@@ -180,7 +179,6 @@ class SettingsService:
         host = domain.databricks.get("host") or settings.databricks_host
         token = domain.databricks.get("token") or settings.databricks_token
         warehouse_id = resolve_warehouse_id(domain, settings)
-        warehouse_use_sea = resolve_build_use_sea(domain, settings)
         use_cloud_fetch = resolve_use_cloud_fetch(domain, settings)
 
         has_config = bool(host and (token or settings.databricks_token))
@@ -201,7 +199,7 @@ class SettingsService:
             "host": host,
             "token": "***" if token else None,
             "warehouse_id": warehouse_id,
-            "warehouse_use_sea": warehouse_use_sea,
+            "warehouse_use_sea": False,
             "use_cloud_fetch": use_cloud_fetch,
             "from_env": is_app_mode,
             "is_app_mode": is_app_mode,
@@ -371,7 +369,11 @@ class SettingsService:
         session_mgr: SessionManager,
         settings: Settings,
     ) -> Dict[str, Any]:
-        """Persist the non-RT warehouse and transport used for build SQL."""
+        """Persist the non-RT warehouse used for build SQL.
+
+        ``use_sea`` is accepted for backward API compatibility but deliberately
+        ignored: build DDL and writes must always use the Thrift transport.
+        """
         wid = (warehouse_id or "").strip()
         if not wid:
             raise ValidationError("No Build SQL Warehouse selected")
@@ -392,7 +394,7 @@ class SettingsService:
             token,
             registry_cfg,
             wid,
-            use_sea=bool(use_sea),
+            use_sea=False,
         )
         if not ok:
             raise InfrastructureError(
@@ -401,7 +403,7 @@ class SettingsService:
         return {
             "success": True,
             "warehouse_id": wid,
-            "use_sea": bool(use_sea),
+            "use_sea": False,
         }
 
     @staticmethod

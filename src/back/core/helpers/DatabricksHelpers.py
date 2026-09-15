@@ -344,26 +344,8 @@ class DatabricksHelpers:
 
     @staticmethod
     def resolve_build_use_sea(domain, settings) -> bool:
-        """Resolve the transport configured for the build SQL warehouse."""
-        from back.objects.session import global_config_service
-
-        host, token = DatabricksHelpers.get_databricks_host_and_token(domain, settings)
-        registry_cfg = DatabricksHelpers._resolve_registry_cfg(domain, settings)
-        if not host or not registry_cfg.get("catalog") or not registry_cfg.get(
-            "schema"
-        ):
-            return False
-        try:
-            return bool(
-                global_config_service.get_build_warehouse_use_sea(
-                    host, token, registry_cfg
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 - best-effort config resolution
-            logger.debug(
-                "Could not resolve build use_sea, defaulting to False: %s", exc
-            )
-            return False
+        """Return False because build DDL and writes never use Kernel/SEA."""
+        return False
 
     @staticmethod
     def resolve_analytics_job_enabled(domain, settings) -> bool:

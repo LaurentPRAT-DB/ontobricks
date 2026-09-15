@@ -159,8 +159,8 @@ class GlobalConfigService:
     def get_build_warehouse_use_sea(
         self, host: str, token: str, registry_cfg: Dict[str, str]
     ) -> bool:
-        """Return whether builds use the Kernel Statement Execution API path."""
-        return bool(self.get(host, token, registry_cfg, "warehouse_use_sea", False))
+        """Return False because build SQL always uses the Thrift transport."""
+        return False
 
     def get_delta_warehouse_id(
         self, host: str, token: str, registry_cfg: Dict[str, str]
@@ -301,14 +301,14 @@ class GlobalConfigService:
         *,
         use_sea: bool,
     ) -> Tuple[bool, str]:
-        """Persist the build warehouse and its SQL connector transport."""
+        """Persist the build warehouse and clear any legacy Kernel transport flag."""
         return self._save(
             host,
             token,
             registry_cfg,
             {
                 "warehouse_id": (warehouse_id or "").strip(),
-                "warehouse_use_sea": bool(use_sea),
+                "warehouse_use_sea": False,
             },
         )
 

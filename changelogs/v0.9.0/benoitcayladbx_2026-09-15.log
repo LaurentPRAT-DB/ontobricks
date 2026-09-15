@@ -628,3 +628,66 @@ Tests:
   successful Ready, and subsequent Refresh states at `1440x900` and `375x812`;
   hidden controls were not focusable and no unexpected console or asset errors
   remained after success.
+
+## Keep build SQL on Thrift
+
+Context: Deployed builds could inherit the legacy SEA/Kernel setting and then
+attempt CloudFetch downloads through the Kernel transport, producing repeated
+network failures. Build DDL and writes now always use Thrift, while the separate
+Lakehouse//RT query warehouse retains its required SEA/Kernel path. Expected
+403 responses from the app-permission REST probe also fall back quietly.
+
+Changes:
+
+1. `src/back/objects/session/GlobalConfigService.py`
+   Ignores stale build SEA values and always persists the compatibility flag as false.
+2. `src/back/core/helpers/DatabricksHelpers.py`
+   Resolves the build transport unconditionally to Thrift.
+3. `src/back/objects/domain/SettingsService.py`
+   Ignores legacy build SEA requests and reports the disabled transport.
+4. `src/api/routers/internal/settings.py`
+   Stops forwarding client-provided SEA values for the build warehouse.
+5. `src/back/objects/registry/PermissionService.py`
+   Downgrades the expected REST 403 fallback from warning to debug while retaining warnings for unexpected failures.
+6. `src/front/templates/settings.html`
+   Removes the obsolete build SEA/Kernel checkbox.
+7. `src/front/static/config/js/settings.js`
+   Removes build SEA hydration and request payload wiring.
+8. `tests/units/settings/test_delta_warehouse_config.py`
+   Covers stale settings, API compatibility, persistence, and fixed-Thrift resolution.
+9. `tests/units/settings/test_cloud_fetch_toggle.py`
+   Verifies CloudFetch remains independently configurable without build SEA controls.
+10. `tests/units/api/test_ui_rendering.py`
+    Verifies the obsolete checkbox is absent from rendered Settings.
+11. `tests/units/auth/test_permissions.py`
+    Covers quiet 403 fallback and warning retention for unexpected REST failures.
+12. `docs/user-guide.md`
+    Documents the fixed build transport and separate Lakehouse//RT query role.
+13. `docs/architecture.md`
+    Marks `warehouse_use_sea` as a disabled legacy compatibility key.
+
+Modified files:
+- src/back/objects/session/GlobalConfigService.py
+- src/back/core/helpers/DatabricksHelpers.py
+- src/back/objects/domain/SettingsService.py
+- src/api/routers/internal/settings.py
+- src/back/objects/registry/PermissionService.py
+- src/front/templates/settings.html
+- src/front/static/config/js/settings.js
+- tests/units/settings/test_delta_warehouse_config.py
+- tests/units/settings/test_cloud_fetch_toggle.py
+- tests/units/api/test_ui_rendering.py
+- tests/units/auth/test_permissions.py
+- docs/user-guide.md
+- docs/architecture.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- Focused regressions: `266 passed, 1 warning in 3.16s`.
+- Permission fallback: `2 passed, 67 deselected, 1 warning in 1.04s`.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6139 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.51s`.
+- Diagnostics: IDE lint inspection reported no errors in changed files.
+- Browser: Settings passed at 1440 and 375 pixels with Build and CloudFetch
+  controls intact, build SEA absent, Lakehouse//RT query controls intact, and
+  no console errors or failed requests.

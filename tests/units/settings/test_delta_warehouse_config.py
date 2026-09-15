@@ -75,7 +75,14 @@ class TestGlobalConfigBuildWarehouse:
         with patch.object(svc, "load", return_value=GlobalConfigService._empty()):
             assert svc.get_build_warehouse_use_sea("h", "t", REGISTRY_CFG) is False
 
-    def test_set_build_warehouse_persists_independent_transport(self):
+    def test_stale_build_transport_is_ignored(self):
+        svc = GlobalConfigService()
+        stored = GlobalConfigService._empty()
+        stored["warehouse_use_sea"] = True
+        with patch.object(svc, "load", return_value=stored):
+            assert svc.get_build_warehouse_use_sea("h", "t", REGISTRY_CFG) is False
+
+    def test_set_build_warehouse_always_disables_kernel_transport(self):
         svc = GlobalConfigService()
         with patch.object(
             svc, "_save", return_value=(True, "ok")
@@ -86,7 +93,7 @@ class TestGlobalConfigBuildWarehouse:
         assert ok
         assert mock_save.call_args[0][3] == {
             "warehouse_id": "wh-build",
-            "warehouse_use_sea": True,
+            "warehouse_use_sea": False,
         }
 
 
@@ -109,22 +116,10 @@ class TestResolveBuildWarehouse:
             )
         query_resolver.assert_not_called()
 
-    def test_resolves_build_transport_independently(self):
-        with patch.object(
-            DatabricksHelpers,
-            "get_databricks_host_and_token",
-            return_value=("https://h", "tok"),
-        ), patch.object(
-            DatabricksHelpers,
-            "_resolve_registry_cfg",
-            return_value=REGISTRY_CFG,
-        ), patch(
-            "back.objects.session.global_config_service.get_build_warehouse_use_sea",
-            return_value=True,
-        ):
-            assert DatabricksHelpers.resolve_build_use_sea(
-                MagicMock(), MagicMock()
-            ) is True
+    def test_build_transport_is_always_thrift(self):
+        assert DatabricksHelpers.resolve_build_use_sea(
+            MagicMock(), MagicMock()
+        ) is False
 
     def test_build_credentials_require_warehouse(self):
         with patch.object(
@@ -393,7 +388,7 @@ class TestSettingsServiceDeltaWarehouse:
 
 
 class TestSettingsServiceBuildWarehouse:
-    def test_current_config_includes_build_transport(self):
+    def test_current_config_reports_build_transport_disabled(self):
         domain = MagicMock()
         domain.databricks = {"host": "https://h", "token": "tok"}
         settings = MagicMock(
@@ -408,9 +403,6 @@ class TestSettingsServiceBuildWarehouse:
             "back.objects.domain.SettingsService.resolve_warehouse_id",
             return_value="wh-build",
         ), patch(
-            "back.objects.domain.SettingsService.resolve_build_use_sea",
-            return_value=True,
-        ), patch(
             "back.objects.domain.SettingsService.resolve_use_cloud_fetch",
             return_value=True,
         ), patch.object(
@@ -420,7 +412,7 @@ class TestSettingsServiceBuildWarehouse:
         ):
             result = SettingsService.build_current_config(MagicMock(), settings)
         assert result["warehouse_id"] == "wh-build"
-        assert result["warehouse_use_sea"] is True
+        assert result["warehouse_use_sea"] is False
 
     def test_select_build_warehouse_rejects_rt(self):
         with pytest.raises(ValidationError, match="does not support build"):
@@ -434,7 +426,7 @@ class TestSettingsServiceBuildWarehouse:
                 MagicMock(),
             )
 
-    def test_select_build_warehouse_persists_transport(self):
+    def test_select_build_warehouse_ignores_legacy_sea_request(self):
         domain = MagicMock()
         settings = MagicMock(sql_warehouse_id="")
         with patch.object(
@@ -461,10 +453,10 @@ class TestSettingsServiceBuildWarehouse:
         assert result == {
             "success": True,
             "warehouse_id": "wh-build",
-            "use_sea": True,
+            "use_sea": False,
         }
         mock_set.assert_called_once_with(
-            "h", "t", REGISTRY_CFG, "wh-build", use_sea=True
+            "h", "t", REGISTRY_CFG, "wh-build", use_sea=False
         )
 
     def test_select_build_warehouse_can_override_bound_default(self):
