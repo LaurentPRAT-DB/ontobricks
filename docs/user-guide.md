@@ -1922,7 +1922,9 @@ updates each row with live elapsed time while the stage is running. Completed
 stages keep their final duration, and the footer shows the total build duration
 for the full run. Use **Export** to download the build log as a text file for
 audit trails or troubleshooting, and **Hide** to collapse the card without
-stopping the underlying task.
+stopping the underlying task. Monitoring starts immediately, refreshes rapidly
+through the short setup stages, and slows during the long adjacency build so
+each row reflects the latest server state without overlapping requests.
 
 > **Note**: If the triple store table already exists, you can choose to **drop and recreate** it or append to the existing data.
 

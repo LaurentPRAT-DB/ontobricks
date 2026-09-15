@@ -58,3 +58,39 @@ def test_lakehouse_poll_renders_full_task_log() -> None:
     assert "TimedTaskLog.create" in js
     assert 'cardId: "dbxBuildLogCard"' in js
     assert "_dbxTimedBuildLog.render(task)" in js
+
+
+def _lakehouse_poll_body() -> str:
+    source = DBX_BUILD_JS.read_text(encoding="utf-8")
+    start = source.index("function pollDatabricksBuildTask(")
+    end = source.index("\nasync function checkAndResumeDatabricksTask", start)
+    return source[start:end]
+
+
+def test_lakehouse_build_poll_starts_immediately_without_interval() -> None:
+    body = _lakehouse_poll_body()
+    assert "pollOnce();" in body
+    assert "setInterval(" not in body
+    assert "setTimeout(pollOnce, _dbxBuildPollDelay(task))" in body
+
+
+def test_lakehouse_build_poll_uses_adaptive_delays() -> None:
+    js = DBX_BUILD_JS.read_text(encoding="utf-8")
+    assert "const DBX_BUILD_FAST_POLL_MS = 300;" in js
+    assert "const DBX_BUILD_FINAL_POLL_MS = 1000;" in js
+    start = js.index("function _dbxBuildPollDelay(")
+    end = js.index("\nfunction applyTripleStoreBackendPanels", start)
+    body = js[start:end]
+    assert "current_step" in body
+    assert "steps.length - 1" in body
+
+
+def test_lakehouse_build_poll_stops_after_terminal_or_error() -> None:
+    body = _lakehouse_poll_body()
+    terminal_start = body.index("if (task.status === 'completed'")
+    schedule_start = body.index(
+        "setTimeout(pollOnce, _dbxBuildPollDelay(task))"
+    )
+    assert "return;" in body[terminal_start:schedule_start]
+    catch_start = body.index("} catch (e)")
+    assert "setTimeout(" not in body[catch_start:]

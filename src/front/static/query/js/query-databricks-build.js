@@ -5,6 +5,8 @@
 
 const DBX_BUILD_TASK_KEY = 'ontobricks_databricks_build_task';
 const DBX_ADJ_REFRESH_TASK_KEY = 'ontobricks_databricks_adjacency_refresh_task';
+const DBX_BUILD_FAST_POLL_MS = 300;
+const DBX_BUILD_FINAL_POLL_MS = 1000;
 
 let dbxBuildReady = false;
 let dbxBuildRunning = false;
@@ -106,6 +108,14 @@ function _taskStepMessage(task) {
     const step = steps[idx];
     if (step && step.description) return step.description;
     return task.message || '';
+}
+
+function _dbxBuildPollDelay(task) {
+    const steps = Array.isArray(task?.steps) ? task.steps : [];
+    const finalStep = Math.max(steps.length - 1, 0);
+    return Number(task?.current_step || 0) >= finalStep
+        ? DBX_BUILD_FINAL_POLL_MS
+        : DBX_BUILD_FAST_POLL_MS;
 }
 
 function applyTripleStoreBackendPanels() {
@@ -433,7 +443,7 @@ function pollDatabricksBuildTask(taskId) {
     const step = document.getElementById('dbxBuildProgressStep');
     if (progressArea) progressArea.classList.remove('d-none');
 
-    const timer = setInterval(async () => {
+    async function pollOnce() {
         try {
             const resp = await fetch('/tasks/' + encodeURIComponent(taskId), { credentials: 'same-origin' });
             const data = await resp.json();
@@ -453,12 +463,12 @@ function pollDatabricksBuildTask(taskId) {
             renderDbxBuildLog(task);
 
             if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
-                clearInterval(timer);
                 _finishDbxBuild(task);
                 await loadDatabricksBuildInfo();
+                return;
             }
+            setTimeout(pollOnce, _dbxBuildPollDelay(task));
         } catch (e) {
-            clearInterval(timer);
             sessionStorage.removeItem(DBX_BUILD_TASK_KEY);
             dbxBuildRunning = false;
             const btn = document.getElementById('dbxBuildStartBtn');
@@ -473,7 +483,9 @@ function pollDatabricksBuildTask(taskId) {
             _dbxNotify('Build monitoring failed: ' + msg, 'error');
             console.warn('[DatabricksBuild] poll error', e);
         }
-    }, 1500);
+    }
+
+    pollOnce();
 }
 
 async function checkAndResumeDatabricksTask(taskKey, onRunningTask, onTerminalTask) {

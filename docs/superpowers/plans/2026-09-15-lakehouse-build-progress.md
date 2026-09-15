@@ -530,7 +530,7 @@ def test_lakehouse_build_poll_uses_adaptive_delays() -> None:
     start = js.index("function _dbxBuildPollDelay(")
     end = js.index("\nfunction applyTripleStoreBackendPanels", start)
     body = js[start:end]
-    assert "task.current_step" in body
+    assert "current_step" in body
     assert "steps.length - 1" in body
 ```
 
