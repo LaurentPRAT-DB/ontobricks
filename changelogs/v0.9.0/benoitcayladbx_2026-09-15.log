@@ -244,3 +244,45 @@ Modified files:
 Tests:
 - Focused: `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py` →
   `8 passed, 1 warning in 0.90s`.
+
+## Extract shared timed task-log renderer
+
+Context: Task 3 of the Lakehouse build-progress plan requires moving the
+existing Lakebase timed build-log renderer into a reusable Digital Twin frontend
+component, while preserving Lakebase behavior and public wrappers. This prepares
+Task 4 to reuse the same log component for Lakehouse without changing build
+semantics.
+
+Changes:
+
+1. `tests/units/front/test_timed_build_log_contract.py`
+   Added RED-first contracts for script load order, shared component wiring, and generic CSS scoping.
+2. `src/front/static/query/js/timed-task-log.js`
+   Extracted the full timed task-log renderer with `TimedTaskLog.create(config)` and `show/hide/render/export` instance methods.
+3. `src/front/static/query/js/query-sync.js`
+   Replaced Lakebase inline build-log implementation with wrapper delegation to a configured `TimedTaskLog` instance.
+4. `src/front/static/query/css/query-sync.css`
+   Re-scoped build-log styles from `#syncBuildLogCard` to the shared `.timed-task-log-card` class.
+5. `src/front/templates/partials/dtwin/_query_sync.html`
+   Added `.timed-task-log-card` to the Lakebase build-log card without changing IDs or markup structure.
+6. `src/front/templates/dtwin.html`
+   Loaded `query/js/timed-task-log.js` before `query-databricks-build.js` and `query-sync.js`.
+
+Modified files:
+- tests/units/front/test_timed_build_log_contract.py
+- src/front/static/query/js/timed-task-log.js
+- src/front/static/query/js/query-sync.js
+- src/front/static/query/css/query-sync.css
+- src/front/templates/partials/dtwin/_query_sync.html
+- src/front/templates/dtwin.html
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/front/test_timed_build_log_contract.py` →
+  `4 failed` (expected before implementation).
+- GREEN: `uv run --frozen pytest -q tests/units/front/test_timed_build_log_contract.py tests/units/front/test_button_design_contract.py` →
+  `25 passed, 1 warning in 0.23s`.
+- Required full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `1 failed, 6116 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.26s`
+  (existing unrelated failure in `tests/units/objects/test_build_pipeline_materialize.py::TestWhatABuildReports::test_a_view_only_build_reports_its_mode`,
+  `_StubTM` missing `skip_step`).
