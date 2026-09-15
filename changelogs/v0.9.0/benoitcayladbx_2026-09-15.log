@@ -73,3 +73,120 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
 
 Tests: uv run --frozen pytest -q -m "not scenario" → 6104 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 42.90s
+
+## Group Lakebase graph indexes by domain
+
+Context: Settings → Lakebase → Objects grouped each graph's reader view,
+`_sync`, and `__app` objects, but displayed `_adj_in`, `_adj_out`, and
+`_entity_search` as unrelated cards. These rebuildable indexes now follow
+their owning domain/version for display and grouped deletion.
+
+Changes:
+
+1. `src/front/static/config/js/settings.js`
+   Normalizes graph-index suffixes to the same domain/version key used by the
+   existing Lakebase storage objects.
+2. `tests/units/front/test_lakebase_object_grouping.py`
+   Adds regression contracts for recognized suffixes, unrelated names, card
+   counts, and grouped-deletion registration.
+3. `docs/user-guide.md`
+   Documents Lakebase object grouping and whole-domain deletion behavior.
+4. `docs/superpowers/plans/2026-09-15-lakebase-domain-object-grouping.md`
+   Records the approved test-first implementation plan.
+
+Modified files:
+- src/front/static/config/js/settings.js
+- tests/units/front/test_lakebase_object_grouping.py
+- docs/user-guide.md
+- docs/superpowers/plans/2026-09-15-lakebase-domain-object-grouping.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- RED: `1 failed, 2 passed` as expected before implementation.
+- Focused: `17 passed, 0 failed`.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6108 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.59s`.
+- Live UI: one `cust360auto_v5` card grouped the reader view, `__app`,
+  `_adj_in`, `_adj_out`, `_entity_search`, and `_sync` with count `6`;
+  desktop and 375 px mobile layouts passed with no console errors.
+
+## Move Lakehouse Save onto the title row
+
+Context: Settings → Lakehouse persisted the SQL warehouse with an Apply
+control next to the warehouse select. Other Settings pages keep Save on the
+section title row.
+
+Changes:
+
+1. src/front/templates/settings.html
+   Renamed the Lakehouse action to Save and placed it on the section-header
+   title row; left Refresh list next to the warehouse select.
+2. tests/units/front/test_button_design_contract.py
+   Added a structural contract that the Lakehouse Save lives in the title row.
+
+Modified files:
+- src/front/templates/settings.html
+- tests/units/front/test_button_design_contract.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6108 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.39s
+
+## Restrict Lakehouse objects by domain backend
+
+Context: Settings → Lakehouse → Objects listed every `triplestore_*` object
+from the Registry UC schema, including objects owned by Lakebase and Neo4j
+domain versions. The inventory now includes only known Lakehouse versions.
+
+Changes:
+
+1. src/back/objects/domain/SettingsService.py
+   Filters triple-store and analytics groups against registry versions whose
+   graph backend is `databricks`.
+2. src/front/templates/settings.html
+   Clarifies that the Objects inventory is restricted to Lakehouse versions.
+3. tests/units/settings/test_delta_objects.py
+   Covers mixed-backend filtering and exclusion of unattributed analytics objects.
+4. docs/user-guide.md
+   Documents the backend-specific Lakehouse object inventory.
+
+Modified files:
+- src/back/objects/domain/SettingsService.py
+- src/front/templates/settings.html
+- tests/units/settings/test_delta_objects.py
+- docs/user-guide.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6109 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 44.51s
+
+## Define Lakehouse build task-step contract
+
+Context: Task 1 of the Lakehouse build-progress plan requires a backend-owned,
+materialization-aware step contract so later pipeline execution and UI progress
+rendering share one ordered source of truth.
+
+Changes:
+
+1. `tests/units/graphdb/delta/test_delta_build_pipeline.py`
+   Added a parameterized contract test asserting the seven ordered step names
+   and the mode-specific materialization description for `table` vs `view`.
+2. `src/back/core/graphdb/delta/DeltaTripleStoreBuildPipeline.py`
+   Added `lakehouse_build_steps(materialization)` returning the exact seven-step
+   backend contract with verbatim descriptions.
+3. `src/api/routers/internal/dtwin.py`
+   Resolved Lakehouse materialization once in
+   `start_databricks_triplestore_build` and delegated `tm.create_task(..., steps=...)`
+   to the shared step factory.
+
+Modified files:
+- tests/units/graphdb/delta/test_delta_build_pipeline.py
+- src/back/core/graphdb/delta/DeltaTripleStoreBuildPipeline.py
+- src/api/routers/internal/dtwin.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py` →
+  `ImportError: cannot import name 'lakehouse_build_steps'` (collection failure, expected).
+- GREEN: `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py` →
+  `6 passed, 1 warning in 0.83s`.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6111 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 42.39s`.

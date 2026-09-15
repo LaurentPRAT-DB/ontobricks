@@ -1430,6 +1430,9 @@ async def start_databricks_triplestore_build(
     import threading
     from back.core.task_manager import get_task_manager
     from back.core.graphdb.GraphDBFactory import GraphDBFactory
+    from back.core.graphdb.delta.DeltaTripleStoreBuildPipeline import (
+        lakehouse_build_steps,
+    )
     from back.objects.digitaltwin._databricks_triplestore_build import (
         run_databricks_triplestore_build,
     )
@@ -1479,17 +1482,13 @@ async def start_databricks_triplestore_build(
 
     domain_snap = DomainSnapshot(domain)
     base_uri = domain.ontology.get("base_uri", DEFAULT_BASE_URI)
+    materialization = GraphDBFactory.resolve_lakehouse_materialization(domain, settings)
 
     tm = get_task_manager()
     task = tm.create_task(
         name="Databricks Triple Store Build",
         task_type="databricks_triplestore_build",
-        steps=[
-            {"name": "prepare", "description": "Preparing mappings and generating queries"},
-            {"name": "view", "description": "Creating the R2RML SQL view"},
-            {"name": "materialize", "description": "Materializing Delta table in Unity Catalog"},
-            {"name": "finalize", "description": "Optimizing Delta table"},
-        ],
+        steps=lakehouse_build_steps(materialization),
     )
 
     def run_build():

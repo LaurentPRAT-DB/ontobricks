@@ -17,6 +17,23 @@ from back.objects.digitaltwin.models import DomainSnapshot
 logger = get_logger(__name__)
 
 
+def lakehouse_build_steps(materialization: str) -> list[dict[str, str]]:
+    materialize_description = (
+        "Exposing pass-through data view"
+        if materialization == "view"
+        else "Materializing Delta table in Unity Catalog"
+    )
+    return [
+        {"name": "prepare", "description": "Preparing mappings and generating queries"},
+        {"name": "view", "description": "Creating the R2RML SQL view"},
+        {"name": "materialize", "description": materialize_description},
+        {"name": "inferred", "description": "Preparing inferred-triples table"},
+        {"name": "graph_view", "description": "Creating knowledge graph view"},
+        {"name": "optimize", "description": "Optimizing Delta table"},
+        {"name": "adjacency", "description": "Building adjacency indexes"},
+    ]
+
+
 class DeltaTripleStoreBuildPipeline:
     """Build the UC Delta triple store from R2RML mappings only.
 

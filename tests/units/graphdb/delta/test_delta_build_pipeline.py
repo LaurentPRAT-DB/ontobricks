@@ -7,7 +7,32 @@ import pytest
 
 from back.core.graphdb.delta.DeltaTripleStoreBuildPipeline import (
     DeltaTripleStoreBuildPipeline,
+    lakehouse_build_steps,
 )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("mode", "materialize_description"),
+    [
+        ("table", "Materializing Delta table in Unity Catalog"),
+        ("view", "Exposing pass-through data view"),
+    ],
+)
+def test_lakehouse_build_steps_name_materialization_mode(
+    mode: str, materialize_description: str
+) -> None:
+    steps = lakehouse_build_steps(mode)
+    assert [step["name"] for step in steps] == [
+        "prepare",
+        "view",
+        "materialize",
+        "inferred",
+        "graph_view",
+        "optimize",
+        "adjacency",
+    ]
+    assert steps[2]["description"] == materialize_description
 
 
 @pytest.mark.unit
