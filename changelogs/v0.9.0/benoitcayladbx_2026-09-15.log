@@ -222,3 +222,25 @@ Tests:
   `8 passed, 1 warning in 0.88s`.
 - GREEN (full required suite): `uv run --frozen pytest -q -m "not scenario"` →
   `6113 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 42.38s`.
+
+## Task 2 review fix: remove skip fallback
+
+Context: Task 2 review flagged `_skip_step()` as unnecessary compatibility code.
+The view-mode optimization branch now uses the exact specified
+`TaskManager.skip_step` semantics directly.
+
+Changes:
+
+1. `src/back/core/graphdb/delta/DeltaTripleStoreBuildPipeline.py`
+   Removed `_skip_step()` helper and direct-fallback logic; switched view-mode
+   optimization branch to call
+   `self.tm.skip_step(self.task_id, "Optimization not needed for pass-through view")`
+   directly.
+
+Modified files:
+- src/back/core/graphdb/delta/DeltaTripleStoreBuildPipeline.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- Focused: `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py` →
+  `8 passed, 1 warning in 0.90s`.

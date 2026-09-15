@@ -156,7 +156,10 @@ class DeltaTripleStoreBuildPipeline:
                 materialize.optimize_table(self.source_client, self.data_table)
                 self._log_phase("optimize", t_phase)
             else:
-                self._skip_step("Optimization not needed for pass-through view")
+                self.tm.skip_step(
+                    self.task_id,
+                    "Optimization not needed for pass-through view",
+                )
 
             t_phase = time.time()
             self.tm.advance_step(self.task_id, "Building adjacency indexes...")
@@ -364,14 +367,6 @@ class DeltaTripleStoreBuildPipeline:
             self.source_client, domain=self.domain, settings=self.settings
         )
         store.rebuild_adjacency(source)
-
-    def _skip_step(self, message: str) -> None:
-        skip_step = getattr(self.tm, "skip_step", None)
-        if callable(skip_step):
-            skip_step(self.task_id, message)
-            return
-        # Backward compatibility for lightweight test stubs / legacy managers.
-        self.tm.update_progress(self.task_id, 90, message)
 
     def _complete_task(self) -> None:
         duration = time.time() - self.start_time
