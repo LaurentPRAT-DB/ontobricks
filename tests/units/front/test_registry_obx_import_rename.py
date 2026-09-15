@@ -13,10 +13,13 @@ SCRIPT = (ROOT / "src/front/static/registry/js/registry.js").read_text(
 TEMPLATE = (
     ROOT / "src/front/templates/partials/registry/_import_obx_modal.html"
 ).read_text(encoding="utf-8")
+STYLES = (ROOT / "src/front/static/registry/css/registry.css").read_text(
+    encoding="utf-8"
+)
 
 
 def test_import_preview_has_import_as_contract():
-    assert "<th>Import as</th>" in TEMPLATE
+    assert ">Import as</th>" in TEMPLATE
     assert 'class="form-control form-control-sm import-obx-name"' in SCRIPT
     assert 'pattern="[A-Z][A-Za-z0-9]*"' in SCRIPT
     assert "actionRadio(idx, 'rename'" not in SCRIPT
@@ -40,3 +43,10 @@ def test_import_action_controls_follow_target_name():
     assert "import-obx-conflict-actions" in SCRIPT
     assert "import-obx-create-action" in SCRIPT
     assert "syncImportActionControls(row)" in SCRIPT
+
+
+def test_import_name_column_keeps_a_readable_width():
+    assert 'class="registry-th-import-obx-name"' in TEMPLATE
+    assert ".registry-th-import-obx-name" in STYLES
+    assert "min-width: 14rem;" in STYLES
+    assert ".registry-th-import-obx-action {\n    width: 12rem;" in STYLES
