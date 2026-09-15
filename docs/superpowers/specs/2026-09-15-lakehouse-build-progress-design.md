@@ -32,6 +32,30 @@ log card matching the Lakebase interaction:
 The card appears when a build starts or an active build is restored. It remains
 visible when the task completes or fails so the user can inspect and export it.
 
+## Real-Time Update Behavior
+
+Task timestamps show that early Lakehouse stages can complete faster than the
+existing 1.5-second browser polling interval. The browser also waits one full
+interval before its first request. As a result, the task is correctly updated
+on the server while the UI initially shows only its waiting state, then renders
+several completed stages in one refresh.
+
+Lakehouse build monitoring will therefore:
+
+- fetch the task immediately when a build starts or is restored;
+- poll every 300 milliseconds while stages 1–6 are active;
+- poll every 1 second while the final adjacency stage is active;
+- schedule the next poll only after the current request finishes, preventing
+  overlapping requests;
+- render the latest server state directly, without delaying or replaying fast
+  stages.
+
+The 25-millisecond preparation stage may still finish before the first response.
+This is intentional: the UI represents current task truth rather than slowing
+the build to make every transient state visible. The seeded pending rows become
+visible on the immediate first fetch, and subsequent stages are observed at the
+fast polling cadence.
+
 ## Lakehouse Build Stages
 
 The task will report these stages:
@@ -75,6 +99,18 @@ silently folded into another stage.
 
 No new endpoint or task payload field is required.
 
+### Polling lifecycle
+
+`query-databricks-build.js` retains ownership of Lakehouse polling. Its build
+monitor uses one asynchronous polling function that fetches, renders, handles a
+terminal state, and otherwise schedules its next invocation with `setTimeout`.
+The delay is selected from the task's current step: 300 milliseconds before the
+adjacency stage and 1 second during adjacency. A failed task request stops the
+monitor and follows the existing error-notification path.
+
+Adjacency-only refresh monitoring and Lakebase build monitoring are outside
+this change.
+
 ## Error and Cancellation Behavior
 
 An exception leaves the active stage failed through the existing
@@ -94,6 +130,8 @@ state handling.
   view mode skips optimization.
 - Frontend contract tests verify Lakehouse includes the timed log card and uses
   the shared renderer.
+- Frontend polling tests verify the immediate first request, adaptive delay,
+  non-overlapping scheduling, terminal stop, and error stop.
 - Existing Lakebase build-log tests guard against regressions during renderer
   extraction.
 - Run the full non-scenario suite with
@@ -102,5 +140,6 @@ state handling.
 ## Scope
 
 This change covers interactive Lakehouse graph builds on the Digital Twin Build
-page. It does not alter graph data, build scheduling, adjacency-refresh task
-presentation, or the external build API.
+page, including its task polling cadence. It does not alter graph data, backend
+task execution, adjacency-refresh task presentation, Lakebase polling, or the
+external build API.
