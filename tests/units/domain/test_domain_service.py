@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock
 from back.objects.domain import Domain
 from back.core.errors import ConflictError, ValidationError
+from back.core.helpers import build_auto_base_uri
 
 
 def _mock_domain(
@@ -116,6 +117,15 @@ class TestSaveDomainInfo:
         assert result["base_uri"].endswith("/AcmeSales#")
         assert result["base_uri"] != "Unknown"
         assert result["base_uri_auto"] is True
+
+    def test_shared_auto_base_uri_matches_domain_generation(self):
+        domain = _mock_domain()
+        result = Domain(domain).save_domain_info({"name": "ClaimsSales"})
+        assert result["base_uri"].endswith("/ClaimsSales#")
+        assert result["base_uri_auto"] is True
+        assert build_auto_base_uri(
+            "Claims Sales", "https://example.org"
+        ) == "https://example.org/Claims_Sales#"
 
     def test_custom_base_uri_preserved_over_auto(self):
         """A custom URI with base_uri_auto=False is kept verbatim."""

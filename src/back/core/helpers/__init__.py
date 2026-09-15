@@ -50,6 +50,7 @@ resolve_warehouse_id = DatabricksHelpers.resolve_warehouse_id
 resolve_build_warehouse_id = DatabricksHelpers.resolve_build_warehouse_id
 resolve_delta_warehouse_id = DatabricksHelpers.resolve_delta_warehouse_id
 resolve_default_base_uri = DatabricksHelpers.resolve_default_base_uri
+build_auto_base_uri = DatabricksHelpers.build_auto_base_uri
 resolve_default_emoji = DatabricksHelpers.resolve_default_emoji
 resolve_use_cloud_fetch = DatabricksHelpers.resolve_use_cloud_fetch
 resolve_lakehouse_use_sea = DatabricksHelpers.resolve_lakehouse_use_sea
@@ -74,6 +75,7 @@ __all__ = [
     "resolve_build_warehouse_id",
     "resolve_delta_warehouse_id",
     "resolve_default_base_uri",
+    "build_auto_base_uri",
     "resolve_default_emoji",
     "resolve_use_cloud_fetch",
     "resolve_lakehouse_use_sea",

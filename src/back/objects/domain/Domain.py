@@ -38,6 +38,7 @@ from back.core.databricks import (
     validate_metadata,
 )
 from back.core.helpers import (
+    build_auto_base_uri,
     get_databricks_host_and_token,
     resolve_default_base_uri,
     resolve_warehouse_id,
@@ -540,12 +541,9 @@ class Domain:
         except Exception as exc:  # noqa: BLE001 — never fail a save on URI gen
             logger.debug("default base URI resolve failed: %s", exc)
             default_domain = ""
-        default_domain = (default_domain or DEFAULT_BASE_URI).rstrip("/#")
-        # Domain display names often contain spaces ("WRFM - Shell"); those
-        # must not leak into the IRI path or R2RML Turtle serialization fails.
-        raw_name = (domain_name or "").strip() or "MyDomain"
-        safe_name = re.sub(r"[^a-zA-Z0-9_-]", "_", raw_name).strip("_") or "MyDomain"
-        return self._sanitize_base_uri(f"{default_domain}/{safe_name}#")
+        return self._sanitize_base_uri(
+            build_auto_base_uri(domain_name, default_domain)
+        )
 
     def get_domain_template_data(self) -> Dict[str, Any]:
         """Get project data for template rendering.

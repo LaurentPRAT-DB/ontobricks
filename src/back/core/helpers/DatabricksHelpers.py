@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -254,6 +255,16 @@ class DatabricksHelpers:
         return DatabricksHelpers._resolve_global_setting(
             domain, settings, "get_default_base_uri"
         ) or DEFAULT_BASE_URI.rstrip("/")
+
+    @staticmethod
+    def build_auto_base_uri(domain_name: str, default_domain: str) -> str:
+        """Build the default ontology namespace for a domain display name."""
+        base = (default_domain or DEFAULT_BASE_URI).rstrip("/#")
+        raw_name = (domain_name or "").strip() or "MyDomain"
+        safe_name = (
+            re.sub(r"[^a-zA-Z0-9_-]", "_", raw_name).strip("_") or "MyDomain"
+        )
+        return f"{base}/{safe_name}#"
 
     @staticmethod
     def resolve_default_emoji(domain, settings) -> str:
