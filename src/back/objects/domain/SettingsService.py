@@ -1876,7 +1876,7 @@ class SettingsService:
         session_mgr: SessionManager,
         settings: Settings,
     ) -> Dict[str, Any]:
-        """List triple-store and analytics UC objects, grouped by domain version."""
+        """List Lakehouse-owned UC objects, grouped by domain version."""
         from back.core.graphdb.delta.objects import (
             domain_match_key,
             fetch_uc_schema_tables,
@@ -1884,7 +1884,7 @@ class SettingsService:
             group_triplestore_objects,
         )
 
-        _, host, token, registry_cfg = SettingsService._resolve_context(
+        domain_obj, host, token, registry_cfg = SettingsService._resolve_context(
             session_mgr, settings
         )
         reg = registry_cfg if isinstance(registry_cfg, dict) else {}
@@ -1911,6 +1911,9 @@ class SettingsService:
             }
 
         try:
+            lakehouse_keys = SettingsService._lakehouse_domain_version_keys(
+                domain_obj, settings
+            )
             raw_tables = fetch_uc_schema_tables(catalog, schema)
             groups = group_triplestore_objects(raw_tables, catalog, schema)
             domains = [
@@ -1927,13 +1930,16 @@ class SettingsService:
                     ],
                 }
                 for grp in sorted(groups.values(), key=lambda g: g["base"])
+                if domain_match_key(grp["base"]) in lakehouse_keys
             ]
             analytics_location, analytics, analytics_message = (
                 SettingsService._analytics_objects(
                     settings, catalog, schema, raw_tables
                 )
             )
-            domain_keys = {d["key"] for d in domains if d["key"]}
+            analytics = [
+                group for group in analytics if group["key"] in lakehouse_keys
+            ]
             return {
                 "success": True,
                 "registry_configured": True,
@@ -1942,7 +1948,7 @@ class SettingsService:
                 "registry_schema": schema,
                 "domains": domains,
                 "analytics": analytics,
-                "orphans": [a for a in analytics if a["key"] not in domain_keys],
+                "orphans": [],
                 "analytics_location": analytics_location,
                 "analytics_message": analytics_message,
             }
@@ -1951,6 +1957,33 @@ class SettingsService:
             raise InfrastructureError(
                 "list Delta triple-store objects failed", detail=str(exc)
             ) from exc
+
+    @staticmethod
+    def _lakehouse_domain_version_keys(
+        domain_obj: Any,
+        settings: Settings,
+    ) -> set[str]:
+        """Return physical object keys for versions using the Lakehouse backend."""
+        svc = RegistryService.from_context(domain_obj, settings)
+        ok, details, message = svc.list_domain_details_cached()
+        if not ok:
+            raise InfrastructureError(
+                "Failed to list registry domains", detail=message
+            )
+
+        keys: set[str] = set()
+        for domain in details or []:
+            if not isinstance(domain, dict):
+                continue
+            folder = sanitize_domain_folder(str(domain.get("name") or ""))
+            for version in domain.get("versions") or []:
+                if not isinstance(version, dict):
+                    continue
+                backend = str(version.get("graph_backend") or "").strip().lower()
+                version_id = str(version.get("version") or "").strip()
+                if backend == "databricks" and version_id:
+                    keys.add(f"{folder}_{version_id}".lower())
+        return keys
 
     @staticmethod
     def _analytics_objects(

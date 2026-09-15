@@ -114,13 +114,17 @@
             <!-- ==================== DELTA TRIPLE STORE SECTION ==================== -->
             <div id="delta-section" class="sidebar-section">
                 <div class="content-section">
-                    <div class="section-header mb-4">
+                    <div class="section-header d-flex justify-content-between align-items-center mb-4">
                         <div>
                             <h4 class="mb-1"><i class="ob-brand-icon ob-icon-lakehouse me-2"></i>Lakehouse</h4>
                             <p class="text-muted mb-0 small">
                                 Unity Catalog Delta tables for the triple store — no separate graph database to provision
                             </p>
                         </div>
+                        <button type="button" class="btn btn-sm btn-primary text-nowrap"
+                                id="btnApplyDeltaWarehouse" disabled>
+                            <i class="bi bi-check-circle me-1"></i> Save
+                        </button>
                     </div>
 
                     <div id="deltaSectionBanner" class="alert alert-light border d-none align-items-center justify-content-center gap-2 py-3 mb-3" role="status" aria-live="polite">
@@ -191,7 +195,7 @@
                                 <p class="small text-muted mb-3">
                                     Used only when <strong>Lakehouse</strong> is the graph backend — graph queries
                                     and health probes run against this warehouse. Build DDL always uses the
-                                    separate Build SQL Warehouse. Click <strong>Apply</strong>
+                                    separate Build SQL Warehouse. Click <strong>Save</strong>
                                     to persist the selection in the registry.
                                 </p>
                                 <label for="deltaBuildWarehouseSelect"
@@ -236,10 +240,6 @@
                                             id="btnRefreshDeltaWarehouses" disabled>
                                         <i class="bi bi-arrow-clockwise me-1"></i> Refresh list
                                     </button>
-                                    <button type="button" class="btn btn-sm btn-primary text-nowrap"
-                                            id="btnApplyDeltaWarehouse" disabled>
-                                        <i class="bi bi-check2 me-1"></i> Apply
-                                    </button>
                                 </div>
                                 <p class="text-muted mb-0 mt-2" id="deltaWarehouseHelp">
                                     <span id="deltaEffectiveWarehouse"></span>
@@ -250,7 +250,8 @@
                             <div class="tab-pane fade" id="dtpane-objects" role="tabpanel" aria-labelledby="dttab-objects">
                                 <p class="small text-muted mb-3">
                                     Lists triple-store objects in the Registry UC schema
-                                    (<code>catalog.schema</code>) for <strong>all domains</strong>.
+                                    (<code>catalog.schema</code>) only for domain versions configured
+                                    with the <strong>Lakehouse</strong> backend.
                                     Use <strong>Drop</strong> to remove a single object or every artefact
                                     for one domain version (views are dropped before tables).
                                 </p>

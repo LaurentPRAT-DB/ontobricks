@@ -212,6 +212,38 @@ def test_settings_header_buttons_carry_the_small_size():
     )
 
 
+def test_lakehouse_save_is_on_the_section_title_row():
+    """Lakehouse persists warehouse choice from the page title row, like
+    Databricks/Neo4j Save — not from an Apply control next to the select."""
+    html = _read(SETTINGS_HTML)
+    section = re.search(
+        r'id="delta-section".*?</div>\s*</div>\s*<!--\s*={5,}',
+        html,
+        flags=re.DOTALL,
+    )
+    assert section, "Could not isolate the Lakehouse settings section"
+    body = section.group(0)
+    header = re.search(
+        r'<div class="section-header d-flex justify-content-between '
+        r'align-items-center mb-4">(.*?)</div>\s*<div id="deltaSectionBanner"',
+        body,
+        flags=re.DOTALL,
+    )
+    assert header, "Lakehouse title row is not a shared section-header flex"
+    header_html = header.group(1)
+    assert "Lakehouse" in header_html
+    assert 'id="btnApplyDeltaWarehouse"' in header_html
+    assert re.search(
+        r'<i class="bi bi-check-circle me-1"></i>\s*Save', header_html
+    )
+    assert "> Apply" not in header_html
+    controls = re.search(
+        r'id="deltaWarehouseControls"[^>]*>(.*?)</div>', body, flags=re.DOTALL
+    )
+    assert controls
+    assert 'id="btnApplyDeltaWarehouse"' not in controls.group(1)
+
+
 def test_no_button_is_hidden_with_an_inline_style():
     """Initial visibility belongs to a class, not a `style` attribute."""
     offenders = []

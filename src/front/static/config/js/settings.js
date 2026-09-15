@@ -2932,14 +2932,22 @@ document.addEventListener('DOMContentLoaded', function () {
                     + '<i class="bi bi-trash3"></i></button>';
             }
 
-            // Strip _sync / __app suffix to get the common base name shared by all
-            // three objects belonging to a graph version (view, sync table, companion).
-            // Tables: "{base}_sync" and "{base}__app"  →  base = "{domain}_v{version}"
-            // Views:  "{base}"                          →  base = "{domain}_v{version}"
+            // Strip graph-storage and index suffixes to get the common base shared
+            // by every physical object belonging to one domain/version card.
+            // Tables: "{base}_sync", "{base}__app", "{base}_adj_*",
+            //         and "{base}_entity_search"        → base
+            // Views:  "{base}"                          → base
             function objectBase(name, kind) {
                 if (kind === 'table') {
-                    if (name.endsWith('_sync')) return name.slice(0, -5);
-                    if (name.endsWith('__app')) return name.slice(0, -5);
+                    const domainSuffixes = [
+                        '_entity_search',
+                        '_adj_out',
+                        '_adj_in',
+                        '__app',
+                        '_sync',
+                    ];
+                    const suffix = domainSuffixes.find(candidate => name.endsWith(candidate));
+                    if (suffix) return name.slice(0, -suffix.length);
                 }
                 return name;
             }

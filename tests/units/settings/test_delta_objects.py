@@ -151,6 +151,10 @@ class TestTripleStoreDatabricksObjectsResult:
             SettingsService,
             "_resolve_context",
             return_value=(MagicMock(), "h", "t", REGISTRY_CFG),
+        ), patch.object(
+            SettingsService,
+            "_lakehouse_domain_version_keys",
+            return_value={"x_2"},
         ), patch(
             "back.core.graphdb.delta.objects.fetch_uc_schema_tables",
             return_value=raw_tables,
@@ -165,11 +169,64 @@ class TestTripleStoreDatabricksObjectsResult:
         assert out["domains"][0]["key"] == "x_2"
         assert len(out["domains"][0]["items"]) == 2
 
+    def test_lists_only_lakehouse_domain_versions(self):
+        registry_service = MagicMock()
+        registry_service.list_domain_details_cached.return_value = (
+            True,
+            [
+                {
+                    "name": "x",
+                    "versions": [
+                        {"version": "1", "graph_backend": "databricks"},
+                        {"version": "2", "graph_backend": "lakebase"},
+                    ],
+                },
+                {
+                    "name": "y",
+                    "versions": [
+                        {"version": "1", "graph_backend": "neo4j"},
+                    ],
+                },
+            ],
+            "",
+        )
+        raw_tables = [
+            {"name": "triplestore_x_V1", "table_type": "VIEW"},
+            {"name": "triplestore_x_V2", "table_type": "VIEW"},
+            {"name": "triplestore_y_V1", "table_type": "VIEW"},
+            {"name": "graph_metrics_x_1", "table_type": "MANAGED"},
+            {"name": "graph_metrics_x_2", "table_type": "MANAGED"},
+            {"name": "graph_metrics_orphan_9", "table_type": "MANAGED"},
+        ]
+
+        with patch.object(
+            SettingsService,
+            "_resolve_context",
+            return_value=(MagicMock(), "h", "t", REGISTRY_CFG),
+        ), patch(
+            "back.core.graphdb.delta.objects.fetch_uc_schema_tables",
+            return_value=raw_tables,
+        ), patch(
+            "back.objects.domain.SettingsService.RegistryService.from_context",
+            return_value=registry_service,
+        ):
+            out = SettingsService.triple_store_databricks_objects_result(
+                MagicMock(), _settings()
+            )
+
+        assert [domain["key"] for domain in out["domains"]] == ["x_1"]
+        assert [group["key"] for group in out["analytics"]] == ["x_1"]
+        assert out["orphans"] == []
+
     def _run(self, raw_tables, settings=None, fetch=None):
         with patch.object(
             SettingsService,
             "_resolve_context",
             return_value=(MagicMock(), "h", "t", REGISTRY_CFG),
+        ), patch.object(
+            SettingsService,
+            "_lakehouse_domain_version_keys",
+            return_value={"x_2"},
         ), patch(
             "back.core.graphdb.delta.objects.fetch_uc_schema_tables",
             side_effect=fetch,
@@ -193,14 +250,15 @@ class TestTripleStoreDatabricksObjectsResult:
         assert len(out["analytics"][0]["items"]) == 2
         assert out["orphans"] == []
 
-    def test_unmatched_analytics_is_an_orphan(self):
+    def test_unmatched_analytics_is_hidden(self):
         out = self._run(
             [
                 {"name": "triplestore_x_V2", "table_type": "VIEW"},
                 {"name": "graph_metrics_gone_9", "table_type": "MANAGED"},
             ]
         )
-        assert [g["key"] for g in out["orphans"]] == ["gone_9"]
+        assert out["analytics"] == []
+        assert out["orphans"] == []
         assert out["domains"][0]["base"] == "triplestore_x_V2"
 
     def test_configured_output_schema_is_scanned_separately(self):

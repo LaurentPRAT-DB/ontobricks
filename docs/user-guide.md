@@ -58,8 +58,10 @@ The Health tab is intentionally domain-independent. It does not inspect:
 - materialization mode
 
 Use the **Lakehouse → Objects** tab for asset inventory and object-level
-visibility. Health answers only one question: "Can this principal operate on
-the configured Registry schema?"
+visibility. The inventory includes only domain versions configured with the
+Lakehouse backend; UC objects belonging to Lakebase or Neo4j versions are
+excluded. Health answers only one question: "Can this principal operate on the
+configured Registry schema?"
 
 ## Application Workflow
 
@@ -1497,6 +1499,15 @@ See the [MCP tab](#mcp-tab) for the full description of each control, and the
 ---
 
 ## Settings Reference
+
+### Lakebase domain objects
+
+**Settings → Lakebase → Objects** groups each domain/version's reader view,
+`_sync` bulk table, `__app` writable companion, `_adj_in`, `_adj_out`, and
+`_entity_search` tables into one collapsible card. Its count includes every
+listed storage and index object. Individual **Drop** actions remain available;
+**Delete all objects for this domain** removes the whole group, including the
+three rebuildable graph-index tables.
 
 ### Lakehouse SQL warehouses and CloudFetch
 
