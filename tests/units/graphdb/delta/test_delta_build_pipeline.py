@@ -9,6 +9,7 @@ from back.core.graphdb.delta.DeltaTripleStoreBuildPipeline import (
     DeltaTripleStoreBuildPipeline,
     lakehouse_build_steps,
 )
+from back.core.task_manager.TaskManager import TaskManager
 
 
 @pytest.mark.unit
@@ -130,7 +131,6 @@ def _minimal_run_pipeline(*, materialization: str = "table"):
     return pipe
 
 
-
 @pytest.mark.unit
 def test_run_builds_adjacency_index_after_graph_view() -> None:
     pipe = _minimal_run_pipeline(materialization="table")
@@ -226,3 +226,63 @@ def test_view_build_skips_optimize_stage() -> None:
         pipe.task_id, "Optimization not needed for pass-through view"
     )
     optimize.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("materialization", "expected_statuses"),
+    [
+        (
+            "view",
+            {"graph_view": "completed", "optimize": "skipped", "adjacency": "completed"},
+        ),
+        ("table", {"optimize": "completed", "adjacency": "completed"}),
+    ],
+)
+def test_run_sets_terminal_step_statuses_with_real_task_manager(
+    materialization: str, expected_statuses: dict[str, str]
+) -> None:
+    tm = TaskManager()
+    task = tm.create_task(
+        f"lakehouse-{materialization}",
+        "lakehouse_build",
+        steps=lakehouse_build_steps(materialization),
+    )
+    tm.start_task(task.id, "Preparing mappings...")
+    pipe = _minimal_run_pipeline(materialization=materialization)
+    pipe.tm = tm
+    pipe.task_id = task.id
+    pipe._create_view = lambda: tm.advance_step(  # noqa: E731
+        pipe.task_id, f"Creating VIEW {pipe.view_table}..."
+    )
+
+    def _materialize_data_table() -> bool:
+        step = (
+            f"Creating pass-through VIEW {pipe.data_table}..."
+            if materialization == "view"
+            else f"Materializing Delta table {pipe.data_table}..."
+        )
+        tm.advance_step(pipe.task_id, step)
+        return True
+
+    pipe._materialize_data_table = _materialize_data_table
+
+    def _complete_task() -> None:
+        tm.complete_task(pipe.task_id, result={"ok": True}, message="done")
+        pipe._build_recorded = True
+
+    pipe._complete_task = _complete_task
+    try:
+        with (
+            patch("back.core.graphdb.delta.DeltaTripleStoreBuildPipeline.DeltaFlatStore"),
+            patch("back.core.graphdb.delta.materialize.optimize_table"),
+        ):
+            pipe.run()
+
+        task_after = tm.get_task(pipe.task_id)
+        assert task_after is not None
+        step_statuses = {step.name: step.status for step in task_after.steps}
+        for step_name, expected_status in expected_statuses.items():
+            assert step_statuses[step_name] == expected_status
+    finally:
+        tm.delete_task(task.id)

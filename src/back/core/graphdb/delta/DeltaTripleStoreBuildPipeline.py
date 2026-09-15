@@ -148,13 +148,16 @@ class DeltaTripleStoreBuildPipeline:
             self._ensure_graph_view()
             self._log_phase("ensure_graph_view", t_phase)
 
+            # Move from graph_view to optimize for both materialization modes.
+            self.tm.advance_step(self.task_id, "Optimizing Delta table...")
+
             # Nothing to compact when ``…_data`` is a view — OPTIMIZE only
             # applies to a Delta table.
             if not self._is_view_mode:
                 t_phase = time.time()
-                self.tm.advance_step(self.task_id, "Optimizing Delta table...")
                 materialize.optimize_table(self.source_client, self.data_table)
                 self._log_phase("optimize", t_phase)
+                self.tm.advance_step(self.task_id, "Building adjacency indexes...")
             else:
                 self.tm.skip_step(
                     self.task_id,
@@ -162,7 +165,6 @@ class DeltaTripleStoreBuildPipeline:
                 )
 
             t_phase = time.time()
-            self.tm.advance_step(self.task_id, "Building adjacency indexes...")
             self._rebuild_adjacency_index()
             self._log_phase("rebuild_adjacency", t_phase)
 

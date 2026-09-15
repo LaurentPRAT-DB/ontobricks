@@ -373,3 +373,40 @@ Tests:
   `git status --short` (only intended doc change plus pre-existing unrelated edits).
 - Browser evidence: previously validated in Task 4 at `1440x900` and `375x812`
   with no feature-related console or asset errors.
+
+## Fix Lakehouse view optimize-step sequencing
+
+Context: Final Lakehouse build-progress review found a blocking sequencing bug
+in `DeltaTripleStoreBuildPipeline.run` for view materialization. The pipeline
+was calling `skip_step` while `graph_view` was current, which incorrectly
+produced `graph_view=skipped` and `optimize=completed` in terminal task states.
+
+Changes:
+
+1. `src/back/core/graphdb/delta/DeltaTripleStoreBuildPipeline.py`
+   Advanced from `graph_view` into `optimize` for both modes, then used
+   `skip_step` only on the `optimize` stage in view mode; kept table-mode
+   optimize execution and adjacency activation sequence aligned with the
+   approved stage contract and existing messages.
+2. `tests/units/graphdb/delta/test_delta_build_pipeline.py`
+   Added a real-`TaskManager` reduced-pipeline regression test that asserts
+   terminal stage statuses for view (`graph_view=completed`, `optimize=skipped`,
+   `adjacency=completed`) and table (`optimize=completed`) modes; preserved
+   existing call-contract coverage and fixed top-level blank-line spacing.
+3. `changelogs/v0.9.0/benoitcayladbx_2026-09-15.log`
+   Appended this review-fix entry with required verification evidence.
+
+Modified files:
+- src/back/core/graphdb/delta/DeltaTripleStoreBuildPipeline.py
+- tests/units/graphdb/delta/test_delta_build_pipeline.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py -k "terminal_step_statuses_with_real_task_manager"` →
+  `1 failed, 1 passed` (view mode asserted `optimize=skipped`, got `completed` before fix).
+- Focused delta pipeline: `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py` →
+  `10 passed, 1 warning in 0.83s`.
+- Materialization regression: `uv run --frozen pytest -q tests/units/objects/test_build_pipeline_materialize.py` →
+  `13 passed, 1 warning in 0.81s`.
+- Full non-scenario suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6121 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 51.29s`.
