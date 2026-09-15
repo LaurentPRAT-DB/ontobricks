@@ -537,3 +537,51 @@ Modified files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` →
 `6126 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.07s`.
+
+## Gate Lakehouse Build content while loading
+
+Context: The Lakehouse Build page displayed placeholder object information and
+action buttons underneath its loading message. Users could see and potentially
+focus controls before the initial triple-store state was known.
+
+Changes:
+
+1. `src/front/templates/partials/dtwin/_query_databricks_build.html`
+   Added distinct initial Loading, retryable Error, and hidden Content
+   containers so server-rendered placeholders and actions cannot flash.
+2. `src/front/static/query/js/query-databricks-build.js`
+   Added explicit initial-state transitions, strict info-response handling,
+   atomic Content reveal, and Retry behavior while preserving visible content
+   during later refreshes and preventing stale failures from hiding content.
+3. `tests/units/front/test_lakehouse_build_loading_state.py`
+   Added contracts for default visibility, accessibility, state transitions,
+   strict success handling, failure behavior, and Retry wiring.
+4. `docs/user-guide.md`
+   Documented spinner-only initial loading and retryable failure behavior.
+5. `docs/superpowers/specs/2026-09-15-lakehouse-build-loading-state-design.md`
+   Recorded the approved Loading, Ready, and Error state contract.
+6. `docs/superpowers/plans/2026-09-15-lakehouse-build-loading-state.md`
+   Recorded the test-first implementation and verification procedure.
+
+Modified files:
+- src/front/templates/partials/dtwin/_query_databricks_build.html
+- src/front/static/query/js/query-databricks-build.js
+- tests/units/front/test_lakehouse_build_loading_state.py
+- docs/user-guide.md
+- docs/superpowers/specs/2026-09-15-lakehouse-build-loading-state-design.md
+- docs/superpowers/plans/2026-09-15-lakehouse-build-loading-state.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/front/test_lakehouse_build_loading_state.py` →
+  `5 failed, 1 warning in 0.17s` before implementation.
+- Focused: `uv run --frozen pytest -q tests/units/front/test_lakehouse_build_loading_state.py tests/units/front/test_lakehouse_materialization_ui.py tests/units/front/test_timed_build_log_contract.py tests/units/front/test_adjacency_refresh_ui.py` →
+  `48 passed, 1 warning in 0.21s`.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6136 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.05s`.
+- Diagnostics: IDE lint inspection reported no errors in the changed HTML,
+  JavaScript, or Python files; `git diff --check` reported no whitespace errors.
+- Browser: 34 checks passed across delayed Loading, initial Error, Retry,
+  successful Ready, and subsequent Refresh states at `1440x900` and `375x812`;
+  hidden controls were not focusable and no unexpected console or asset errors
+  remained after success.

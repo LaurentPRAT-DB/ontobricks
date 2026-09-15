@@ -12,6 +12,7 @@ let dbxBuildReady = false;
 let dbxBuildRunning = false;
 let dbxAdjacencyRefreshRunning = false;
 let dbxGraphHasData = false;
+let dbxBuildInfoLoaded = false;
 
 const _dbxTimedBuildLog = TimedTaskLog.create({
     cardId: "dbxBuildLogCard",
@@ -195,13 +196,26 @@ function _applyDbxStorageKind(isViewMode) {
     }
 }
 
+function _setDbxBuildInitialState(state) {
+    const loading = document.getElementById('dbxBuildLoadingState');
+    const error = document.getElementById('dbxBuildLoadError');
+    const content = document.getElementById('dbxBuildContent');
+    loading?.classList.toggle('d-none', state !== 'loading');
+    error?.classList.toggle('d-none', state !== 'error');
+    content?.classList.toggle('d-none', state !== 'ready');
+}
+
 async function loadDatabricksBuildInfo() {
-    const overlay = document.getElementById('dbxBuildLoadingOverlay');
-    if (overlay) overlay.classList.remove('d-none');
+    const isInitialLoad = !dbxBuildInfoLoaded;
+    if (isInitialLoad) {
+        _setDbxBuildInitialState('loading');
+    }
     try {
         const resp = await fetch('/dtwin/databricks-build/info', { credentials: 'same-origin' });
         const data = await resp.json();
-        if (!data.success) return;
+        if (!resp.ok || !data.success) {
+            throw new Error(_apiErrorMessage(data, 'Could not load triple store information'));
+        }
 
         const isViewMode = data.materialization === 'view';
 
@@ -249,10 +263,15 @@ async function loadDatabricksBuildInfo() {
                 ? 'Status unavailable'
                 : (ts.has_data ? count + ' triples loaded' : 'No data yet');
         }
+        if (isInitialLoad) {
+            dbxBuildInfoLoaded = true;
+            _setDbxBuildInitialState('ready');
+        }
     } catch (e) {
+        if (isInitialLoad && !dbxBuildInfoLoaded) {
+            _setDbxBuildInitialState('error');
+        }
         console.error('[DatabricksBuild] info failed', e);
-    } finally {
-        if (overlay) overlay.classList.add('d-none');
     }
 }
 
@@ -517,6 +536,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     _updateDbxAdjacencyButton();
 
     document.getElementById('dbxBuildRefreshBtn')?.addEventListener('click', loadDatabricksBuildInfo);
+    document.getElementById('dbxBuildLoadRetry')?.addEventListener('click', loadDatabricksBuildInfo);
     document.getElementById('dbxBuildStartBtn')?.addEventListener('click', startDatabricksBuild);
     document.getElementById('dbxAdjacencyRefreshBtn')?.addEventListener('click', startDatabricksAdjacencyRefresh);
     document.getElementById('dbxBuildLogHide')?.addEventListener('click', hideDbxBuildLog);

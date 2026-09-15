@@ -1925,6 +1925,9 @@ audit trails or troubleshooting, and **Hide** to collapse the card without
 stopping the underlying task. Monitoring starts immediately, refreshes rapidly
 through the short setup stages, and slows during the long adjacency build so
 each row reflects the latest server state without overlapping requests.
+When the page first opens, the Build panel shows only a spinner until its
+Lakehouse information is ready. If that request fails, use **Retry** from the
+error state; build information and actions remain hidden until loading succeeds.
 
 > **Note**: If the triple store table already exists, you can choose to **drop and recreate** it or append to the existing data.
 
