@@ -49,4 +49,4 @@ Modified files:
 - docs/superpowers/specs/2026-09-15-obx-import-rename-design.md
 - docs/superpowers/plans/2026-09-15-obx-import-rename.md
 
-Tests: uv run --frozen pytest -q -m "not scenario" → 6103 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 52.74s
+Tests: uv run --frozen pytest -q -m "not scenario" → 6103 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.56s
