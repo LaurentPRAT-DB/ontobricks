@@ -237,6 +237,23 @@ class TestProvisioner:
         assert any("CREATE SCHEMA IF NOT EXISTS" in s for s in sql_log)
         on_success.assert_called_once()
 
+    def test_local_provision_skips_app_service_principal_grants(self):
+        api = _FakeApi()
+        sql_log = []
+        prov, task, patcher = _make_provisioner(
+            api,
+            sql_log,
+            app_names=[],
+            pg_user="developer@databricks.com",
+        )
+
+        with patcher:
+            prov.run()
+
+        assert task.status.value == "completed"
+        assert not any(path.startswith("/api/2.0/apps/") for _, path, _ in api.calls)
+        assert api.permission_calls == []
+
     def test_existing_instance_and_database_are_idempotent(self):
         api = _FakeApi(existing_instance=True)
         api.databases.append("ontobricks_graph_db")
@@ -499,3 +516,4 @@ class TestProvisionService:
 
         assert out["success"] is True
         assert out["task_id"]
+        assert prov_cls.call_args.kwargs["app_names"] == []

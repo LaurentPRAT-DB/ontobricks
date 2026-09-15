@@ -3033,21 +3033,24 @@ class SettingsService:
                 "app is bound to Lakebase (Databricks App mode)."
             )
 
-        # Apps whose service principals receive the grants: the running app
-        # first, then the MCP app (UI override -> MCP_APP_NAME env ->
-        # mcp-{app_name} derived from the main app — matches deploy.config.sh).
-        app_name = (settings.ontobricks_app_name or "").strip()
-        mcp_app_name = resolve_mcp_app_name(
-            app_name, explicit=(params.get("mcp_app_name") or "").strip()
-        )
+        # App service-principal grants only apply inside Databricks Apps.
+        # Local development authenticates as PGUSER (the developer identity)
+        # and must not infer or grant permissions to deployed app principals.
+        app_mode = is_databricks_app()
         app_names: List[str] = []
-        for candidate in (app_name, mcp_app_name):
-            if candidate and candidate not in app_names:
-                app_names.append(candidate)
-        if not app_names:
-            raise ValidationError(
-                "Could not determine the app name to grant — set ONTOBRICKS_APP_NAME."
+        if app_mode:
+            app_name = (settings.ontobricks_app_name or "").strip()
+            mcp_app_name = resolve_mcp_app_name(
+                app_name, explicit=(params.get("mcp_app_name") or "").strip()
             )
+            for candidate in (app_name, mcp_app_name):
+                if candidate and candidate not in app_names:
+                    app_names.append(candidate)
+            if not app_names:
+                raise ValidationError(
+                    "Could not determine the app name to grant — "
+                    "set ONTOBRICKS_APP_NAME."
+                )
 
         # Resolve sync mode + UC catalog from the saved engine config so the
         # managed_synced UC grant targets the right catalog.
@@ -3063,14 +3066,21 @@ class SettingsService:
         saved_cfg = lakebase_section(saved_cfg)
         sync_mode = (saved_cfg.get("sync_mode") or "app_managed").strip()
         uc_catalog = ""
-        if bool(params.get("grant_uc_catalog")) and sync_mode == "managed_synced":
+        if (
+            app_mode
+            and bool(params.get("grant_uc_catalog"))
+            and sync_mode == "managed_synced"
+        ):
             uc_catalog = (saved_cfg.get("sync_uc_catalog") or "").strip()
 
         tm = get_task_manager()
         task = tm.create_task(
             name="Lakebase Graph DB Provision",
             task_type="lakebase_provision",
-            steps=provision_steps(grant_uc=bool(uc_catalog)),
+            steps=provision_steps(
+                grant_uc=bool(uc_catalog),
+                grant_app_permissions=app_mode,
+            ),
         )
 
         def run_provision() -> None:

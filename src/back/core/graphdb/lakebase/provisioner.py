@@ -75,7 +75,9 @@ class ProvisionError(Exception):
     """Raised for any hard failure that should abort the provision flow."""
 
 
-def provision_steps(*, grant_uc: bool) -> List[Dict[str, str]]:
+def provision_steps(
+    *, grant_uc: bool, grant_app_permissions: bool = True
+) -> List[Dict[str, str]]:
     """Return the seeded TaskManager step list for the provision flow."""
     steps = [
         {"name": "instance", "description": "Creating Lakebase instance"},
@@ -83,10 +85,20 @@ def provision_steps(*, grant_uc: bool) -> List[Dict[str, str]]:
         {"name": "endpoint", "description": "Resolving branch endpoint"},
         {"name": "database", "description": "Creating Postgres database"},
         {"name": "schema", "description": "Creating graph schema"},
-        {"name": "can_use", "description": "Granting CAN_USE on the project"},
-        {"name": "grants", "description": "Granting schema privileges"},
-        {"name": "superusers", "description": "Granting Postgres superuser to CAN_MANAGE users"},
     ]
+    if grant_app_permissions:
+        steps.extend(
+            [
+                {"name": "can_use", "description": "Granting CAN_USE on the project"},
+                {"name": "grants", "description": "Granting schema privileges"},
+            ]
+        )
+    steps.append(
+        {
+            "name": "superusers",
+            "description": "Granting Postgres superuser to CAN_MANAGE users",
+        }
+    )
     if grant_uc:
         steps.append(
             {"name": "uc", "description": "Granting Unity Catalog privileges"}
@@ -217,12 +229,14 @@ class LakebaseGraphProvisioner:
             tm.advance_step(self._task_id)
             self._step_create_schema(api)
 
-            tm.advance_step(self._task_id)
-            sp_ids = self._resolve_service_principals(api)
-            self._step_grant_can_use(api, sp_ids)
+            sp_ids: Dict[str, str] = {}
+            if self._app_names:
+                tm.advance_step(self._task_id)
+                sp_ids = self._resolve_service_principals(api)
+                self._step_grant_can_use(api, sp_ids)
 
-            tm.advance_step(self._task_id)
-            self._step_grant_schema(api, sp_ids)
+                tm.advance_step(self._task_id)
+                self._step_grant_schema(api, sp_ids)
 
             tm.advance_step(self._task_id)
             self._step_grant_superuser_to_managers(api)
@@ -781,8 +795,6 @@ class LakebaseGraphProvisioner:
                 "PGUSER is not set — required to connect to the new Lakebase "
                 "instance as the app service principal"
             )
-        if not self._app_names:
-            raise ProvisionError("At least one app name is required for grants")
 
     def _api(self) -> Any:
         from databricks.sdk import WorkspaceClient

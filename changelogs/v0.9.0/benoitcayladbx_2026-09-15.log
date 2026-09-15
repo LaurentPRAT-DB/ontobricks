@@ -50,3 +50,26 @@ Modified files:
 - docs/superpowers/plans/2026-09-15-obx-import-rename.md
 
 Tests: uv run --frozen pytest -q -m "not scenario" → 6103 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.56s
+
+## Skip app grants during local Lakebase provisioning
+
+Context: The Settings Lakebase provisioning flow always attempted to resolve
+Databricks App service principals. Local development authenticates as the
+developer identity, so the fallback MCP app lookup failed and stopped provisioning.
+
+Changes:
+
+1. src/back/objects/domain/SettingsService.py
+   Limited App and MCP service-principal resolution and Unity Catalog grants to Databricks App mode.
+2. src/back/core/graphdb/lakebase/provisioner.py
+   Made app-principal grant steps optional while preserving user superuser setup.
+3. tests/units/settings/test_lakebase_provision.py
+   Added regression coverage proving local provisioning completes without resolving or granting app principals.
+
+Modified files:
+- src/back/objects/domain/SettingsService.py
+- src/back/core/graphdb/lakebase/provisioner.py
+- tests/units/settings/test_lakebase_provision.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6104 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 42.90s
