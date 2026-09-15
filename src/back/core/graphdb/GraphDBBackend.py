@@ -1122,7 +1122,11 @@ class GraphDBBackend(ABC):
         return ("", "")
 
     def rebuild_adjacency(self, table_name: str) -> None:
-        """Materialise graph indexes for *table_name*. Default is a no-op."""
+        """Materialise ``_adj_out``, ``_adj_in``, ``_entity_search``, and ``_props``.
+
+        Default is a no-op. SQL backends rebuild all four from the
+        reader-facing SPO relation.
+        """
 
     def adjacency_ready(self, table_name: str) -> bool:
         """Whether adjacency tables exist and neighbour expansion can use them."""

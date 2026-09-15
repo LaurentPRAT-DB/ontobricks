@@ -108,7 +108,7 @@ four-object triple-store family above:
 | `triplestore_<domain>_V<n>_entity_search` | Delta TABLE | `CLUSTER BY (type_uri)` | same | Explorer Preview — one row per typed entity |
 | `triplestore_<domain>_V<n>_props` | Delta TABLE | `CLUSTER BY (subject)` | same | Explorer expansion payload — all outgoing triples of typed subjects |
 
-**Lakebase graph-index tables** use `_adj_out`, `_adj_in`, and
+**Lakebase graph-index tables** use `_adj_out`, `_adj_in`,
 `_entity_search`, and `_props` suffixes. The entity index stores normalized
 URI and label columns alongside type metadata; `_props` has a btree index on
 `subject`. Both `app_managed` and `managed_synced` modes use the same
@@ -120,9 +120,9 @@ reader-facing union view regardless of mode.
 **Neo4j** has none of these companion tables. Native Bolt graph traversal and
 search remain unchanged; no adjacency refresh action is available.
 
-#### Adjacency-only refresh
+#### Graph-cache refresh
 
-Beyond the full **Build**, a **Refresh adjacency** action (builder / admin
+Beyond the full **Build**, a **Refresh cache** action (builder / admin
 only) rebuilds `_adj_out`, `_adj_in`, `_entity_search`, and `_props` without
 rematerializing `_data` or touching inferred triples. The entity-search
 snapshot powers Preview when **Inferred** is enabled; asserted-only searches
@@ -133,11 +133,11 @@ the configured **Build SQL Warehouse**, never on the Lakehouse/RT query
 warehouse, because Lakehouse/RT does not support `CREATE OR REPLACE TABLE`.
 The semantics differ by mode:
 
-| Mode | What "Refresh adjacency" does | When source data appears in traversal |
+| Mode | What "Refresh cache" does | When source data appears in traversal |
 |------|-------------------------------|---------------------------------------|
 | **Lakehouse — `view` materialization** | Reruns the adjacency CTAS from the live `_graph` VIEW (which itself re-executes the R2RML SQL). Source-table changes propagate immediately because `_data` is a pass-through view. | After the next adjacency refresh (source rows are live via `_data`; adjacency tables are a snapshot of `_graph` at refresh time) |
 | **Lakehouse — `table` materialization** | Reindexes from the *existing* `_graph` snapshot — `_data` is **not** rebuilt. New source rows are not visible in traversal until a full **Build** runs. | After the next full **Build** only |
-| **Lakebase** | Reindexes `_adj_out`, `_adj_in`, `_entity_search`, and `_props` from the current reader-facing union view in one data-load transaction. | After the next Refresh adjacency or Build |
+| **Lakebase** | Reindexes `_adj_out`, `_adj_in`, `_entity_search`, and `_props` from the current reader-facing union view in one data-load transaction. | After the next Refresh cache or Build |
 | **Neo4j** | *(not available)* | N/A — Neo4j uses native traversal, no adjacency tables exist |
 
 > **Delta consistency note:** Lakehouse graph-index rebuild replaces

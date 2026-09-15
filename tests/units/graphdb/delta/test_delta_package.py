@@ -6,6 +6,7 @@ import pytest
 
 from back.core.graphdb.adjacency import typed_in_select, typed_out_select
 from back.core.graphdb.entity_search import entity_search_select
+from back.core.graphdb.props import props_select
 from back.core.graphdb.delta import _table_naming, materialize
 from back.core.graphdb.delta import health
 
@@ -51,6 +52,12 @@ class TestTableNaming:
         domain = _domain()
         assert _table_naming.entity_search_fqn(domain) == (
             "cat.sch.triplestore_mydomain_V1_entity_search"
+        )
+
+    def test_props_fqn(self):
+        domain = _domain()
+        assert _table_naming.props_fqn(domain) == (
+            "cat.sch.triplestore_mydomain_V1_props"
         )
 
     def test_analytics_snapshot_suffix(self):
@@ -133,6 +140,17 @@ class TestMaterializeSql:
         assert sql == (
             "CREATE OR REPLACE TABLE cat.sch.g_entity_search USING DELTA "
             "CLUSTER BY (type_uri) "
+            f"AS {select_sql}"
+        )
+
+    def test_props_ctas_clusters_subject_without_duplicate_from(self):
+        select_sql = props_select("cat.sch.g_graph")
+        sql = materialize.build_props_ctas_sql(
+            "cat.sch.g_graph", "cat.sch.g_props"
+        )
+        assert sql == (
+            "CREATE OR REPLACE TABLE cat.sch.g_props USING DELTA "
+            "CLUSTER BY (subject) "
             f"AS {select_sql}"
         )
 

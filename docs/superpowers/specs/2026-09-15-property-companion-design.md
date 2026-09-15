@@ -1,7 +1,7 @@
 # Property Companion (`_props`) — Design
 
 **Date:** 2026-09-15  
-**Status:** Draft for review  
+**Status:** Implemented
 **Backends:** Lakehouse (Delta) and Lakebase (Postgres) only. **Neo4j is frozen.**
 
 ## Problem
@@ -34,9 +34,9 @@ A fourth **always-TABLE** companion, `_props`, living alongside `_adj_out`,
 - Shape `(subject, predicate, object)` — identical to SPO.
 - Clustered / indexed on `subject` so `subject IN entities` is a point lookup.
 - Rebuilt **inside** `rebuild_adjacency(...)` so every existing hook refreshes
-  it (full build, Refresh adjacency, reasoning materialize, cohort writes).
+  it (full build, Refresh cache, reasoning materialize, cohort writes).
 
-The Refresh adjacency **button label and API path stay**. The worker still
+The Refresh cache button keeps the existing API path. The worker still
 calls `store.rebuild_adjacency(graph_name)`; that method materialises four
 tables, not three.
 
@@ -102,7 +102,7 @@ with `_props` but no adj is not a supported state.
 ## Lifecycle / staleness
 
 Snapshot, same clock as adjacency and `_entity_search`. View-mode Lakehouse
-source changes appear in expansion fetch only after Refresh adjacency or a
+source changes appear in expansion fetch only after Refresh cache or a
 full build.
 
 Lakebase: `TRUNCATE`/`INSERT` for adj, entity search, **and** `_props` in the
@@ -133,7 +133,7 @@ Shared SQL lives in `src/back/core/graphdb/` next to `entity_search.py`
 - Type columns on adj, `(src, predicate)` reclustering of adj
 - Using `_props` for Preview search
 - Incremental per-triple updates
-- Renaming Refresh adjacency or `/dtwin/adjacency/refresh`
+- Renaming `/dtwin/adjacency/refresh`
 - Changing Explorer JSON (`subject`, `predicate`, `object`) or caps
   (`depth`, `max_entities`, `max_triples`)
 - Asserted-only expand (Inferred unchecked) — same as today: still uses the
@@ -144,7 +144,7 @@ Shared SQL lives in `src/back/core/graphdb/` next to `entity_search.py`
 
 After indexes exist, `expand_and_fetch_subgraph` (adj-ready path) does **not**
 read `_graph` / the Lakebase union view. Hops use adj; payload uses `_props`.
-Refresh adjacency rebuilds adj_out, adj_in, entity_search, and props together.
+Refresh cache rebuilds adj_out, adj_in, entity_search, and props together.
 
 ## Verification
 

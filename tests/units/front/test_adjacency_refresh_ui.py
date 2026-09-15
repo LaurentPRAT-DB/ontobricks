@@ -18,6 +18,11 @@ def _read(path: Path) -> str:
 
 
 class TestAdjacencyButtonsExist:
+    def test_build_panels_label_adjacency_refresh_as_refresh_cache(self):
+        for html in (_read(SYNC_HTML), _read(DBX_HTML)):
+            assert html.count("Refresh cache") == 2
+            assert ">Refresh adjacency" not in html
+
     def test_sync_panel_has_refresh_adjacency_action(self):
         html = _read(SYNC_HTML)
         assert 'id="syncAdjacencyRefreshBtn"' in html

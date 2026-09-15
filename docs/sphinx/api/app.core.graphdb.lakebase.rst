@@ -106,6 +106,14 @@ Companion + union view DDL
    :undoc-members:
    :show-inheritance:
 
+Graph-index DDL (adjacency, entity search, props)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. automodule:: back.core.graphdb.lakebase._adjacency_ddl
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Connection pool
 ---------------
 

@@ -853,8 +853,8 @@ rows; **no copy** means a VIEW that re-reads the source on each query.
 | Explorer hop + Preview indexes | `_adj_out`, `_adj_in`, `_entity_search`, `_props` **TABLES** (always copies of a projection) | Same four **TABLES** — views-only does **not** leave indexes as views | Same four **TABLES** in the Postgres graph schema | Same four Postgres tables | None — native traversal / search |
 | Who creates objects | Build SQL Warehouse DDL | Same warehouse (DDL only for `_data`; indexes still CTAS) | Build warehouse for UC; FastAPI/psycopg for Postgres | Build warehouse for UC schema; Lakeflow for `_sync`; app for `__app`, union view, indexes | Build warehouse for UC; Bolt for Neo4j |
 | Full **Build** | Recreates gateway VIEW, replaces `_data`, truncates `_inferred`, refreshes `_graph`, rebuilds indexes | Recreates gateway + `_data` VIEW, truncates `_inferred`, rebuilds indexes from live `_graph` | Recreates UC family as tables, reloads `_sync`, truncates `__app`, rebuilds indexes | Recreates UC family, triggers Lakeflow full refresh into `_sync`, truncates `__app`, rebuilds indexes | Recreates UC family, `MERGE`s mapped triples into Neo4j |
-| **Refresh adjacency** | Rebuilds the four indexes from the existing `_graph` snapshot; does **not** recopy `_data`. Runs on the **Build SQL Warehouse**, never Lakehouse/RT | Rebuilds indexes from live `_graph` (source changes are visible in the next index snapshot) | Rebuilds indexes from the current Postgres union view | Same | Not available |
-| When new source rows appear in Explorer hops | Next full **Build** | Next **Refresh adjacency** or Build (indexes stay a snapshot) | Next Refresh adjacency or Build | Next Refresh adjacency or Build (after Lakeflow has updated `_sync`) | Immediately after Build `MERGE` |
+| **Refresh cache** | Rebuilds the four indexes from the existing `_graph` snapshot; does **not** recopy `_data`. Runs on the **Build SQL Warehouse**, never Lakehouse/RT | Rebuilds indexes from live `_graph` (source changes are visible in the next index snapshot) | Rebuilds indexes from the current Postgres union view | Same | Not available |
+| When new source rows appear in Explorer hops | Next full **Build** | Next **Refresh cache** or Build (indexes stay a snapshot) | Next Refresh cache or Build | Next Refresh cache or Build (after Lakeflow has updated `_sync`) | Immediately after Build `MERGE` |
 | Analytics | Scans `_data` TABLE | Temporary `…_analytics` TABLE for the run, then drop | Always scans UC `_data` TABLE, not Postgres | Same | Same UC `_data` TABLE |
 
 `none` (ontology-only) creates none of these objects.
@@ -928,7 +928,7 @@ and `managed_synced` modes share the same four-index Postgres layout
 of mode.
 Neo4j uses native Bolt traversal/search and has no graph-index companions.
 
-The **Refresh adjacency** action (builder/admin, Lakehouse and Lakebase only)
+The **Refresh cache** action (builder/admin, Lakehouse and Lakebase only)
 reindexes `_adj_out`, `_adj_in`, `_entity_search`, and `_props` without
 rematerializing `_data`. Preview uses `_entity_search` when Inferred is
 enabled; asserted-only Preview keeps the SPO path. Expansion uses `_props`
@@ -939,9 +939,9 @@ the fixed Thrift transport instead of the optional Lakehouse/RT query warehouse.
 separation is required because Lakehouse/RT supports the Explorer read path but
 rejects the `CREATE OR REPLACE TABLE` DDL used by graph-index refreshes.
 
-- **`view` materialization** — adjacency CTAS runs from the live `_graph` VIEW (which itself re-executes the R2RML SQL against source tables, since `_data` is a pass-through view).  Source changes are therefore captured at refresh time, but traversal still uses the adjacency snapshot and does **not** update automatically — a **Refresh adjacency** or full **Build** is required.
+- **`view` materialization** — adjacency CTAS runs from the live `_graph` VIEW (which itself re-executes the R2RML SQL against source tables, since `_data` is a pass-through view).  Source changes are therefore captured at refresh time, but traversal still uses the adjacency snapshot and does **not** update automatically — a **Refresh cache** or full **Build** is required.
 - **`table` materialization** — adjacency is reindexed from the *existing* `_data` snapshot; new source rows do **not** appear until a full **Build** runs.
-- **Lakebase** — reindexes from the current reader-facing union view; because Lakebase graph data is always live in Postgres, the rebuild captures the current graph state without a stale `_data` snapshot to overcome.  Traversal still uses the adjacency snapshot until the next Refresh adjacency or Build.
+- **Lakebase** — reindexes from the current reader-facing union view; because Lakebase graph data is always live in Postgres, the rebuild captures the current graph state without a stale `_data` snapshot to overcome.  Traversal still uses the adjacency snapshot until the next Refresh cache or Build.
 
 > Lakehouse `_adj_out`, `_adj_in`, `_entity_search`, and `_props` are replaced
 > sequentially, not via one cross-table atomic swap. If all indexes must be
@@ -2595,7 +2595,7 @@ No external dependencies required (uses vanilla JavaScript and CSS).
 ### License
 
 OntoViz is part of OntoBricks and is licensed under the
-[Databricks License](../LICENSE.txt).
+Databricks License in the repository root (`LICENSE.txt`).
 
 ---
 

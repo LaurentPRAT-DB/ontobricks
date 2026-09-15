@@ -873,3 +873,131 @@ Tests:
 - Full suite: `uv run --frozen pytest -q -m "not scenario"` →
   `6148 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.05s`.
 - Diagnostics: IDE lint inspection reported no errors in changed files.
+
+## Document the property companion in Sphinx and Lakebase schema docs
+
+Context: `_props` shipped without Sphinx autodoc, Lakebase object-layout
+coverage, README mention, or Delta naming/CTAS tests. Docs and API pages now
+match the four-index Explorer snapshot.
+
+Changes:
+
+1. `docs/sphinx/api/app.core.graphdb.rst`
+   Autodoc for shared `adjacency`, `entity_search`, and `props` SQL modules.
+2. `docs/sphinx/api/app.core.graphdb.lakebase.rst`
+   Autodoc for `_adjacency_ddl` (adj, entity search, props).
+3. `docs/graphdb-integration.md`
+   Fixes the Lakebase suffix list wording.
+4. `docs/lakebase-graphdb.md`
+   Lists the four graph-index tables next to the 3-object triple layout.
+5. `docs/superpowers/specs/2026-09-15-property-companion-design.md`
+   Marks the spec implemented.
+6. `src/back/core/graphdb/GraphDBBackend.py`
+   Documents the four companions on `rebuild_adjacency`.
+7. `README.md`
+   Mentions Explorer indexes on Lakehouse/Lakebase Build.
+8. `tests/units/graphdb/delta/test_delta_package.py`
+   Covers `_props` FQN and subject-clustered CTAS.
+
+Modified files:
+- docs/sphinx/api/app.core.graphdb.rst
+- docs/sphinx/api/app.core.graphdb.lakebase.rst
+- docs/graphdb-integration.md
+- docs/lakebase-graphdb.md
+- docs/superpowers/specs/2026-09-15-property-companion-design.md
+- src/back/core/graphdb/GraphDBBackend.py
+- README.md
+- tests/units/graphdb/delta/test_delta_package.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- `ci/build_docs.sh` and `sphinx -W` completed with no warnings.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6160 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.43s`.
+
+## Rename the graph-index refresh action
+
+Context: The Knowledge Graph Build action refreshes all graph-index companions,
+not only adjacency tables. Its user-facing label now describes that broader
+cache refresh while internal IDs and API paths remain unchanged.
+
+Changes:
+
+1. `src/front/templates/partials/dtwin/_query_sync.html`
+   Renames the Lakebase Build action and permission tooltip to Refresh cache.
+2. `src/front/templates/partials/dtwin/_query_databricks_build.html`
+   Renames the Lakehouse Build action and permission tooltip to Refresh cache.
+3. `tests/units/front/test_adjacency_refresh_ui.py`
+   Adds a contract covering both role-gated button labels.
+4. `docs/user-guide.md`
+   Uses the new button label in user-facing instructions and matrices.
+5. `docs/architecture.md`
+   Aligns graph-index lifecycle descriptions with the new label.
+6. `docs/graphdb-integration.md`
+   Renames the user action while preserving adjacency terminology internally.
+7. `docs/lakebase-graphdb.md`
+   Aligns the Lakebase cache-refresh guidance.
+8. `docs/superpowers/specs/2026-09-15-property-companion-design.md`
+   Records the final label without changing the refresh API.
+9. `docs/superpowers/plans/2026-09-15-property-companion.md`
+   Clarifies that only the API identity remains unchanged.
+
+Modified files:
+- src/front/templates/partials/dtwin/_query_sync.html
+- src/front/templates/partials/dtwin/_query_databricks_build.html
+- tests/units/front/test_adjacency_refresh_ui.py
+- docs/user-guide.md
+- docs/architecture.md
+- docs/graphdb-integration.md
+- docs/lakebase-graphdb.md
+- docs/superpowers/specs/2026-09-15-property-companion-design.md
+- docs/superpowers/plans/2026-09-15-property-companion.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- TDD RED: label contract failed with `0 == 2`.
+- Focused UI contracts → `9 passed, 1 warning in 0.13s`.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6161 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.07s`.
+- Diagnostics: IDE lint inspection reported no errors.
+
+## Document graph query optimizations
+
+Context: Graph-query performance techniques were spread across backend,
+architecture, and implementation-plan documentation. A single guide now
+explains the implemented read path, operational trade-offs, backend
+differences, and optimizations that remain planned.
+
+Changes:
+
+1. `docs/optimizations.md`
+   Documents Delta materialization, Preview indexing, bidirectional adjacency,
+   bounded BFS/fallbacks, `_props`, aggregate/analysis pushdown, query-shape
+   reductions, refresh/statistics, query limits, retry/RT transport, Neo4j
+   native traversal, connection efficiency, timings, and operations.
+2. `docs/sphinx/guides/optimizations.md`
+   Includes the guide in the Sphinx documentation.
+3. `docs/sphinx/index.rst`
+   Adds Graph Query Optimizations to the topic-guide navigation.
+4. `README.md`
+   Links the new optimization guide from the graph-engine overview.
+5. `docs/architecture.md`
+   Removes a broken Sphinx link to the repository-root license.
+6. `docs/superpowers/plans/2026-09-15-search-transversal-next.md`
+   Sequences the remaining Preview and traversal optimization backlog.
+
+Modified files:
+- docs/optimizations.md
+- docs/sphinx/guides/optimizations.md
+- docs/sphinx/index.rst
+- README.md
+- docs/architecture.md
+- docs/superpowers/plans/2026-09-15-search-transversal-next.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- Sphinx: `.venv/bin/python -m sphinx -b html docs/sphinx
+  docs/sphinx/_build/html -W --keep-going -q` → passed with no warnings.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6161 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.96s`.
+- Diagnostics: IDE lint inspection reported no errors.

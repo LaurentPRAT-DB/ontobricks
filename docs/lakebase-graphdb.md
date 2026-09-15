@@ -355,17 +355,25 @@ OntoBricks uses up to three Postgres schemas in the same Lakebase project:
 
 ### 6.2 — Objects per graph version
 
-Both `app_managed` and `managed_synced` use the same **3-object layout** per
-domain version. The difference is who writes to the `*_sync` table.
+Both `app_managed` and `managed_synced` use the same **3-object triple layout**
+per domain version, plus **four Explorer graph-index tables** rebuilt by
+`rebuild_adjacency`. The difference between write modes is who writes to the
+`*_sync` table.
 
 | Object | Owner | Naming | Description |
 |--------|-------|--------|-------------|
 | Sync table | App (`app_managed`) / Lakeflow (`managed_synced`) | `g_<domain>_v<n>_sync` | Bulk warehouse data; `(subject, predicate, object, datatype, lang)`. App writes via `COPY FROM STDIN`; Lakeflow writes via snapshot pipeline. |
 | Companion table | App (read/write) | `g_<domain>_v<n>__app` | Reasoning / cohort / materialise triples; `(subject, predicate, object, datatype, lang)` |
 | UNION view | App DDL | `g_<domain>_v<n>` | `SELECT … FROM _sync UNION ALL SELECT … FROM __app`; exposes the back-compat 5-column shape |
+| Adjacency out | App | `g_<domain>_v<n>_adj_out` | Typed entity–entity outgoing edges; btree on `src` |
+| Adjacency in | App | `g_<domain>_v<n>_adj_in` | Typed incoming edges; btree on `dst` |
+| Entity search | App | `g_<domain>_v<n>_entity_search` | One row per typed instance for Explorer Preview |
+| Property companion | App | `g_<domain>_v<n>_props` | Outgoing triples of typed subjects; btree on `subject` |
 
-All SPARQL queries and graph traversal operations target the back-compat name
-`g_<domain>_v<n>` — no downstream code is aware of which mode is active.
+SPARQL still targets the union view `g_<domain>_v<n>`. Explorer hops use the
+adjacency tables; Preview uses `_entity_search`; expansion payload fetch uses
+`_props` (SPO fallback if that table is missing). Indexes are snapshots —
+**Refresh cache** or a full Build refreshes all four together.
 
 ### 6.3 — Drop cascade (both modes)
 

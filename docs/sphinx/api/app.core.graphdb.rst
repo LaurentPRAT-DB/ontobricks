@@ -61,6 +61,29 @@ gateway view, per the domain's Lakehouse materialization setting — see
    :undoc-members:
    :show-inheritance:
 
+Shared graph-index SQL
+----------------------
+
+Lakehouse and Lakebase share the same Explorer index projections. Build and
+**Refresh adjacency** materialise four always-TABLE companions from the
+reader-facing SPO union: ``_adj_out`` / ``_adj_in`` (typed hops),
+``_entity_search`` (Preview), and ``_props`` (expansion payload).
+
+.. automodule:: back.core.graphdb.adjacency
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: back.core.graphdb.entity_search
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: back.core.graphdb.props
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Lakebase (Postgres) subpackage
 ------------------------------
 

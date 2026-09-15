@@ -28,6 +28,7 @@ RST summaries; see the architecture guide for the full design document.
    guides/api
    guides/data-access
    guides/graphdb-integration
+   guides/optimizations
    guides/lakebase-graphdb
    guides/cohort_discovery
    guides/mcp

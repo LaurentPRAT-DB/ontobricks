@@ -31,13 +31,13 @@
             {% set _dr = get_user_domain_role() %}
             {% if _dr not in ('viewer', 'editor', 'none') %}
             <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="dbxAdjacencyRefreshBtn"
-                    title="Rebuild adjacency indexes only">
-                <i class="bi bi-diagram-3 me-1"></i>Refresh adjacency
+                    title="Rebuild graph cache">
+                <i class="bi bi-diagram-3 me-1"></i>Refresh cache
             </button>
             {% else %}
             <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="dbxAdjacencyRefreshBtn" disabled
-                    title="Only builders and admins can refresh adjacency">
-                <i class="bi bi-lock me-1"></i>Refresh adjacency
+                    title="Only builders and admins can refresh the graph cache">
+                <i class="bi bi-lock me-1"></i>Refresh cache
             </button>
             {% endif %}
             {% include "partials/dtwin/_purge_inferences_button.html" %}

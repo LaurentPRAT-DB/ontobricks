@@ -15,7 +15,7 @@
 - Preserve the Explorer JSON shape and entity/triple cap semantics.
 - Do not issue a `_props` existence probe before the expansion statement.
 - Missing `_props` falls back to SPO; unrelated query errors propagate.
-- Keep the Refresh adjacency label and API unchanged.
+- Keep the refresh API unchanged.
 
 ---
 

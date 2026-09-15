@@ -115,9 +115,12 @@ Pick a backend **per domain**: **Lakebase (Postgres)** by default,
 **No Backend** for ontology-only domains that publish their ontology with no
 graph built (Mapping and Knowledge Graph are disabled and the MCP surface
 serves only ontology information).
-Connection config stays workspace-global. Full reference:
+Connection config stays workspace-global. Lakehouse and Lakebase Build also
+materialise Explorer indexes (`_adj_out` / `_adj_in`, `_entity_search`,
+`_props`); Neo4j keeps native traversal. Full reference:
 [Lakebase Graph DB](docs/lakebase-graphdb.md) ·
-[Graph DB Integration](docs/graphdb-integration.md).
+[Graph DB Integration](docs/graphdb-integration.md) ·
+[Graph Query Optimizations](docs/optimizations.md).
 
 ## Runs entirely on your Databricks
 

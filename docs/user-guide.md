@@ -642,7 +642,7 @@ In both modes `…_inferred` stays a Delta table, so reasoning and cohort writes
 
 **Explorer index snapshot.** Build materialises `_adj_out` / `_adj_in` for
 entity expansion, `_entity_search` for the first Preview search, and `_props`
-for the final expansion payload fetch. The **Refresh adjacency** action
+for the final expansion payload fetch. The **Refresh cache** action
 refreshes all four from the same graph snapshot.
 Preview with **Inferred** disabled keeps the asserted-only SPO path instead of
 using the union search snapshot. On Lakehouse domains, this action always uses
@@ -650,11 +650,11 @@ the configured **Build SQL Warehouse**; the optional Lakehouse/RT warehouse is
 used only for graph reads and cannot execute the required table DDL. Freshness
 depends on backend and mode:
 
-| Backend / mode | What Build builds | What **Refresh adjacency** does | When new source rows appear in traversal |
+| Backend / mode | What Build builds | What **Refresh cache** does | When new source rows appear in traversal |
 |----------------|-------------------|---------------------------------|------------------------------------------|
 | Lakehouse — `table` mode | CTAS into `_adj_out` / `_adj_in` from `_graph` (itself a snapshot) | Reindexes from the *existing* `_data` snapshot — does **not** ingest new source rows | After the next full **Build** |
-| Lakehouse — `view` mode | Same adjacency CTAS from `_graph` (itself a live pass-through over source tables) | Reruns adjacency CTAS from live `_graph`; captures current source data at refresh time, but adjacency tables are still a snapshot — traversal does **not** update automatically | After the next **Refresh adjacency** or Build |
-| Lakebase | Postgres adjacency tables rebuilt from the reader-facing union view | Reindexes from the current reader-facing union view; no stale `_data` snapshot to overcome — captures the live Postgres graph state at refresh time | After the next Refresh adjacency or Build (traversal uses the adjacency snapshot; union view is not queried directly for hops) |
+| Lakehouse — `view` mode | Same adjacency CTAS from `_graph` (itself a live pass-through over source tables) | Reruns adjacency CTAS from live `_graph`; captures current source data at refresh time, but adjacency tables are still a snapshot — traversal does **not** update automatically | After the next **Refresh cache** or Build |
+| Lakebase | Postgres adjacency tables rebuilt from the reader-facing union view | Reindexes from the current reader-facing union view; no stale `_data` snapshot to overcome — captures the live Postgres graph state at refresh time | After the next Refresh cache or Build (traversal uses the adjacency snapshot; union view is not queried directly for hops) |
 | Neo4j | *(no adjacency tables — native Bolt traversal)* | Not available | N/A |
 
 > **Delta consistency note:** Lakehouse refresh/build replaces `_adj_out`,
@@ -666,7 +666,7 @@ depends on backend and mode:
 > (adjacency-driven) and a raw SPARQL scan of `_graph` can show different
 > results.  Expansion sees the adjacency snapshot; SPARQL includes `_inferred`
 > rows not yet reflected in the adjacency tables.  A full **Build** reconciles
-> both.  The **Refresh adjacency** button on the Build panel lets builders
+> both.  The **Refresh cache** button on the Build panel lets builders
 > update hop indexes without waiting for a full rebuild — useful after reasoning
 > or cohort runs that add edges.
 
@@ -1008,8 +1008,8 @@ Short version:
 
 | Backend / mode | Copy of mapped triples? | How they are created | Indexes (`_adj_*`, `_entity_search`, `_props`) |
 |----------------|-------------------------|----------------------|--------------------------------------|
-| Lakehouse · **Materialized Delta table** | Yes — `_data` TABLE | Build CTAS + `OPTIMIZE` on the Build SQL Warehouse | Physical Delta tables rebuilt at end of Build and by **Refresh adjacency** |
-| Lakehouse · **Views only** | No — `_data` is a pass-through VIEW | Build only refreshes VIEW DDL | Still physical Delta tables (a snapshot of hops/search). Refresh adjacency recaptures live sources |
+| Lakehouse · **Materialized Delta table** | Yes — `_data` TABLE | Build CTAS + `OPTIMIZE` on the Build SQL Warehouse | Physical Delta tables rebuilt at end of Build and by **Refresh cache** |
+| Lakehouse · **Views only** | No — `_data` is a pass-through VIEW | Build only refreshes VIEW DDL | Still physical Delta tables (a snapshot of hops/search). Refresh cache recaptures live sources |
 | Lakebase · **app_managed** | Yes, twice: UC `_data` TABLE + Postgres `_sync` | App streams warehouse rows into `_sync`; `__app` holds inferred rows; readers use the union view | Postgres tables rebuilt from that union view |
 | Lakebase · **managed_synced** | Yes, twice: UC `_data` TABLE + Lakeflow `_sync` | Lakeflow owns `_sync`; the app owns `__app` and the union view | Same Postgres index rebuild |
 | Neo4j | Yes, twice: UC `_data` TABLE + Neo4j nodes | Build `MERGE` | None — native Bolt traversal |
@@ -1522,7 +1522,7 @@ four rebuildable graph-index tables.
 **Settings → Lakehouse → SQL Warehouse** owns both compute roles:
 
 - **Build SQL Warehouse** — classic or serverless warehouse (never Lakehouse//RT) used for mapping views, materialization, and other writes. Build SQL always uses the Thrift transport; SEA/Kernel is not configurable for this role. You can override the Databricks App `sql-warehouse` resource default from this selector.
-- **Query SQL Warehouse** — disabled by default and mirrored from Build. Enable **Use Lakehouse//RT for queries** to choose a distinct warehouse for Knowledge Graph reads. RT warehouses reject `CREATE VIEW` / CTAS, so Build and **Refresh adjacency** never use the Query warehouse. Disabling the option and applying restores Build for reads. In Databricks Apps, RT reads use the Statement Execution API with `INLINE` JSON results, avoiding Kernel CloudFetch storage downloads. Local development keeps the SQL connector's Kernel path.
+- **Query SQL Warehouse** — disabled by default and mirrored from Build. Enable **Use Lakehouse//RT for queries** to choose a distinct warehouse for Knowledge Graph reads. RT warehouses reject `CREATE VIEW` / CTAS, so Build and **Refresh cache** never use the Query warehouse. Disabling the option and applying restores Build for reads. In Databricks Apps, RT reads use the Statement Execution API with `INLINE` JSON results, avoiding Kernel CloudFetch storage downloads. Local development keeps the SQL connector's Kernel path.
 
 **Settings → Databricks → Use CloudFetch** controls whether Thrift SQL clients download result files via CloudFetch. It does not affect Lakehouse//RT: Apps uses `INLINE` Statement Execution results and local development uses Kernel. INLINE responses are capped at 24 MiB; OntoBricks rejects a truncated response rather than displaying an incomplete graph.
 
