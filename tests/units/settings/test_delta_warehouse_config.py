@@ -151,12 +151,44 @@ class TestResolveDeltaWarehouseId:
             "back.objects.session.global_config_service.get_delta_warehouse_id",
             return_value="wh-delta",
         ), patch(
+            "back.objects.session.global_config_service.get_delta_warehouse_use_sea",
+            return_value=False,
+        ), patch(
+            "back.core.helpers.DatabricksHelpers._databricks.is_databricks_app",
+            return_value=False,
+        ), patch(
             "back.core.helpers.DatabricksHelpers.DatabricksHelpers.resolve_warehouse_id",
             return_value="wh-global",
         ) as global_resolve:
             wid = resolve_delta_warehouse_id(domain, settings)
         assert wid == "wh-delta"
         global_resolve.assert_not_called()
+
+    def test_apps_replace_rt_query_warehouse_with_build(self):
+        domain = MagicMock()
+        settings = MagicMock()
+        with patch.object(
+            DatabricksHelpers,
+            "get_databricks_host_and_token",
+            return_value=("https://h", "tok"),
+        ), patch.object(
+            DatabricksHelpers,
+            "_resolve_registry_cfg",
+            return_value=REGISTRY_CFG,
+        ), patch(
+            "back.objects.session.global_config_service.get_delta_warehouse_id",
+            return_value="wh-rt",
+        ), patch(
+            "back.objects.session.global_config_service.get_delta_warehouse_use_sea",
+            return_value=True,
+        ), patch(
+            "back.core.helpers.DatabricksHelpers._databricks.is_databricks_app",
+            return_value=True,
+        ), patch(
+            "back.core.helpers.DatabricksHelpers.DatabricksHelpers.resolve_warehouse_id",
+            return_value="wh-build",
+        ):
+            assert resolve_delta_warehouse_id(domain, settings) == "wh-build"
 
     def test_falls_back_to_global_when_delta_unset(self):
         domain = MagicMock()
@@ -191,10 +223,33 @@ class TestResolveLakehouseUseSea:
             "_resolve_registry_cfg",
             return_value=REGISTRY_CFG,
         ), patch(
+            "back.core.helpers.DatabricksHelpers._databricks.is_databricks_app",
+            return_value=False,
+        ), patch(
             "back.objects.session.global_config_service.get_delta_warehouse_use_sea",
             return_value=True,
         ):
             assert DatabricksHelpers.resolve_lakehouse_use_sea(MagicMock(), MagicMock()) is True
+
+    def test_apps_never_use_kernel_even_when_configured(self):
+        with patch.object(
+            DatabricksHelpers,
+            "get_databricks_host_and_token",
+            return_value=("https://h", "tok"),
+        ), patch.object(
+            DatabricksHelpers,
+            "_resolve_registry_cfg",
+            return_value=REGISTRY_CFG,
+        ), patch(
+            "back.core.helpers.DatabricksHelpers._databricks.is_databricks_app",
+            return_value=True,
+        ), patch(
+            "back.objects.session.global_config_service.get_delta_warehouse_use_sea",
+            return_value=True,
+        ):
+            assert DatabricksHelpers.resolve_lakehouse_use_sea(
+                MagicMock(), MagicMock()
+            ) is False
 
     def test_defaults_false_without_registry(self):
         with patch.object(

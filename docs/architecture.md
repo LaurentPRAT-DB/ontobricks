@@ -289,6 +289,9 @@ Without an RT query override, `resolve_delta_warehouse_id()` intentionally
 falls back to the Build SQL Warehouse. The Settings UI represents this by
 disabling Query and mirroring Build. RT mode requires a distinct query
 warehouse; disabling it persists an empty Lakehouse warehouse ID.
+In Databricks Apps, Kernel/RT is also skipped at runtime because the Kernel
+connector always CloudFetches result files and Apps cannot reach
+`storage.cloud.databricks.com`; reads then use the Build warehouse over Thrift.
 
 The service caches the document in memory with a TTL. Persistence goes through
 the active `RegistryStore` (`save_global_config` / `load_global_config`), so

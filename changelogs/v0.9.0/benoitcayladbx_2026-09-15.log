@@ -691,3 +691,33 @@ Tests:
 - Browser: Settings passed at 1440 and 375 pixels with Build and CloudFetch
   controls intact, build SEA absent, Lakehouse//RT query controls intact, and
   no console errors or failed requests.
+
+## Skip Kernel/RT SQL inside Databricks Apps
+
+Context: After forcing build SQL onto Thrift, deployed Apps logs still showed
+Kernel CloudFetch NetworkError on `GET /dtwin/` and `GET /mapping/load`. The
+Kernel backend ignores `use_cloud_fetch=False` and always downloads result
+files from `storage.cloud.databricks.com`, which Databricks Apps cannot reach.
+Runtime now falls back to the Build warehouse and Thrift in App mode.
+
+Changes:
+
+1. `src/back/core/helpers/DatabricksHelpers.py`
+   Disables Lakehouse Kernel in Apps and substitutes the Build warehouse when
+   the query warehouse is configured for SEA/RT.
+2. `tests/units/settings/test_delta_warehouse_config.py`
+   Covers the Apps Kernel disable and RT-to-build warehouse substitution.
+3. `docs/user-guide.md`
+   Documents the Apps CloudFetch/Kernel limitation and runtime fallback.
+4. `docs/architecture.md`
+   Notes that Apps skip Kernel/RT at warehouse resolution time.
+
+Modified files:
+- src/back/core/helpers/DatabricksHelpers.py
+- tests/units/settings/test_delta_warehouse_config.py
+- docs/user-guide.md
+- docs/architecture.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` →
+  `6141 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.81s`.
