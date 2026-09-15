@@ -1904,6 +1904,15 @@ If all checks pass:
 3. A progress indicator shows the sync status.
 4. When complete, you'll see the **triple count** and **last updated timestamp**.
 
+#### Build progress and logs
+
+During a Lakehouse build, the log card displays the ordered stage names and
+updates each row with live elapsed time while the stage is running. Completed
+stages keep their final duration, and the footer shows the total build duration
+for the full run. Use **Export** to download the build log as a text file for
+audit trails or troubleshooting, and **Hide** to collapse the card without
+stopping the underlying task.
+
 > **Note**: If the triple store table already exists, you can choose to **drop and recreate** it or append to the existing data.
 
 > **Triple Store Backend**: OntoBricks always materializes a Delta view in Unity Catalog (governance + lineage) and a flat triple table in the domain's Graph DB engine (Lakebase Postgres, Lakehouse, or Neo4j). The backend is chosen **per domain** under **Domain → Information → Knowledge Graph** (engine *connection* settings live under **Settings → Back end**).

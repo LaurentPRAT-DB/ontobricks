@@ -340,3 +340,36 @@ Tests:
   `39 passed, 1 warning in 0.17s`.
 - GREEN (full required suite): `uv run --frozen pytest -q -m "not scenario"` →
   `6119 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.03s`.
+
+## Finalize Lakehouse build-progress documentation
+
+Context: Task 5 of the Lakehouse build-progress plan closes the workstream by
+updating the user-facing guidance for timed build stages and log export, then
+capturing diagnostics and full verification evidence without modifying the
+existing implementation or prior changelog sections.
+
+Changes:
+
+1. `docs/user-guide.md`
+   Added a Lakehouse build-progress subsection documenting ordered stage names,
+   live elapsed timers, completed step durations, total duration, and text-log
+   export/hide actions.
+2. `changelogs/v0.9.0/benoitcayladbx_2026-09-15.log`
+   Appended the Task 5 completion entry with exact diagnostics, focused test,
+   full non-scenario suite, and final diff verification outputs.
+
+Modified files:
+- docs/user-guide.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- Diagnostics: `ReadLints` on changed Python/JS/HTML files →
+  `No linter errors found.`
+- Focused: `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py tests/units/front/test_timed_build_log_contract.py tests/units/front/test_lakehouse_materialization_ui.py tests/units/front/test_adjacency_refresh_ui.py` →
+  `47 passed, 1 warning in 0.98s`.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6119 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.16s`.
+- Final diff checks: `git diff --check` (no output, no whitespace errors) and
+  `git status --short` (only intended doc change plus pre-existing unrelated edits).
+- Browser evidence: previously validated in Task 4 at `1440x900` and `375x812`
+  with no feature-related console or asset errors.
