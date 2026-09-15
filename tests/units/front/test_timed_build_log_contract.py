@@ -11,6 +11,8 @@ DTWIN_HTML = REPO_ROOT / "src/front/templates/dtwin.html"
 QUERY_SYNC_JS = REPO_ROOT / "src/front/static/query/js/query-sync.js"
 QUERY_SYNC_CSS = REPO_ROOT / "src/front/static/query/css/query-sync.css"
 SYNC_PARTIAL = REPO_ROOT / "src/front/templates/partials/dtwin/_query_sync.html"
+DBX_BUILD_JS = REPO_ROOT / "src/front/static/query/js/query-databricks-build.js"
+DBX_BUILD_HTML = REPO_ROOT / "src/front/templates/partials/dtwin/_query_databricks_build.html"
 
 
 def test_shared_renderer_loads_before_backend_build_scripts() -> None:
@@ -35,3 +37,24 @@ def test_lakebase_log_card_declares_shared_class() -> None:
     html = SYNC_PARTIAL.read_text(encoding="utf-8")
     assert 'id="syncBuildLogCard"' in html
     assert 'class="card d-none mb-3 timed-task-log-card"' in html
+
+
+def test_lakehouse_build_panel_has_timed_log_card() -> None:
+    html = DBX_BUILD_HTML.read_text(encoding="utf-8")
+    for element_id in (
+        "dbxBuildLogCard",
+        "dbxBuildLogList",
+        "dbxBuildLogTotal",
+        "dbxBuildLogBadge",
+        "dbxBuildLogExport",
+        "dbxBuildLogHide",
+    ):
+        assert f'id="{element_id}"' in html
+    assert "timed-task-log-card" in html
+
+
+def test_lakehouse_poll_renders_full_task_log() -> None:
+    js = DBX_BUILD_JS.read_text(encoding="utf-8")
+    assert "TimedTaskLog.create" in js
+    assert 'cardId: "dbxBuildLogCard"' in js
+    assert "_dbxTimedBuildLog.render(task)" in js

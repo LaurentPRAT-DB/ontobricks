@@ -310,3 +310,33 @@ Tests:
   `1 failed, 6116 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.26s`
   (existing unrelated failure in `tests/units/objects/test_build_pipeline_materialize.py::TestWhatABuildReports::test_a_view_only_build_reports_its_mode`,
   `_StubTM` missing `skip_step`).
+
+## Add Lakehouse timed build-log card
+
+Context: Task 4 of the Lakehouse build-progress plan requires the Databricks
+Build panel to reuse the shared timed task-log renderer introduced in Task 3.
+Lakehouse now renders the full log card and keeps start/poll/resume/terminal
+states aligned with the same shared behavior used by the Lakebase build panel.
+
+Changes:
+
+1. `tests/units/front/test_timed_build_log_contract.py`
+   Added RED-first Lakehouse contracts for timed-log card markup IDs and shared renderer polling wiring.
+2. `src/front/templates/partials/dtwin/_query_databricks_build.html`
+   Added the full timed task-log card with Lakehouse-specific IDs, shared card class, intro text, Export, and Hide controls.
+3. `src/front/static/query/js/query-databricks-build.js`
+   Wired `TimedTaskLog.create(...)` and delegated start, poll rendering, resume rendering, terminal-state rendering, hide, and export handlers through the shared renderer instance.
+
+Modified files:
+- tests/units/front/test_timed_build_log_contract.py
+- src/front/templates/partials/dtwin/_query_databricks_build.html
+- src/front/static/query/js/query-databricks-build.js
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/front/test_timed_build_log_contract.py` →
+  `2 failed, 4 passed, 1 warning in 0.16s` (missing Lakehouse card/wiring before implementation).
+- GREEN (focused): `uv run --frozen pytest -q tests/units/front/test_timed_build_log_contract.py tests/units/front/test_lakehouse_materialization_ui.py tests/units/front/test_adjacency_refresh_ui.py` →
+  `39 passed, 1 warning in 0.17s`.
+- GREEN (full required suite): `uv run --frozen pytest -q -m "not scenario"` →
+  `6119 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.03s`.

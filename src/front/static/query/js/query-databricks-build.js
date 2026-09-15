@@ -11,6 +11,32 @@ let dbxBuildRunning = false;
 let dbxAdjacencyRefreshRunning = false;
 let dbxGraphHasData = false;
 
+const _dbxTimedBuildLog = TimedTaskLog.create({
+    cardId: "dbxBuildLogCard",
+    listId: "dbxBuildLogList",
+    totalId: "dbxBuildLogTotal",
+    badgeId: "dbxBuildLogBadge",
+    exportButtonId: "dbxBuildLogExport",
+    title: "OntoBricks — Lakehouse Graph Build Log",
+    filenamePrefix: "lakehouse-graph-build",
+});
+
+function showDbxBuildLog() {
+    _dbxTimedBuildLog.show();
+}
+
+function hideDbxBuildLog() {
+    _dbxTimedBuildLog.hide();
+}
+
+function renderDbxBuildLog(task) {
+    _dbxTimedBuildLog.render(task);
+}
+
+function exportDbxBuildLog() {
+    _dbxTimedBuildLog.export();
+}
+
 function _tsxBackend() {
     try {
         const el = document.getElementById('triplestore-config');
@@ -232,6 +258,7 @@ async function startDatabricksBuild() {
     dbxBuildRunning = true;
     _hideDbxBuildResult();
     _resetDbxProgressBar();
+    showDbxBuildLog();
     try {
         const resp = await fetch('/dtwin/databricks-build/start', {
             method: 'POST',
@@ -361,6 +388,7 @@ function pollDatabricksAdjacencyTask(taskId) {
 function _finishDbxBuild(task) {
     sessionStorage.removeItem(DBX_BUILD_TASK_KEY);
     dbxBuildRunning = false;
+    renderDbxBuildLog(task);
     const btn = document.getElementById('dbxBuildStartBtn');
     if (btn) btn.disabled = !dbxBuildReady;
     _updateDbxAdjacencyButton();
@@ -422,6 +450,7 @@ function pollDatabricksBuildTask(taskId) {
             if (step) {
                 step.textContent = _taskStepMessage(task);
             }
+            renderDbxBuildLog(task);
 
             if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
                 clearInterval(timer);
@@ -478,6 +507,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('dbxBuildRefreshBtn')?.addEventListener('click', loadDatabricksBuildInfo);
     document.getElementById('dbxBuildStartBtn')?.addEventListener('click', startDatabricksBuild);
     document.getElementById('dbxAdjacencyRefreshBtn')?.addEventListener('click', startDatabricksAdjacencyRefresh);
+    document.getElementById('dbxBuildLogHide')?.addEventListener('click', hideDbxBuildLog);
+    document.getElementById('dbxBuildLogExport')?.addEventListener('click', exportDbxBuildLog);
 
     document.addEventListener('sidebarSectionChanged', function (e) {
         if (e.detail?.section === 'sync' && _tsxBackend() === 'databricks') {
@@ -487,8 +518,10 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     await checkAndResumeDatabricksTask(
         DBX_BUILD_TASK_KEY,
-        function (taskId) {
+        function (taskId, task) {
             dbxBuildRunning = true;
+            showDbxBuildLog();
+            renderDbxBuildLog(task);
             pollDatabricksBuildTask(taskId);
         },
         function (task) {
