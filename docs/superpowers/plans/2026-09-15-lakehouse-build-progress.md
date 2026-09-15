@@ -484,3 +484,152 @@ git add docs/user-guide.md \
   changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
 git commit -m "docs(dtwin): document Lakehouse build progress"
 ```
+
+---
+
+### Task 6: Publish Lakehouse progress without initial batching
+
+**Files:**
+- Modify: `src/front/static/query/js/query-databricks-build.js`
+- Modify: `tests/units/front/test_timed_build_log_contract.py`
+- Modify: `docs/user-guide.md`
+- Modify: `changelogs/v0.9.0/benoitcayladbx_2026-09-15.log`
+
+**Interfaces:**
+- Produces: `_dbxBuildPollDelay(task) -> number`, returning `300` before the
+  final task step and `1000` while the final step is active.
+- Preserves: `pollDatabricksBuildTask(taskId)` as the existing public entry
+  point for new and restored builds.
+
+- [ ] **Step 1: Write failing polling lifecycle contracts**
+
+Extend `test_timed_build_log_contract.py` with source contracts that isolate
+`pollDatabricksBuildTask` and verify:
+
+```python
+def _lakehouse_poll_body() -> str:
+    source = _read(DBX_BUILD_JS)
+    start = source.index("function pollDatabricksBuildTask(")
+    end = source.index(
+        "\nasync function checkAndResumeDatabricksTask", start
+    )
+    return source[start:end]
+
+
+def test_lakehouse_build_poll_starts_immediately_without_interval() -> None:
+    body = _lakehouse_poll_body()
+    assert "pollOnce();" in body
+    assert "setInterval(" not in body
+    assert "setTimeout(pollOnce, _dbxBuildPollDelay(task))" in body
+
+
+def test_lakehouse_build_poll_uses_adaptive_delays() -> None:
+    js = _read(DBX_BUILD_JS)
+    assert "const DBX_BUILD_FAST_POLL_MS = 300;" in js
+    assert "const DBX_BUILD_FINAL_POLL_MS = 1000;" in js
+    start = js.index("function _dbxBuildPollDelay(")
+    end = js.index("\nfunction applyTripleStoreBackendPanels", start)
+    body = js[start:end]
+    assert "task.current_step" in body
+    assert "steps.length - 1" in body
+```
+
+Add a third contract proving terminal and error paths stop:
+
+```python
+def test_lakehouse_build_poll_stops_after_terminal_or_error() -> None:
+    body = _lakehouse_poll_body()
+    terminal_start = body.index("if (task.status === 'completed'")
+    schedule_start = body.index(
+        "setTimeout(pollOnce, _dbxBuildPollDelay(task))"
+    )
+    assert "return;" in body[terminal_start:schedule_start]
+    catch_start = body.index("} catch (e)")
+    assert "setTimeout(" not in body[catch_start:]
+```
+
+- [ ] **Step 2: Run the focused contract and verify RED**
+
+Run:
+
+```bash
+uv run --frozen pytest -q tests/units/front/test_timed_build_log_contract.py
+```
+
+Expected: the new tests fail because the build monitor still uses a delayed
+1.5-second `setInterval`.
+
+- [ ] **Step 3: Implement immediate adaptive recursive polling**
+
+Add constants and the pure delay selector:
+
+```javascript
+const DBX_BUILD_FAST_POLL_MS = 300;
+const DBX_BUILD_FINAL_POLL_MS = 1000;
+
+function _dbxBuildPollDelay(task) {
+    const steps = Array.isArray(task?.steps) ? task.steps : [];
+    const finalStep = Math.max(steps.length - 1, 0);
+    return Number(task?.current_step || 0) >= finalStep
+        ? DBX_BUILD_FINAL_POLL_MS
+        : DBX_BUILD_FAST_POLL_MS;
+}
+```
+
+Replace the build monitor's interval with an inner asynchronous `pollOnce`
+function. Invoke `pollOnce()` immediately. After a successful non-terminal
+response and completed render, schedule exactly one next request:
+
+```javascript
+setTimeout(pollOnce, _dbxBuildPollDelay(task));
+```
+
+Return from the terminal branch after finalization and info refresh. Keep the
+existing catch behavior terminal, with no retry. Do not modify adjacency-only
+or Lakebase polling.
+
+- [ ] **Step 4: Run focused frontend regressions**
+
+Run:
+
+```bash
+uv run --frozen pytest -q \
+  tests/units/front/test_timed_build_log_contract.py \
+  tests/units/front/test_lakehouse_materialization_ui.py \
+  tests/units/front/test_adjacency_refresh_ui.py
+```
+
+Expected: all tests pass.
+
+- [ ] **Step 5: Browser-test request timing**
+
+Using an intercepted synthetic `/tasks/<id>` response, verify:
+
+- the first request occurs immediately after `pollDatabricksBuildTask`;
+- no two requests overlap when one response is delayed;
+- pre-adjacency polling uses approximately 300 milliseconds;
+- adjacency polling uses approximately 1 second;
+- terminal and failed requests schedule no further poll;
+- the seven-row log remains responsive at desktop and 375-pixel widths.
+
+- [ ] **Step 6: Document and verify**
+
+Update the Lakehouse Build guide and daily v0.9.0 changelog in English. Run:
+
+```bash
+uv run --frozen pytest -q -m "not scenario"
+git diff --check
+```
+
+Expected: the non-scenario suite passes and the diff has no whitespace errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/front/static/query/js/query-databricks-build.js \
+  tests/units/front/test_timed_build_log_contract.py \
+  docs/user-guide.md \
+  changelogs/v0.9.0/benoitcayladbx_2026-09-15.log \
+  docs/superpowers/plans/2026-09-15-lakehouse-build-progress.md
+git commit -m "fix(front): stream Lakehouse build progress promptly"
+```
