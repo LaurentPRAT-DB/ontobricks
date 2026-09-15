@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -23,11 +25,13 @@ from back.core.databricks.lakebase.grants import resolve_mcp_app_name
 from back.core.graphdb.neo4j.Neo4jStore import is_neo4j_password_from_secret
 from back.core.helpers import (
     DEFAULT_LOGO_PATH,
+    build_auto_base_uri,
     get_databricks_client,
     get_databricks_host_and_token,
     normalize_ui_branding,
     resolve_app_registry_context,
     resolve_build_use_sea,
+    resolve_default_base_uri,
     resolve_delta_warehouse_id,
     resolve_use_cloud_fetch,
     resolve_warehouse_id,
@@ -4888,15 +4892,60 @@ class SettingsService:
         return obx_format.load(envelope)
 
     @staticmethod
-    def _suggest_rename(svc: RegistryService, folder: str) -> str:
-        """Suggest a free folder name by appending ``_imported`` / ``_2`` / ..."""
-        base = sanitize_domain_folder(folder + "_imported")
-        candidate = base
-        idx = 2
-        while svc.domain_exists(candidate):
-            candidate = f"{base}_{idx}"
-            idx += 1
+    def _camelcase_import_name(value: str) -> str:
+        """Return a valid CamelCase display name for an imported domain."""
+        parts = re.findall(r"[A-Za-z0-9]+", value or "")
+        candidate = "".join(part[:1].upper() + part[1:] for part in parts)
+        if candidate and candidate[0].isalpha():
+            return candidate[:64]
+        return "ImportedDomain"
+
+    @staticmethod
+    def _suggest_import_name(svc: RegistryService, display_name: str) -> str:
+        """Suggest a free CamelCase display name for an imported copy."""
+        base = SettingsService._camelcase_import_name(display_name) + "Imported"
+        candidate = base[:64]
+        index = 2
+        while svc.domain_exists(sanitize_domain_folder(candidate)):
+            suffix = str(index)
+            candidate = base[: 64 - len(suffix)] + suffix
+            index += 1
         return candidate
+
+    @staticmethod
+    def _prepare_renamed_version_doc(
+        doc: Dict[str, Any],
+        version: str,
+        display_name: str,
+        base_uri: str,
+    ) -> Dict[str, Any]:
+        """Rewrite identity and clear graph runtime in a renamed OBX version."""
+        prepared = copy.deepcopy(doc)
+
+        def rewrite(node: Dict[str, Any], *, root: bool = False) -> None:
+            info = node.get("info")
+            if root or isinstance(info, dict):
+                info = node.setdefault("info", {})
+                info["name"] = display_name
+                info["last_build"] = ""
+
+            ontology = node.get("ontology")
+            if isinstance(ontology, dict):
+                ontology["base_uri"] = base_uri
+                ontology["base_uri_auto"] = True
+
+            if "last_build" in node:
+                node["last_build"] = ""
+            triplestore = node.get("triplestore")
+            if isinstance(triplestore, dict):
+                triplestore["stats"] = {}
+
+        rewrite(prepared, root=True)
+        versions = prepared.get("versions")
+        nested = versions.get(version) if isinstance(versions, dict) else None
+        if isinstance(nested, dict):
+            rewrite(nested)
+        return prepared
 
     @staticmethod
     def preview_obx_import_result(
@@ -4919,6 +4968,10 @@ class SettingsService:
                 if not raw_name:
                     continue
                 folder = sanitize_domain_folder(raw_name)
+                info = entry.get("info") or {}
+                display_name = SettingsService._camelcase_import_name(
+                    info.get("name") or raw_name
+                )
                 incoming_versions = sorted(
                     (entry.get("versions") or {}).keys(),
                     key=lambda v: [int(x) for x in v.split(".") if x.isdigit()] or [0],
@@ -4941,11 +4994,12 @@ class SettingsService:
                         "exists": exists,
                         "conflicting_versions": conflicting_versions,
                         "suggested_new_name": (
-                            SettingsService._suggest_rename(svc, folder)
+                            SettingsService._suggest_import_name(svc, display_name)
                             if exists
-                            else folder
+                            else display_name
                         ),
-                        "info": entry.get("info") or {},
+                        "display_name": display_name,
+                        "info": info,
                     }
                 )
 
@@ -5018,11 +5072,19 @@ class SettingsService:
                     continue
 
                 target_folder = folder
+                rename_display_name = ""
+                rename_base_uri = ""
                 if action == "rename":
-                    candidate = (decision.get("new_name") or "").strip()
-                    target_folder = sanitize_domain_folder(
-                        candidate or SettingsService._suggest_rename(svc, folder)
-                    )
+                    rename_display_name = (
+                        decision.get("new_name") or ""
+                    ).strip()
+                    if not re.fullmatch(
+                        r"[A-Z][A-Za-z0-9]{0,63}", rename_display_name
+                    ):
+                        raise ValidationError(
+                            "Imported domain name must be CamelCase alphanumeric"
+                        )
+                    target_folder = sanitize_domain_folder(rename_display_name)
                     if svc.domain_exists(target_folder):
                         summary["errors"].append(
                             f'Rename target "{target_folder}" already exists; '
@@ -5033,6 +5095,10 @@ class SettingsService:
                             {"name": folder, "action": "skipped_rename_conflict"}
                         )
                         continue
+                    rename_base_uri = build_auto_base_uri(
+                        rename_display_name,
+                        resolve_default_base_uri(domain_session, settings),
+                    )
                     summary["renamed_domains"] += 1
                 elif action != "overwrite":
                     raise ValidationError(
@@ -5054,7 +5120,19 @@ class SettingsService:
                         )
                         continue
                     is_overwrite = ver in existing
-                    ok, msg = svc.write_version(target_folder, ver, json.dumps(doc))
+                    document_to_write = (
+                        SettingsService._prepare_renamed_version_doc(
+                            doc,
+                            ver,
+                            rename_display_name,
+                            rename_base_uri,
+                        )
+                        if action == "rename"
+                        else doc
+                    )
+                    ok, msg = svc.write_version(
+                        target_folder, ver, json.dumps(document_to_write)
+                    )
                     if not ok:
                         summary["errors"].append(
                             f"{target_folder} v{ver}: {msg}"
