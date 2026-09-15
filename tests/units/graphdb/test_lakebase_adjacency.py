@@ -31,6 +31,7 @@ def test_lakebase_adjacency_table_ids(auth):
     store = LakebaseFlatStore(auth, schema="ontobricks_graph")
     assert store.adjacency_table_ids("G_V1") == ("g_v1_adj_out", "g_v1_adj_in")
     assert store.entity_search_table_id("G_V1") == "g_v1_entity_search"
+    assert store.props_table_id("G_V1") == "g_v1_props"
 
 
 def test_lakebase_rebuild_adjacency_runs_ddl_and_rebuild_sql(auth):
@@ -54,6 +55,7 @@ def test_lakebase_rebuild_adjacency_runs_ddl_and_rebuild_sql(auth):
     assert any("CREATE TABLE IF NOT EXISTS g_v1_adj_out" in s for s in executed)
     assert any("CREATE TABLE IF NOT EXISTS g_v1_adj_in" in s for s in executed)
     assert any("CREATE TABLE IF NOT EXISTS g_v1_entity_search" in s for s in executed)
+    assert any("CREATE TABLE IF NOT EXISTS g_v1_props" in s for s in executed)
     assert any(
         "CREATE INDEX IF NOT EXISTS g_v1_adj_out_src_idx ON g_v1_adj_out (src)" in s
         for s in executed
@@ -65,6 +67,7 @@ def test_lakebase_rebuild_adjacency_runs_ddl_and_rebuild_sql(auth):
     assert any("TRUNCATE g_v1_adj_out" in s for s in executed)
     assert any("TRUNCATE g_v1_adj_in" in s for s in executed)
     assert any("TRUNCATE g_v1_entity_search" in s for s in executed)
+    assert any("TRUNCATE g_v1_props" in s for s in executed)
     assert any(
         "INSERT INTO g_v1_adj_out (src, predicate, dst) SELECT DISTINCT" in s
         for s in executed
@@ -76,11 +79,12 @@ def test_lakebase_rebuild_adjacency_runs_ddl_and_rebuild_sql(auth):
     assert any("ANALYZE g_v1_adj_out" in s for s in executed)
     assert any("ANALYZE g_v1_adj_in" in s for s in executed)
     assert any("ANALYZE g_v1_entity_search" in s for s in executed)
+    assert any("ANALYZE g_v1_props" in s for s in executed)
 
     tx_sql = [str(c[0][0]) for c in tx_cur.execute.call_args_list]
-    assert tx_sql[-2].startswith("TRUNCATE g_v1_entity_search")
+    assert tx_sql[-2].startswith("TRUNCATE g_v1_props")
     assert tx_sql[-1].startswith(
-        "INSERT INTO g_v1_entity_search (uri, type_uri, label, uri_lc, label_lc)"
+        "INSERT INTO g_v1_props (subject, predicate, object)"
     )
 
 
@@ -154,6 +158,8 @@ def test_expand_and_fetch_subgraph_uses_adjacency_tables_when_ready(auth):
     sql = mock_query.call_args.args[0]
     assert "FROM g_v1_adj_out t" in sql
     assert "FROM g_v1_adj_in t" in sql
+    assert "FROM g_v1_props triples" in sql
+    assert "FROM g_v1 triples" not in sql
     assert "NOT EXISTS" in sql
     assert payload["expanded_count"] == 2
     assert payload["count"] == 1
@@ -175,6 +181,30 @@ def test_expand_and_fetch_subgraph_falls_back_to_spo_when_adj_missing(auth):
     assert "FROM adj_in t" in sql
 
 
+def test_expand_and_fetch_subgraph_retries_spo_when_props_missing(auth):
+    store = LakebaseFlatStore(auth, schema="ontobricks_graph")
+    with patch.object(store, "table_exists", return_value=True), patch.object(
+        store,
+        "execute_query",
+        side_effect=[RuntimeError("relation g_v1_props does not exist"), []],
+    ) as mock_query:
+        store.expand_and_fetch_subgraph("G_V1", ["http://ex/a"], 1, 50, 100)
+
+    assert mock_query.call_count == 2
+    first_sql, fallback_sql = [call.args[0] for call in mock_query.call_args_list]
+    assert "FROM g_v1_props triples" in first_sql
+    assert "FROM g_v1 triples" in fallback_sql
+
+
+def test_expand_and_fetch_subgraph_propagates_unrelated_props_failure(auth):
+    store = LakebaseFlatStore(auth, schema="ontobricks_graph")
+    with patch.object(store, "table_exists", return_value=True), patch.object(
+        store, "execute_query", side_effect=RuntimeError("permission denied")
+    ):
+        with pytest.raises(RuntimeError, match="permission denied"):
+            store.expand_and_fetch_subgraph("G_V1", ["http://ex/a"], 1, 50, 100)
+
+
 def test_long_adjacency_names_fit_postgres_identifier_limit():
     graph = "Domain_" + ("A" * 120)
     out_name = _adjacency_ddl.adj_out_phy(graph)
@@ -189,6 +219,12 @@ def test_long_entity_search_name_fits_postgres_identifier_limit():
     name = _adjacency_ddl.entity_search_phy("Domain_" + ("A" * 120))
     assert len(name.encode("utf-8")) <= 63
     assert name.endswith("_entity_search")
+
+
+def test_long_props_name_fits_postgres_identifier_limit():
+    name = _adjacency_ddl.props_phy("Domain_" + ("A" * 120))
+    assert len(name.encode("utf-8")) <= 63
+    assert name.endswith("_props")
 
 
 def test_long_adjacency_names_do_not_collide():

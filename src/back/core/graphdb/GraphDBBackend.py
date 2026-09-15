@@ -41,6 +41,7 @@ class GraphDBBackend(ABC):
     supports_materialized_inference_purge = False
     supports_adjacency = False
     supports_entity_search = False
+    supports_props = False
 
     # ------------------------------------------------------------------
     # Core abstract methods
@@ -1134,6 +1135,10 @@ class GraphDBBackend(ABC):
 
     def entity_search_table_id(self, table_name: str) -> str:
         """Return the entity-search table identifier for *table_name*."""
+        return ""
+
+    def props_table_id(self, table_name: str) -> str:
+        """Return the property-companion table identifier for *table_name*."""
         return ""
 
     def entity_search_ready(self, table_name: str) -> bool:

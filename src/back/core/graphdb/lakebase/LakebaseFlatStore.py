@@ -29,6 +29,7 @@ from back.core.graphdb.lakebase.LakebaseBase import LakebaseBase
 from back.core.graphdb.lakebase.SyncedTableManager import (
     DEFAULT_TIMEOUT_S as _SYNC_DEFAULT_TIMEOUT_S,
 )
+from back.core.graphdb.props import is_missing_props_error
 from back.core.helpers import validate_table_name
 from back.core.logging import get_logger
 
@@ -97,6 +98,7 @@ class LakebaseFlatStore(LakebaseBase):
     supports_materialized_inference_purge = True
     supports_adjacency = True
     supports_entity_search = True
+    supports_props = True
 
     def __init__(
         self,
@@ -167,20 +169,27 @@ class LakebaseFlatStore(LakebaseBase):
     def entity_search_table_id(self, table_name: str) -> str:
         return _adjacency_ddl.entity_search_phy(table_name)
 
+    def props_table_id(self, table_name: str) -> str:
+        return _adjacency_ddl.props_phy(table_name)
+
     def rebuild_adjacency(self, table_name: str) -> None:
         validate_table_name(table_name)
         union_view = self._sql_relation(table_name)
         adj_out, adj_in = self.adjacency_table_ids(table_name)
         search = self.entity_search_table_id(table_name)
+        props = self.props_table_id(table_name)
         with self._cursor() as cur:
             _adjacency_ddl.ensure_adjacency_tables(cur, adj_out, adj_in)
             _adjacency_ddl.ensure_entity_search_table(cur, search)
+            _adjacency_ddl.ensure_props_table(cur, props)
         with self._txn_cursor() as (_, cur):
             _adjacency_ddl.rebuild_adjacency_data(cur, union_view, adj_out, adj_in)
             _adjacency_ddl.rebuild_entity_search_data(cur, union_view, search)
+            _adjacency_ddl.rebuild_props_data(cur, union_view, props)
         with self._cursor() as cur:
             _adjacency_ddl.analyze_adjacency_tables(cur, adj_out, adj_in)
             _adjacency_ddl.analyze_entity_search_table(cur, search)
+            _adjacency_ddl.analyze_props_table(cur, props)
 
     # -- Table-name resolution --------------------------------------------
 
@@ -583,13 +592,16 @@ class LakebaseFlatStore(LakebaseBase):
         max_triples = max(1, int(max_triples))
 
         relation = self._sql_relation(table_name)
+        props = ""
         if self.adjacency_ready(table_name):
             adj_out, adj_in = self.adjacency_table_ids(table_name)
+            props = self.props_table_id(table_name)
             sql = expand_and_fetch_sql(
                 flavor=self.sql_flavor(),
                 adj_out=self._sql_relation(adj_out),
                 adj_in=self._sql_relation(adj_in),
                 spo=relation,
+                props=self._sql_relation(props) if props else None,
                 selected_uris=selected_uris,
                 depth=depth,
                 max_entities=max_entities,
@@ -605,7 +617,28 @@ class LakebaseFlatStore(LakebaseBase):
                 max_triples=max_triples,
             )
 
-        rows = self.execute_query(sql) or []
+        try:
+            rows = self.execute_query(sql) or []
+        except Exception as exc:  # noqa: BLE001
+            if not props or not is_missing_props_error(exc, props):
+                raise
+            logger.info(
+                "Property table is unavailable; using SPO expansion fallback: %s",
+                exc,
+            )
+            adj_out, adj_in = self.adjacency_table_ids(table_name)
+            fallback_sql = expand_and_fetch_sql(
+                flavor=self.sql_flavor(),
+                adj_out=self._sql_relation(adj_out),
+                adj_in=self._sql_relation(adj_in),
+                spo=relation,
+                selected_uris=selected_uris,
+                depth=depth,
+                max_entities=max_entities,
+                max_triples=max_triples,
+                escape=self._sql_escape,
+            )
+            rows = self.execute_query(fallback_sql) or []
         discovered_count = (
             int(rows[0].get("_ob_expanded_count") or 0)
             if rows

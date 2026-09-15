@@ -86,7 +86,7 @@ class TestDeltaFlatStoreInferredRouting:
             client, "cat.sch.triplestore_mydomain_V1_inferred"
         )
 
-    def test_rebuild_adjacency_also_builds_entity_search(self):
+    def test_rebuild_adjacency_builds_all_graph_index_companions(self):
         client = MagicMock()
         domain = _domain()
         store = DeltaFlatStore(client, domain=domain)
@@ -109,9 +109,16 @@ class TestDeltaFlatStoreInferredRouting:
             in sql
             for sql in statements
         )
+        assert any(
+            "CREATE OR REPLACE TABLE cat.sch.triplestore_mydomain_V1_props"
+            in sql
+            and "CLUSTER BY (subject)" in sql
+            for sql in statements
+        )
         assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_adj_out" in statements
         assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_adj_in" in statements
         assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_entity_search" in statements
+        assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_props" in statements
 
     def test_rebuild_adjacency_keeps_going_when_optimize_fails(self):
         client = MagicMock()
@@ -130,7 +137,8 @@ class TestDeltaFlatStoreInferredRouting:
         assert any("_adj_out USING DELTA" in sql for sql in statements)
         assert any("_adj_in USING DELTA" in sql for sql in statements)
         assert any("_entity_search USING DELTA" in sql for sql in statements)
-        assert mock_warning.call_count == 3
+        assert any("_props USING DELTA" in sql for sql in statements)
+        assert mock_warning.call_count == 4
 
     def test_rebuild_adjacency_still_fails_when_ctas_fails(self):
         client = MagicMock()
@@ -259,6 +267,45 @@ class TestDeltaSingleStatementExpansion:
         sql = store.execute_query.call_args.args[0]
         assert "FROM cat.sch.triplestore_mydomain_V1_adj_out t" in sql
         assert "FROM cat.sch.triplestore_mydomain_V1_adj_in t" in sql
-        assert "FROM cat.sch.triplestore_mydomain_V1_data triples" in sql
+        assert "FROM cat.sch.triplestore_mydomain_V1_props triples" in sql
+        assert "FROM cat.sch.triplestore_mydomain_V1_data triples" not in sql
         assert "t.subject = frontier.entity" not in sql
         assert "t.object = frontier.entity" not in sql
+
+    def test_when_props_is_missing_expansion_retries_with_spo(self):
+        store = DeltaFlatStore(MagicMock(), domain=_domain())
+        store.table_exists = MagicMock(return_value=True)
+        store.execute_query = MagicMock(
+            side_effect=[
+                RuntimeError(
+                    "TABLE_OR_VIEW_NOT_FOUND: "
+                    "cat.sch.triplestore_mydomain_V1_props"
+                ),
+                [],
+            ]
+        )
+
+        store.expand_and_fetch_subgraph(
+            "cat.sch.triplestore_mydomain_V1_data", ["http://ex/a"], 1, 50, 100
+        )
+
+        assert store.execute_query.call_count == 2
+        first_sql, fallback_sql = [
+            call.args[0] for call in store.execute_query.call_args_list
+        ]
+        assert "FROM cat.sch.triplestore_mydomain_V1_props triples" in first_sql
+        assert "FROM cat.sch.triplestore_mydomain_V1_data triples" in fallback_sql
+
+    def test_unrelated_props_query_failure_propagates(self):
+        store = DeltaFlatStore(MagicMock(), domain=_domain())
+        store.table_exists = MagicMock(return_value=True)
+        store.execute_query = MagicMock(side_effect=RuntimeError("permission denied"))
+
+        with pytest.raises(RuntimeError, match="permission denied"):
+            store.expand_and_fetch_subgraph(
+                "cat.sch.triplestore_mydomain_V1_data",
+                ["http://ex/a"],
+                1,
+                50,
+                100,
+            )

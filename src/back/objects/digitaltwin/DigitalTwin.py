@@ -2236,7 +2236,7 @@ class DigitalTwin:
             tm.update_progress(
                 task_id,
                 70,
-                f"Rebuilding adjacency and entity-search indexes for {graph_name}",
+                f"Rebuilding graph indexes for {graph_name}",
             )
             store.rebuild_adjacency(graph_name)
 

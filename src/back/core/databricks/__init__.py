@@ -9,6 +9,9 @@ from back.core.databricks.lakebase import (  # noqa: F401
     get_lakebase_auth,
 )
 from back.core.databricks.SQLWarehouse import SQLWarehouse  # noqa: F401
+from back.core.databricks.StatementExecutionWarehouse import (  # noqa: F401
+    StatementExecutionWarehouse,
+)
 from back.core.databricks.uc import (  # noqa: F401
     MetadataService,
     UCDomainIO,
@@ -61,6 +64,7 @@ __all__ = [
     "get_lakebase_auth",
     "DatabricksClient",
     "SQLWarehouse",
+    "StatementExecutionWarehouse",
     "UnityCatalog",
     "VolumeFileService",
     "WorkspaceService",

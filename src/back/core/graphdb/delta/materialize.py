@@ -19,6 +19,7 @@ from typing import Any, Literal
 
 from back.core.graphdb.adjacency import typed_in_select, typed_out_select
 from back.core.graphdb.entity_search import entity_search_select
+from back.core.graphdb.props import props_select
 from back.core.helpers import validate_table_name
 from back.core.logging import get_logger
 
@@ -84,6 +85,17 @@ def build_entity_search_ctas_sql(spo_fqn: str, search_fqn: str) -> str:
         f"CREATE OR REPLACE TABLE {search_fqn} USING DELTA "
         "CLUSTER BY (type_uri) "
         f"AS {entity_search_select(spo_fqn)}"
+    )
+
+
+def build_props_ctas_sql(spo_fqn: str, props_fqn: str) -> str:
+    """Spark SQL to materialize the typed-subject property companion."""
+    validate_table_name(spo_fqn)
+    validate_table_name(props_fqn)
+    return (
+        f"CREATE OR REPLACE TABLE {props_fqn} USING DELTA "
+        "CLUSTER BY (subject) "
+        f"AS {props_select(spo_fqn)}"
     )
 
 

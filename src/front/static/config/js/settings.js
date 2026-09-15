@@ -2931,12 +2931,13 @@ document.addEventListener('DOMContentLoaded', function () {
             // Strip graph-storage and index suffixes to get the common base shared
             // by every physical object belonging to one domain/version card.
             // Tables: "{base}_sync", "{base}__app", "{base}_adj_*",
-            //         and "{base}_entity_search"        → base
+            //         "{base}_entity_search", and "{base}_props" → base
             // Views:  "{base}"                          → base
             function objectBase(name, kind) {
                 if (kind === 'table') {
                     const domainSuffixes = [
                         '_entity_search',
+                        '_props',
                         '_adj_out',
                         '_adj_in',
                         '__app',

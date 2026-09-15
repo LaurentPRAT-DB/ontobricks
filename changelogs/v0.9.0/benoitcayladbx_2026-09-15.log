@@ -688,6 +688,70 @@ Tests:
 - Full suite: `uv run --frozen pytest -q -m "not scenario"` →
   `6139 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.51s`.
 - Diagnostics: IDE lint inspection reported no errors in changed files.
+
+## Enable Lakehouse/RT reads in Databricks Apps
+
+Context: Databricks Apps could not download result files emitted by the
+SQL connector's Kernel backend, so graph reads temporarily fell back to the
+slower Build warehouse. Apps now query the configured Lakehouse/RT warehouse
+through direct INLINE Statement Execution responses while local development
+keeps Kernel and Build operations keep Thrift.
+
+Changes:
+
+1. `src/back/core/databricks/StatementExecutionWarehouse.py`
+   Adds the Apps-only INLINE JSON Statement Execution transport, internal chunk
+   pagination, typed row decoding, timeout cancellation, and guarded failures
+   for external or truncated results.
+2. `src/back/core/databricks/DatabricksClient.py`
+   Selects INLINE Statement Execution for Apps with SEA enabled and preserves
+   the existing SQL Warehouse service for local Kernel and Thrift clients.
+3. `src/back/core/databricks/__init__.py`
+   Exports the new Statement Execution service.
+4. `src/back/core/helpers/DatabricksHelpers.py`
+   Restores the configured RT warehouse and SEA setting in Databricks Apps
+   instead of substituting the Build warehouse.
+5. `tests/units/core/test_statement_execution_warehouse.py`
+   Covers request shape, scalar decoding, polling, chunk pagination, terminal
+   failures, truncation, external links, cancellation, and connection probes.
+6. `tests/units/core/test_databricks_client.py`
+   Covers Apps INLINE, local Kernel, and Apps Thrift service selection.
+7. `tests/units/settings/test_delta_warehouse_config.py`
+   Covers Apps RT warehouse and SEA setting resolution.
+8. `docs/user-guide.md`
+   Documents Apps INLINE routing, local Kernel behavior, and the 24 MiB limit.
+9. `docs/architecture.md`
+   Documents runtime routing and the new transport component.
+10. `docs/sphinx/api/app.core.databricks.rst`
+    Adds API documentation for the Statement Execution service.
+11. `docs/superpowers/specs/2026-09-15-apps-graph-read-latency-design.md`
+    Records the approved Apps Lakehouse/RT transport design.
+12. `docs/superpowers/plans/2026-09-15-apps-graph-read-latency.md`
+    Records the TDD implementation plan.
+
+Modified files:
+- src/back/core/databricks/StatementExecutionWarehouse.py
+- src/back/core/databricks/DatabricksClient.py
+- src/back/core/databricks/__init__.py
+- src/back/core/helpers/DatabricksHelpers.py
+- tests/units/core/test_statement_execution_warehouse.py
+- tests/units/core/test_databricks_client.py
+- tests/units/settings/test_delta_warehouse_config.py
+- docs/user-guide.md
+- docs/architecture.md
+- docs/sphinx/api/app.core.databricks.rst
+- docs/superpowers/specs/2026-09-15-apps-graph-read-latency-design.md
+- docs/superpowers/plans/2026-09-15-apps-graph-read-latency.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- TDD RED: new transport module missing; routing tests failed on the Apps
+  Build fallback and disabled SEA behavior.
+- Focused RT transport suite → `61 passed, 1 warning in 1.15s`.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6158 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.45s`.
+- Sphinx: `ci/build_docs.sh` → built successfully with pre-existing warnings.
+- Diagnostics: IDE lint inspection and `git diff --check` reported no errors.
 - Browser: Settings passed at 1440 and 375 pixels with Build and CloudFetch
   controls intact, build SEA absent, Lakehouse//RT query controls intact, and
   no console errors or failed requests.
@@ -721,3 +785,91 @@ Modified files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` →
   `6141 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.81s`.
+
+## Add the property companion for Explorer expansion
+
+Context: Adjacency indexes removed full-SPO scans from hop discovery, but the
+final Explorer payload fetch still joined discovered entities against the
+reader-facing SPO union. A typed-subject `_props` snapshot now serves that
+join through a subject-clustered/indexed physical table.
+
+Changes:
+
+1. `src/back/core/graphdb/props.py`
+   Adds shared typed-subject property projection SQL and guarded missing-table detection.
+2. `src/back/core/graphdb/adjacency.py`
+   Allows the final expansion payload to use a relation distinct from the SPO hop source.
+3. `src/back/core/graphdb/GraphDBBackend.py`
+   Adds the default property-companion capability and table-ID contract.
+4. `src/back/core/graphdb/delta/_table_naming.py`
+   Defines the Delta `_props` FQN and suffix.
+5. `src/back/core/graphdb/delta/materialize.py`
+   Adds `_props` CTAS with `CLUSTER BY (subject)`.
+6. `src/back/core/graphdb/delta/DeltaFlatStore.py`
+   Rebuilds and optimizes `_props`, uses it for expansion payloads, and retries
+   against SPO only when the companion is missing.
+7. `src/back/core/graphdb/lakebase/_adjacency_ddl.py`
+   Adds `_props` DDL, subject index, transactional data refresh, and analysis.
+8. `src/back/core/graphdb/lakebase/LakebaseFlatStore.py`
+   Integrates `_props` into the atomic graph-index rebuild and optimized expansion path.
+9. `src/back/core/graphdb/_starter_kit/ExampleStore.py`
+   Generalizes the extension-point documentation to all graph-index companions.
+10. `src/back/objects/digitaltwin/DigitalTwin.py`
+    Uses future-proof graph-index wording in refresh progress.
+11. `src/front/static/config/js/settings.js`
+    Groups Lakebase `_props` tables with their domain/version objects.
+12. `tests/units/graphdb/test_props_sql.py`
+    Covers the typed-subject projection without filtering literal or IRI payloads.
+13. `tests/units/graphdb/test_adjacency_sql.py`
+    Covers the separate property relation in the final payload join.
+14. `tests/units/graphdb/test_graphdb_adjacency_contract.py`
+    Covers the default property table-ID contract.
+15. `tests/units/graphdb/delta/test_delta_flat_store.py`
+    Covers Delta rebuild, optimized fetch, guarded fallback, and error propagation.
+16. `tests/units/graphdb/test_lakebase_adjacency.py`
+    Covers Lakebase naming, DDL, transaction lifecycle, optimized fetch, and fallback.
+17. `tests/units/front/test_lakebase_object_grouping.py`
+    Covers `_props` grouping in Settings.
+18. `docs/graphdb-integration.md`
+    Documents the four-index lifecycle and expansion fallback.
+19. `docs/architecture.md`
+    Adds `_props` to the backend object and refresh matrices.
+20. `docs/user-guide.md`
+    Documents property snapshots, consistency, and Settings grouping.
+21. `docs/superpowers/specs/2026-09-15-property-companion-design.md`
+    Defines the approved property-companion design.
+22. `docs/superpowers/plans/2026-09-15-property-companion.md`
+    Records the TDD implementation plan.
+
+Modified files:
+- src/back/core/graphdb/props.py
+- src/back/core/graphdb/adjacency.py
+- src/back/core/graphdb/GraphDBBackend.py
+- src/back/core/graphdb/delta/_table_naming.py
+- src/back/core/graphdb/delta/materialize.py
+- src/back/core/graphdb/delta/DeltaFlatStore.py
+- src/back/core/graphdb/lakebase/_adjacency_ddl.py
+- src/back/core/graphdb/lakebase/LakebaseFlatStore.py
+- src/back/core/graphdb/_starter_kit/ExampleStore.py
+- src/back/objects/digitaltwin/DigitalTwin.py
+- src/front/static/config/js/settings.js
+- tests/units/graphdb/test_props_sql.py
+- tests/units/graphdb/test_adjacency_sql.py
+- tests/units/graphdb/test_graphdb_adjacency_contract.py
+- tests/units/graphdb/delta/test_delta_flat_store.py
+- tests/units/graphdb/test_lakebase_adjacency.py
+- tests/units/front/test_lakebase_object_grouping.py
+- docs/graphdb-integration.md
+- docs/architecture.md
+- docs/user-guide.md
+- docs/superpowers/specs/2026-09-15-property-companion-design.md
+- docs/superpowers/plans/2026-09-15-property-companion.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- TDD RED: focused property-companion suite → `10 failed, 38 passed`.
+- Focused property-companion suite → `48 passed, 1 warning in 0.94s`.
+- Graph/index and Settings grouping suite → `245 passed, 1 warning in 1.29s`.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6148 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.05s`.
+- Diagnostics: IDE lint inspection reported no errors in changed files.

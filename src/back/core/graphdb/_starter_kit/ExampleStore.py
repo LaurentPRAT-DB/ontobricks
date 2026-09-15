@@ -99,7 +99,7 @@ class ExampleStore(GraphDBBackend):
     #     ...
     #
     # def rebuild_adjacency(self, table_name: str) -> None:
-    #     """Build adjacency and entity-search tables from the readable SPO relation."""
+    #     """Build graph-index companions from the readable SPO relation."""
     #     ...
 
     # ======================================================================

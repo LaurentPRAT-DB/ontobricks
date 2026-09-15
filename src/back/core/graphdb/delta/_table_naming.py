@@ -14,6 +14,7 @@ _SUFFIX_ANALYTICS = "_analytics"
 _SUFFIX_ADJ_OUT = "_adj_out"
 _SUFFIX_ADJ_IN = "_adj_in"
 _SUFFIX_ENTITY_SEARCH = "_entity_search"
+_SUFFIX_PROPS = "_props"
 
 
 def view_fqn(domain: Any, settings: Any = None) -> str:
@@ -89,6 +90,15 @@ def entity_search_fqn(domain: Any, settings: Any = None) -> str:
     return f"{cat}.{sch}.{base}{_SUFFIX_ENTITY_SEARCH}"
 
 
+def props_fqn(domain: Any, settings: Any = None) -> str:
+    """Property-companion table FQN (``..._props``)."""
+    view = view_fqn(domain, settings)
+    if not view or view.count(".") != 2:
+        return ""
+    cat, sch, base = view.split(".", 2)
+    return f"{cat}.{sch}.{base}{_SUFFIX_PROPS}"
+
+
 def graph_suffix() -> str:
     return _SUFFIX_GRAPH
 
@@ -115,3 +125,7 @@ def adj_in_suffix() -> str:
 
 def entity_search_suffix() -> str:
     return _SUFFIX_ENTITY_SEARCH
+
+
+def props_suffix() -> str:
+    return _SUFFIX_PROPS

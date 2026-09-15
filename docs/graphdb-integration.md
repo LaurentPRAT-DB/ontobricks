@@ -95,9 +95,10 @@ The mapped snapshot (`_data`) is what makes KPIs identical across backends: Lake
 
 #### Adjacency index objects
 
-After the `_graph` VIEW is created, **Build** also materialises three graph
-indexes: two adjacency tables for hop queries and one compact entity-search
-table for Explorer Preview. These are separate companions, not part of the
+After the `_graph` VIEW is created, **Build** also materialises four graph
+indexes: two adjacency tables for hop queries, one compact entity-search
+table for Explorer Preview, and one typed-subject property table for the
+final Explorer payload fetch. These are separate companions, not part of the
 four-object triple-store family above:
 
 | Object | Kind | Clustering / index | Created when | Used by |
@@ -105,11 +106,13 @@ four-object triple-store family above:
 | `triplestore_<domain>_V<n>_adj_out` | Delta TABLE | `CLUSTER BY (src)` | End of Build (after `_data` CTAS in table mode; from `_graph` view in view mode) | Explorer hops, `expand_entity_neighbors` — outgoing direction |
 | `triplestore_<domain>_V<n>_adj_in`  | Delta TABLE | `CLUSTER BY (dst)` | same | reverse hops |
 | `triplestore_<domain>_V<n>_entity_search` | Delta TABLE | `CLUSTER BY (type_uri)` | same | Explorer Preview — one row per typed entity |
+| `triplestore_<domain>_V<n>_props` | Delta TABLE | `CLUSTER BY (subject)` | same | Explorer expansion payload — all outgoing triples of typed subjects |
 
 **Lakebase graph-index tables** use `_adj_out`, `_adj_in`, and
-`_entity_search` suffixes. The entity index stores normalized URI and label
-columns alongside type metadata. Both `app_managed` and `managed_synced`
-modes use the same three-object Postgres layout per graph version
+`_entity_search`, and `_props` suffixes. The entity index stores normalized
+URI and label columns alongside type metadata; `_props` has a btree index on
+`subject`. Both `app_managed` and `managed_synced` modes use the same
+four-index Postgres layout per graph version
 (`_sync` bulk-data table, `__app` writable companion, and the reader-facing
 union view `g_<dom>_v<n>`).  `rebuild_adjacency` always reads from that
 reader-facing union view regardless of mode.
@@ -120,10 +123,12 @@ search remain unchanged; no adjacency refresh action is available.
 #### Adjacency-only refresh
 
 Beyond the full **Build**, a **Refresh adjacency** action (builder / admin
-only) rebuilds `_adj_out`, `_adj_in`, and `_entity_search` without
+only) rebuilds `_adj_out`, `_adj_in`, `_entity_search`, and `_props` without
 rematerializing `_data` or touching inferred triples. The entity-search
 snapshot powers Preview when **Inferred** is enabled; asserted-only searches
-fall back to the asserted SPO relation. Lakehouse rebuild DDL always runs on
+fall back to the asserted SPO relation. Adjacency-driven expansion reads its
+payload from `_props`; if that table is missing, it retries against the
+reader-facing SPO relation. Lakehouse rebuild DDL always runs on
 the configured **Build SQL Warehouse**, never on the Lakehouse/RT query
 warehouse, because Lakehouse/RT does not support `CREATE OR REPLACE TABLE`.
 The semantics differ by mode:
@@ -132,11 +137,11 @@ The semantics differ by mode:
 |------|-------------------------------|---------------------------------------|
 | **Lakehouse — `view` materialization** | Reruns the adjacency CTAS from the live `_graph` VIEW (which itself re-executes the R2RML SQL). Source-table changes propagate immediately because `_data` is a pass-through view. | After the next adjacency refresh (source rows are live via `_data`; adjacency tables are a snapshot of `_graph` at refresh time) |
 | **Lakehouse — `table` materialization** | Reindexes from the *existing* `_graph` snapshot — `_data` is **not** rebuilt. New source rows are not visible in traversal until a full **Build** runs. | After the next full **Build** only |
-| **Lakebase** | Reindexes `_adj_out`, `_adj_in`, and `_entity_search` from the current reader-facing union view in one data-load transaction. | After the next Refresh adjacency or Build |
+| **Lakebase** | Reindexes `_adj_out`, `_adj_in`, `_entity_search`, and `_props` from the current reader-facing union view in one data-load transaction. | After the next Refresh adjacency or Build |
 | **Neo4j** | *(not available)* | N/A — Neo4j uses native traversal, no adjacency tables exist |
 
 > **Delta consistency note:** Lakehouse graph-index rebuild replaces
-> `_adj_out`, `_adj_in`, and `_entity_search` sequentially, not as
+> `_adj_out`, `_adj_in`, `_entity_search`, and `_props` sequentially, not as
 > a cross-table atomic swap. If a point-in-time read must see both directions
 > from the same snapshot, avoid running reads concurrently with Build/Refresh
 > and read after the task completes.

@@ -211,23 +211,7 @@ class DatabricksHelpers:
                 wid = global_config_service.get_delta_warehouse_id(
                     host, token, registry_cfg
                 )
-                use_sea = bool(
-                    global_config_service.get_delta_warehouse_use_sea(
-                        host, token, registry_cfg
-                    )
-                )
                 if wid:
-                    # Kernel always CloudFetches result files and ignores
-                    # use_cloud_fetch=False. Databricks Apps cannot reach
-                    # storage.cloud.databricks.com, so RT/Kernel query
-                    # warehouses hang and spam NetworkError. Fall back to
-                    # the Thrift build warehouse in Apps.
-                    if use_sea and _databricks.is_databricks_app():
-                        logger.info(
-                            "Databricks Apps cannot download Kernel CloudFetch "
-                            "results; using the Build SQL Warehouse for graph reads"
-                        )
-                        return DatabricksHelpers.resolve_warehouse_id(domain, settings)
                     return wid
             except Exception as exc:
                 logger.debug("Could not read lakehouse warehouse from engine config: %s", exc)
@@ -336,13 +320,10 @@ class DatabricksHelpers:
         Bypasses ``_resolve_global_setting`` (whose ``if val: return val`` would
         discard an explicit ``False``), mirroring :meth:`resolve_use_cloud_fetch`.
 
-        Databricks Apps cannot retrieve Kernel CloudFetch result files, so this
-        always returns False in App mode even when Lakehouse//RT is configured.
+        In Databricks Apps this enables the direct INLINE Statement Execution
+        transport; locally it enables the SQL connector's Kernel transport.
         """
         from back.objects.session import global_config_service
-
-        if _databricks.is_databricks_app():
-            return False
 
         host, token = DatabricksHelpers.get_databricks_host_and_token(domain, settings)
         registry_cfg = DatabricksHelpers._resolve_registry_cfg(domain, settings)

@@ -77,6 +77,7 @@ def expand_and_fetch_sql(
     adj_out: str,
     adj_in: str,
     spo: str,
+    props: str | None = None,
     selected_uris: list[str],
     depth: int,
     max_entities: int,
@@ -88,6 +89,7 @@ def expand_and_fetch_sql(
     depth = max(0, int(depth))
     max_entities = max(1, int(max_entities))
     max_triples = max(1, int(max_triples))
+    payload_relation = props or spo
     seed_values = ", ".join(
         f"('{escape(uri)}')" for uri in dict.fromkeys(selected_uris)
     )
@@ -144,7 +146,7 @@ def expand_and_fetch_sql(
         + " "
         + "SELECT triples.subject, triples.predicate, triples.object, "
         + "stats._ob_expanded_count "
-        + f"FROM {spo} triples "
+        + f"FROM {payload_relation} triples "
         + "JOIN entities ON entities.entity = triples.subject "
         + "CROSS JOIN entity_stats stats "
         + f"LIMIT {max_triples + 1}"

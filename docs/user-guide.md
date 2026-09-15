@@ -641,8 +641,9 @@ Click **Build** in the sidebar to manage your triple store:
 In both modes `…_inferred` stays a Delta table, so reasoning and cohort writes are unaffected.
 
 **Explorer index snapshot.** Build materialises `_adj_out` / `_adj_in` for
-entity expansion and `_entity_search` for the first Preview search. The
-**Refresh adjacency** action refreshes all three from the same graph snapshot.
+entity expansion, `_entity_search` for the first Preview search, and `_props`
+for the final expansion payload fetch. The **Refresh adjacency** action
+refreshes all four from the same graph snapshot.
 Preview with **Inferred** disabled keeps the asserted-only SPO path instead of
 using the union search snapshot. On Lakehouse domains, this action always uses
 the configured **Build SQL Warehouse**; the optional Lakehouse/RT warehouse is
@@ -657,7 +658,7 @@ depends on backend and mode:
 | Neo4j | *(no adjacency tables — native Bolt traversal)* | Not available | N/A |
 
 > **Delta consistency note:** Lakehouse refresh/build replaces `_adj_out`,
-> `_adj_in`, and `_entity_search` sequentially, not as a single cross-table
+> `_adj_in`, `_entity_search`, and `_props` sequentially, not as a single cross-table
 > atomic swap. If a read must see both directions from the same instant, avoid
 > reading while Build/Refresh is running and read after completion.
 >
@@ -1005,7 +1006,7 @@ adjacency, warehouses) is in
 [Architecture → Backend capability and object lifecycle](architecture.md#backend-capability-and-object-lifecycle).
 Short version:
 
-| Backend / mode | Copy of mapped triples? | How they are created | Indexes (`_adj_*`, `_entity_search`) |
+| Backend / mode | Copy of mapped triples? | How they are created | Indexes (`_adj_*`, `_entity_search`, `_props`) |
 |----------------|-------------------------|----------------------|--------------------------------------|
 | Lakehouse · **Materialized Delta table** | Yes — `_data` TABLE | Build CTAS + `OPTIMIZE` on the Build SQL Warehouse | Physical Delta tables rebuilt at end of Build and by **Refresh adjacency** |
 | Lakehouse · **Views only** | No — `_data` is a pass-through VIEW | Build only refreshes VIEW DDL | Still physical Delta tables (a snapshot of hops/search). Refresh adjacency recaptures live sources |
@@ -1509,10 +1510,10 @@ See the [MCP tab](#mcp-tab) for the full description of each control, and the
 
 **Settings → Lakebase → Objects** groups each domain/version's reader view,
 `_sync` bulk table, `__app` writable companion, `_adj_in`, `_adj_out`, and
-`_entity_search` tables into one collapsible card. Its count includes every
+`_entity_search`, and `_props` tables into one collapsible card. Its count includes every
 listed storage and index object. Individual **Drop** actions remain available;
 **Delete all objects for this domain** removes the whole group, including the
-three rebuildable graph-index tables.
+four rebuildable graph-index tables.
 
 ### Lakehouse SQL warehouses and CloudFetch
 
@@ -1521,9 +1522,9 @@ three rebuildable graph-index tables.
 **Settings → Lakehouse → SQL Warehouse** owns both compute roles:
 
 - **Build SQL Warehouse** — classic or serverless warehouse (never Lakehouse//RT) used for mapping views, materialization, and other writes. Build SQL always uses the Thrift transport; SEA/Kernel is not configurable for this role. You can override the Databricks App `sql-warehouse` resource default from this selector.
-- **Query SQL Warehouse** — disabled by default and mirrored from Build. Enable **Use Lakehouse//RT for queries** to choose a distinct warehouse for Knowledge Graph reads. RT warehouses reject `CREATE VIEW` / CTAS, so Build and **Refresh adjacency** never use the Query warehouse. Disabling the option and applying restores Build for reads. On Databricks Apps, Kernel/RT result download requires CloudFetch egress to `storage.cloud.databricks.com`; without it the app uses the Build SQL Warehouse and Thrift instead, so graph pages stay available.
+- **Query SQL Warehouse** — disabled by default and mirrored from Build. Enable **Use Lakehouse//RT for queries** to choose a distinct warehouse for Knowledge Graph reads. RT warehouses reject `CREATE VIEW` / CTAS, so Build and **Refresh adjacency** never use the Query warehouse. Disabling the option and applying restores Build for reads. In Databricks Apps, RT reads use the Statement Execution API with `INLINE` JSON results, avoiding Kernel CloudFetch storage downloads. Local development keeps the SQL connector's Kernel path.
 
-**Settings → Databricks → Use CloudFetch** controls whether Thrift SQL clients download result files via CloudFetch. The Kernel backend used by Lakehouse//RT ignores this toggle. Leave CloudFetch on unless Databricks Apps cannot reach the CloudFetch storage host; then disable it for Thrift warehouses, or allow that egress if you need Lakehouse//RT inside the app.
+**Settings → Databricks → Use CloudFetch** controls whether Thrift SQL clients download result files via CloudFetch. It does not affect Lakehouse//RT: Apps uses `INLINE` Statement Execution results and local development uses Kernel. INLINE responses are capped at 24 MiB; OntoBricks rejects a truncated response rather than displaying an incomplete graph.
 
 Explorer search duration is documented in [Get Started](get-started.md#sql-warehouses-and-explorer-timing).
 

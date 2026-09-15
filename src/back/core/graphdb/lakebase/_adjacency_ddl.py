@@ -7,6 +7,7 @@ from typing import Any
 
 from back.core.graphdb.adjacency import typed_in_select, typed_out_select
 from back.core.graphdb.entity_search import entity_search_select
+from back.core.graphdb.props import props_select
 from back.core.graphdb.lakebase._companion_ddl import view_phy
 
 _PG_IDENTIFIER_MAX_BYTES = 63
@@ -34,6 +35,10 @@ def adj_in_phy(graph_name: str) -> str:
 
 def entity_search_phy(graph_name: str) -> str:
     return _bounded_identifier(view_phy(graph_name), "_entity_search")
+
+
+def props_phy(graph_name: str) -> str:
+    return _bounded_identifier(view_phy(graph_name), "_props")
 
 
 def adjacency_index_name(table_name: str, key: str) -> str:
@@ -99,6 +104,22 @@ def ensure_entity_search_table(cur: Any, search: str) -> None:
     )
 
 
+def ensure_props_table(cur: Any, props: str) -> None:
+    cur.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {props} (
+            subject TEXT NOT NULL,
+            predicate TEXT NOT NULL,
+            object TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        f"CREATE INDEX IF NOT EXISTS {adjacency_index_name(props, 'subject')} "
+        f"ON {props} (subject)"
+    )
+
+
 def rebuild_adjacency_data(cur: Any, union_view: str, adj_out: str, adj_in: str) -> None:
     cur.execute(f"TRUNCATE {adj_out}")
     cur.execute(
@@ -120,6 +141,14 @@ def rebuild_entity_search_data(cur: Any, union_view: str, search: str) -> None:
     )
 
 
+def rebuild_props_data(cur: Any, union_view: str, props: str) -> None:
+    cur.execute(f"TRUNCATE {props}")
+    cur.execute(
+        f"INSERT INTO {props} (subject, predicate, object) "
+        f"{props_select(union_view)}"
+    )
+
+
 def analyze_adjacency_tables(cur: Any, adj_out: str, adj_in: str) -> None:
     cur.execute(f"ANALYZE {adj_out}")
     cur.execute(f"ANALYZE {adj_in}")
@@ -127,3 +156,7 @@ def analyze_adjacency_tables(cur: Any, adj_out: str, adj_in: str) -> None:
 
 def analyze_entity_search_table(cur: Any, search: str) -> None:
     cur.execute(f"ANALYZE {search}")
+
+
+def analyze_props_table(cur: Any, props: str) -> None:
+    cur.execute(f"ANALYZE {props}")

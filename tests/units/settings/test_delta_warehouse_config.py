@@ -164,7 +164,7 @@ class TestResolveDeltaWarehouseId:
         assert wid == "wh-delta"
         global_resolve.assert_not_called()
 
-    def test_apps_replace_rt_query_warehouse_with_build(self):
+    def test_apps_keep_rt_query_warehouse_for_inline_sea(self):
         domain = MagicMock()
         settings = MagicMock()
         with patch.object(
@@ -187,8 +187,9 @@ class TestResolveDeltaWarehouseId:
         ), patch(
             "back.core.helpers.DatabricksHelpers.DatabricksHelpers.resolve_warehouse_id",
             return_value="wh-build",
-        ):
-            assert resolve_delta_warehouse_id(domain, settings) == "wh-build"
+        ) as build_resolver:
+            assert resolve_delta_warehouse_id(domain, settings) == "wh-rt"
+        build_resolver.assert_not_called()
 
     def test_falls_back_to_global_when_delta_unset(self):
         domain = MagicMock()
@@ -231,7 +232,7 @@ class TestResolveLakehouseUseSea:
         ):
             assert DatabricksHelpers.resolve_lakehouse_use_sea(MagicMock(), MagicMock()) is True
 
-    def test_apps_never_use_kernel_even_when_configured(self):
+    def test_apps_use_inline_sea_when_configured(self):
         with patch.object(
             DatabricksHelpers,
             "get_databricks_host_and_token",
@@ -249,7 +250,7 @@ class TestResolveLakehouseUseSea:
         ):
             assert DatabricksHelpers.resolve_lakehouse_use_sea(
                 MagicMock(), MagicMock()
-            ) is False
+            ) is True
 
     def test_defaults_false_without_registry(self):
         with patch.object(

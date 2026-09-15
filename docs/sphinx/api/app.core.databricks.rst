@@ -64,6 +64,14 @@ SQL Warehouse
    :undoc-members:
    :show-inheritance:
 
+Statement Execution Warehouse
+-----------------------------
+
+.. automodule:: back.core.databricks.StatementExecutionWarehouse
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Unity Catalog
 -------------
 

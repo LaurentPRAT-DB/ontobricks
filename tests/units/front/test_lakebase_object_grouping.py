@@ -18,7 +18,14 @@ def _object_base_block() -> str:
 
 def test_lakebase_domain_grouping_recognizes_all_owned_table_suffixes():
     block = _object_base_block()
-    for suffix in ("_sync", "__app", "_adj_in", "_adj_out", "_entity_search"):
+    for suffix in (
+        "_sync",
+        "__app",
+        "_adj_in",
+        "_adj_out",
+        "_entity_search",
+        "_props",
+    ):
         assert f"'{suffix}'" in block
 
 

@@ -10,6 +10,7 @@ from typing import Optional
 
 from .DatabricksAuth import DatabricksAuth
 from .SQLWarehouse import SQLWarehouse
+from .StatementExecutionWarehouse import StatementExecutionWarehouse
 from .uc import UnityCatalog, VolumeFileService
 from .WorkspaceService import WorkspaceService
 from .DashboardService import DashboardService
@@ -44,7 +45,10 @@ class DatabricksClient:
             use_cloud_fetch=use_cloud_fetch,
             use_sea=use_sea,
         )
-        self.sql = SQLWarehouse(self.auth)
+        if self.auth.is_app_mode and self.auth.use_kernel:
+            self.sql = StatementExecutionWarehouse(self.auth)
+        else:
+            self.sql = SQLWarehouse(self.auth)
         self.catalog = UnityCatalog(self.auth)
         self.volumes = VolumeFileService(auth=self.auth)
         self.workspace = WorkspaceService(self.auth)

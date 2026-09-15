@@ -29,6 +29,9 @@ class FakeStore(GraphDBBackend):
     def entity_search_table_id(self, table_name: str) -> str:
         return "g_entity_search"
 
+    def props_table_id(self, table_name: str) -> str:
+        return "g_props"
+
     def table_exists(self, table_name: str) -> bool:
         if table_name == "g_entity_search":
             return self._search_ready
@@ -200,6 +203,7 @@ def test_graphdb_backend_adjacency_defaults():
     assert store.sql_flavor() is None
     assert store.adjacency_table_ids("g") == ("", "")
     assert store.entity_search_table_id("g") == ""
+    assert store.props_table_id("g") == ""
     store.rebuild_adjacency("g")
     assert store.adjacency_ready("g") is False
     assert store.entity_search_ready("g") is False

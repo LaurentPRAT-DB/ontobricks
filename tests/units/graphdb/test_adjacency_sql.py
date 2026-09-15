@@ -90,3 +90,23 @@ def test_postgres_expansion_uses_not_exists():
     assert "NOT EXISTS" in sql
     assert "O''Brien" in sql
     assert "VALUES (" in sql or "VALUES" in sql
+
+
+def test_expansion_uses_props_only_for_final_payload_fetch():
+    sql = expand_and_fetch_sql(
+        flavor="spark",
+        adj_out="o",
+        adj_in="i",
+        spo="g",
+        props="g_props",
+        selected_uris=["http://ex/a"],
+        depth=1,
+        max_entities=5,
+        max_triples=20,
+        escape=lambda s: s.replace("'", "''"),
+    )
+
+    assert "FROM o t" in sql
+    assert "FROM i t" in sql
+    assert "FROM g_props triples" in sql
+    assert "FROM g triples" not in sql

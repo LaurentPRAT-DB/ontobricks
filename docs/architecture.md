@@ -280,7 +280,7 @@ To add a new generation template, add an entry to `WIZARD_TEMPLATES` in `src/sha
 | `warehouse_use_sea` | Legacy compatibility key; always persisted and resolved as `false` because build SQL uses Thrift | Internal compatibility only |
 | `use_cloud_fetch` | Whether SQL clients download result files via CloudFetch (default on) | Admin only |
 | `graph_engine_config.lakehouse.warehouse_id` | Optional Lakehouse query warehouse, including Lakehouse//RT | Admin only |
-| `graph_engine_config.lakehouse.use_sea` | Compatibility key selecting Kernel; required for Lakehouse//RT | Admin only |
+| `graph_engine_config.lakehouse.use_sea` | Selects the SEA transport required for Lakehouse//RT: direct INLINE requests in Apps, Kernel locally | Admin only |
 | `default_base_uri` | Default ontology base URI domain | Admin only |
 | `default_emoji` | Default class icon emoji (e.g. `📦`) | Admin only |
 | `ui_branding` | Versioned object: `app_title`, `primary_color`, `logo_data_url` (empty = bundled favicon) | Admin only (`GET`/`POST /settings/ui-branding`) |
@@ -289,9 +289,11 @@ Without an RT query override, `resolve_delta_warehouse_id()` intentionally
 falls back to the Build SQL Warehouse. The Settings UI represents this by
 disabling Query and mirroring Build. RT mode requires a distinct query
 warehouse; disabling it persists an empty Lakehouse warehouse ID.
-In Databricks Apps, Kernel/RT is also skipped at runtime because the Kernel
-connector always CloudFetches result files and Apps cannot reach
-`storage.cloud.databricks.com`; reads then use the Build warehouse over Thrift.
+In Databricks Apps, RT reads bypass the SQL connector's Kernel adapter and use
+Statement Execution directly with `JSON_ARRAY` / `INLINE`. Internal chunk links
+stay on the workspace host, external CloudFetch links are rejected, and a
+truncated 24 MiB response fails explicitly. Local RT reads retain Kernel;
+builds and graph-index refreshes retain the Build warehouse over Thrift.
 
 The service caches the document in memory with a TTL. Persistence goes through
 the active `RegistryStore` (`save_global_config` / `load_global_config`), so
@@ -391,6 +393,7 @@ src/
 │   │   │   ├── DatabricksAuth.py       # Authentication & utility functions
 │   │   │   ├── DatabricksClient.py     # Thin facade
 │   │   │   ├── SQLWarehouse.py         # Query execution, DDL (connection-pooled)
+│   │   │   ├── StatementExecutionWarehouse.py # Apps RT reads with INLINE SEA
 │   │   │   ├── unity_catalog/          # Unity Catalog metadata, volumes, domain I/O
 │   │   │   │   ├── UnityCatalog.py     # Catalogs, schemas, tables, volumes
 │   │   │   │   ├── VolumeFileService.py # File I/O on UC Volumes
@@ -847,10 +850,10 @@ rows; **no copy** means a VIEW that re-reads the source on each query.
 | Mapped triples | `_data` **TABLE** — CTAS from the R2RML VIEW, then `OPTIMIZE` / Liquid Clustering | `_data` **VIEW** — pass-through over the R2RML VIEW; no row copy | UC `_data` is always a **TABLE** (analytics needs a Delta scan). Postgres `_sync` is a second copy loaded by the app (`COPY FROM STDIN`) | UC `_data` **TABLE**. Postgres `_sync` is a second copy kept by Lakeflow | UC `_data` **TABLE**. Neo4j nodes are a second copy (`MERGE`) |
 | Inferred / app writes | `_inferred` **TABLE** (truncated on full Build, then refilled) | Same `_inferred` **TABLE** — inferred rows have no source table | Postgres `__app` companion; UC `_inferred` still exists for the UC family | Same `__app` companion; Lakeflow never writes it | Stored as Neo4j triples in the same store label; no `_adj_*` |
 | Interactive read façade | `_graph` VIEW = `_data UNION ALL _inferred` | Same `_graph` VIEW (each read re-runs mapping SQL through `_data`) | Postgres union view `g_<dom>_v<n>` = `_sync UNION ALL __app` | Same union view | Bolt / Cypher against the store |
-| Explorer hop + Preview indexes | `_adj_out`, `_adj_in`, `_entity_search` **TABLES** (always copies of a projection) | Same three **TABLES** — views-only does **not** leave indexes as views | Same three **TABLES** in the Postgres graph schema | Same three Postgres tables | None — native traversal / search |
+| Explorer hop + Preview indexes | `_adj_out`, `_adj_in`, `_entity_search`, `_props` **TABLES** (always copies of a projection) | Same four **TABLES** — views-only does **not** leave indexes as views | Same four **TABLES** in the Postgres graph schema | Same four Postgres tables | None — native traversal / search |
 | Who creates objects | Build SQL Warehouse DDL | Same warehouse (DDL only for `_data`; indexes still CTAS) | Build warehouse for UC; FastAPI/psycopg for Postgres | Build warehouse for UC schema; Lakeflow for `_sync`; app for `__app`, union view, indexes | Build warehouse for UC; Bolt for Neo4j |
 | Full **Build** | Recreates gateway VIEW, replaces `_data`, truncates `_inferred`, refreshes `_graph`, rebuilds indexes | Recreates gateway + `_data` VIEW, truncates `_inferred`, rebuilds indexes from live `_graph` | Recreates UC family as tables, reloads `_sync`, truncates `__app`, rebuilds indexes | Recreates UC family, triggers Lakeflow full refresh into `_sync`, truncates `__app`, rebuilds indexes | Recreates UC family, `MERGE`s mapped triples into Neo4j |
-| **Refresh adjacency** | Rebuilds the three indexes from the existing `_graph` snapshot; does **not** recopy `_data`. Runs on the **Build SQL Warehouse**, never Lakehouse/RT | Rebuilds indexes from live `_graph` (source changes are visible in the next index snapshot) | Rebuilds indexes from the current Postgres union view | Same | Not available |
+| **Refresh adjacency** | Rebuilds the four indexes from the existing `_graph` snapshot; does **not** recopy `_data`. Runs on the **Build SQL Warehouse**, never Lakehouse/RT | Rebuilds indexes from live `_graph` (source changes are visible in the next index snapshot) | Rebuilds indexes from the current Postgres union view | Same | Not available |
 | When new source rows appear in Explorer hops | Next full **Build** | Next **Refresh adjacency** or Build (indexes stay a snapshot) | Next Refresh adjacency or Build | Next Refresh adjacency or Build (after Lakeflow has updated `_sync`) | Immediately after Build `MERGE` |
 | Analytics | Scans `_data` TABLE | Temporary `…_analytics` TABLE for the run, then drop | Always scans UC `_data` TABLE, not Postgres | Same | Same UC `_data` TABLE |
 
@@ -906,7 +909,7 @@ Switching a domain between modes needs the stale relation of the other kind drop
 
 #### Adjacency index objects
 
-In addition to the four-object triple-store family, **Build** produces three
+In addition to the four-object triple-store family, **Build** produces four
 graph-index tables for Explorer:
 
 | Object | Kind | Clustering | Created when | Used by |
@@ -914,19 +917,23 @@ graph-index tables for Explorer:
 | `triplestore_<domain>_V<n>_adj_out` | Delta TABLE | `CLUSTER BY (src)` | End of Build (after `_data` in table mode; from `_graph` in view mode) | Outgoing hops — Explorer expansion, `expand_entity_neighbors` |
 | `triplestore_<domain>_V<n>_adj_in`  | Delta TABLE | `CLUSTER BY (dst)` | same | Reverse (incoming) hops |
 | `triplestore_<domain>_V<n>_entity_search` | Delta TABLE | `CLUSTER BY (type_uri)` | same | Preview search — one row per typed entity |
+| `triplestore_<domain>_V<n>_props` | Delta TABLE | `CLUSTER BY (subject)` | same | Expansion payload — outgoing triples of typed subjects |
 
-Lakebase stores equivalent `_adj_out`, `_adj_in`, and `_entity_search` tables.
-The entity table carries normalized URI/label fields and type metadata. Both `app_managed`
-and `managed_synced` modes share the same three-object Postgres layout
+Lakebase stores equivalent `_adj_out`, `_adj_in`, `_entity_search`, and
+`_props` tables. The entity table carries normalized URI/label fields and type
+metadata; `_props` has a btree index on `subject`. Both `app_managed`
+and `managed_synced` modes share the same four-index Postgres layout
 (`_sync` bulk-data table, `__app` companion, reader-facing union view);
 `rebuild_adjacency` always reads from the reader-facing union view regardless
 of mode.
 Neo4j uses native Bolt traversal/search and has no graph-index companions.
 
 The **Refresh adjacency** action (builder/admin, Lakehouse and Lakebase only)
-reindexes `_adj_out`, `_adj_in`, and `_entity_search` without rematerializing
-`_data`. Preview uses `_entity_search` when Inferred is enabled; asserted-only
-Preview keeps the SPO path. For Lakehouse, the refresh opens the Delta backend
+reindexes `_adj_out`, `_adj_in`, `_entity_search`, and `_props` without
+rematerializing `_data`. Preview uses `_entity_search` when Inferred is
+enabled; asserted-only Preview keeps the SPO path. Expansion uses `_props`
+for its final payload join and retries against SPO when `_props` is missing.
+For Lakehouse, the refresh opens the Delta backend
 in write mode: `GraphDBFactory` resolves the configured Build SQL Warehouse and
 the fixed Thrift transport instead of the optional Lakehouse/RT query warehouse. This
 separation is required because Lakehouse/RT supports the Explorer read path but
@@ -936,7 +943,7 @@ rejects the `CREATE OR REPLACE TABLE` DDL used by graph-index refreshes.
 - **`table` materialization** — adjacency is reindexed from the *existing* `_data` snapshot; new source rows do **not** appear until a full **Build** runs.
 - **Lakebase** — reindexes from the current reader-facing union view; because Lakebase graph data is always live in Postgres, the rebuild captures the current graph state without a stale `_data` snapshot to overcome.  Traversal still uses the adjacency snapshot until the next Refresh adjacency or Build.
 
-> Lakehouse `_adj_out`, `_adj_in`, and `_entity_search` are replaced
+> Lakehouse `_adj_out`, `_adj_in`, `_entity_search`, and `_props` are replaced
 > sequentially, not via one cross-table atomic swap. If all indexes must be
 > read from the same instant, avoid overlap with Build/Refresh and read after
 > the task finishes.
@@ -1433,6 +1440,11 @@ Tracing degrades gracefully: if MLflow is not configured or the tracking server 
 ### SQL Connection Pooling
 
 `SQLWarehouse` maintains a `queue.Queue`-based pool of reusable database connections (`src/back/core/databricks/SQLWarehouse.py`). Instead of opening a fresh `databricks.sql.connect()` per query (costly due to TLS handshakes), connections are borrowed from the pool and returned after use. Stale connections (idle > 300 s) are discarded automatically.
+
+Lakehouse/RT graph reads select `StatementExecutionWarehouse` inside
+Databricks Apps. It uses direct SEA `INLINE` responses and workspace-host
+internal chunk links, so this route does not create pooled connector sessions
+or require CloudFetch egress. Local RT reads keep `SQLWarehouse` with Kernel.
 
 | Parameter | Default | Notes |
 |-----------|---------|-------|

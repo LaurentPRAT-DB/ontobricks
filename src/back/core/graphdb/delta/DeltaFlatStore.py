@@ -8,6 +8,7 @@ from back.core.graphdb.GraphDBBackend import GraphDBBackend
 from back.core.graphdb.adjacency import expand_and_fetch_sql
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.delta import _table_naming, materialize
+from back.core.graphdb.props import is_missing_props_error
 from back.core.helpers import sql_escape as _escape_sql_string, validate_table_name
 from back.core.logging import get_logger
 
@@ -26,6 +27,7 @@ class DeltaFlatStore(GraphDBBackend):
     supports_materialized_inference_purge = True
     supports_adjacency = True
     supports_entity_search = True
+    supports_props = True
 
     def __init__(
         self,
@@ -104,6 +106,7 @@ class DeltaFlatStore(GraphDBBackend):
             _table_naming.adj_out_suffix(),
             _table_naming.adj_in_suffix(),
             _table_naming.entity_search_suffix(),
+            _table_naming.props_suffix(),
         ):
             if base.endswith(suffix):
                 base = base[: -len(suffix)]
@@ -129,17 +132,42 @@ class DeltaFlatStore(GraphDBBackend):
             _table_naming.adj_out_suffix(),
             _table_naming.adj_in_suffix(),
             _table_naming.entity_search_suffix(),
+            _table_naming.props_suffix(),
         ):
             if base.endswith(suffix):
                 base = base[: -len(suffix)]
                 break
         return f"{cat}.{sch}.{base}{_table_naming.entity_search_suffix()}"
 
+    def props_table_id(self, table_name: str) -> str:
+        if self._domain is not None:
+            props = _table_naming.props_fqn(self._domain, self._settings)
+            if props:
+                return props
+        if "." not in table_name or table_name.count(".") != 2:
+            return ""
+        cat, sch, base = table_name.split(".", 2)
+        for suffix in (
+            _table_naming.data_suffix(),
+            _table_naming.graph_suffix(),
+            _table_naming.inferred_suffix(),
+            _table_naming.analytics_suffix(),
+            _table_naming.adj_out_suffix(),
+            _table_naming.adj_in_suffix(),
+            _table_naming.entity_search_suffix(),
+            _table_naming.props_suffix(),
+        ):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        return f"{cat}.{sch}.{base}{_table_naming.props_suffix()}"
+
     def rebuild_adjacency(self, table_name: str) -> None:
         relation = self._sql_relation(table_name)
         adj_out, adj_in = self.adjacency_table_ids(table_name)
         search = self.entity_search_table_id(table_name)
-        if not adj_out or not adj_in or not search:
+        props = self.props_table_id(table_name)
+        if not adj_out or not adj_in or not search or not props:
             logger.warning("Skipping graph-index rebuild, unresolved table ids for %s", table_name)
             return
         for direction, adj_fqn in (("out", adj_out), ("in", adj_in)):
@@ -161,6 +189,14 @@ class DeltaFlatStore(GraphDBBackend):
             materialize.optimize_table(self._client, search)
         except Exception as exc:  # noqa: BLE001
             logger.warning("OPTIMIZE entity-search table failed for %s: %s", search, exc)
+        materialize.drop_relation(self._client, props, kind="view")
+        self._client.execute_statement(
+            materialize.build_props_ctas_sql(relation, props)
+        )
+        try:
+            materialize.optimize_table(self._client, props)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OPTIMIZE property table failed for %s: %s", props, exc)
 
     def _writable_table_fqn(self, table_name: str) -> str:
         """Route app writes to the inferred companion table (Lakebase ``__app`` analogue)."""
@@ -449,13 +485,16 @@ class DeltaFlatStore(GraphDBBackend):
         max_triples = max(1, int(max_triples))
 
         relation = self._sql_relation(table_name)
+        props = ""
         if self.adjacency_ready(table_name):
             adj_out, adj_in = self.adjacency_table_ids(table_name)
+            props = self.props_table_id(table_name)
             sql = expand_and_fetch_sql(
                 flavor=self.sql_flavor(),
                 adj_out=self._sql_relation(adj_out),
                 adj_in=self._sql_relation(adj_in),
                 spo=relation,
+                props=self._sql_relation(props) if props else None,
                 selected_uris=selected_uris,
                 depth=depth,
                 max_entities=max_entities,
@@ -501,7 +540,28 @@ class DeltaFlatStore(GraphDBBackend):
                 + f"LIMIT {max_triples + 1}"
             )
 
-        rows = self.execute_query(sql) or []
+        try:
+            rows = self.execute_query(sql) or []
+        except Exception as exc:  # noqa: BLE001
+            if not props or not is_missing_props_error(exc, props):
+                raise
+            logger.info(
+                "Property table is unavailable; using SPO expansion fallback: %s",
+                exc,
+            )
+            adj_out, adj_in = self.adjacency_table_ids(table_name)
+            fallback_sql = expand_and_fetch_sql(
+                flavor=self.sql_flavor(),
+                adj_out=self._sql_relation(adj_out),
+                adj_in=self._sql_relation(adj_in),
+                spo=relation,
+                selected_uris=selected_uris,
+                depth=depth,
+                max_entities=max_entities,
+                max_triples=max_triples,
+                escape=self._sql_escape,
+            )
+            rows = self.execute_query(fallback_sql) or []
         discovered_count = (
             int(rows[0].get("_ob_expanded_count") or 0)
             if rows
