@@ -34,12 +34,18 @@ upgrade path if the format changes in future releases.
 
 1. Click **Import** on the Registry → Browse page.
 2. Select the `.obx` file.
-3. The preview step shows per-domain conflict flags and a suggested rename.
-4. For each domain choose a resolution:
-   - **Skip** — leave the existing domain untouched
-   - **Overwrite** — replace all versions in the target
-   - **Rename** — write under the suggested alternative name
-5. Click **Apply**.
+3. In the preview, review or change **Import as** for each domain. Names use
+   CamelCase alphanumeric syntax (for example, `ClaimsArchive`).
+4. When **Import as** targets an existing domain, choose **Skip** or
+   **Overwrite**. When it differs from the source folder, Import creates a
+   separate domain under the new name.
+5. Click **Import**.
+
+Renamed imports regenerate the ontology base URI from the configured default
+and the new name. Ontology, mappings, settings, and the versions present in the
+file are copied, but graph data, build state, and uploaded documents are not.
+Build the new domain before using its graph. Overwrite retains the imported
+identity and build metadata unchanged.
 
 > **Note:** The 50 MB upload cap protects the in-memory parse. For larger
 > registries use the CLI tool below.
