@@ -103,19 +103,20 @@ four-object triple-store family above:
 
 | Object | Kind | Clustering / index | Created when | Used by |
 |--------|------|--------------------|--------------|---------|
-| `triplestore_<domain>_V<n>_adj_out` | Delta TABLE | `CLUSTER BY (src)` | End of Build (after `_data` CTAS in table mode; from `_graph` view in view mode) | Explorer hops, `expand_entity_neighbors` — outgoing direction |
-| `triplestore_<domain>_V<n>_adj_in`  | Delta TABLE | `CLUSTER BY (dst)` | same | reverse hops |
-| `triplestore_<domain>_V<n>_entity_search` | Delta TABLE | `CLUSTER BY (type_uri)` | same | Explorer Preview — one row per typed entity |
+| `triplestore_<domain>_V<n>_adj_out` | Delta TABLE | `CLUSTER BY (src, predicate)` | End of Build (after `_data` CTAS in table mode; from `_graph` view in view mode) | Explorer hops, `expand_entity_neighbors` — outgoing direction |
+| `triplestore_<domain>_V<n>_adj_in`  | Delta TABLE | `CLUSTER BY (dst, predicate)` | same | reverse hops |
+| `triplestore_<domain>_V<n>_entity_search` | Delta TABLE | `CLUSTER BY (type_uri, label_lc)` + Bloom on `label_lc,uri_lc` | same | Explorer Preview (Inferred on) |
+| `triplestore_<domain>_V<n>_entity_search_asserted` | Delta TABLE | same | same, from `_data` | Explorer Preview (Inferred off) |
 | `triplestore_<domain>_V<n>_props` | Delta TABLE | `CLUSTER BY (subject)` | same | Explorer expansion payload — all outgoing triples of typed subjects |
 
 **Lakebase graph-index tables** use `_adj_out`, `_adj_in`,
-`_entity_search`, and `_props` suffixes. The entity index stores normalized
-URI and label columns alongside type metadata; `_props` has a btree index on
-`subject`. Both `app_managed` and `managed_synced` modes use the same
-four-index Postgres layout per graph version
+`_entity_search`, `_entity_search_asserted`, and `_props` suffixes. The entity
+index stores normalized URI and label columns alongside type metadata;
+`_props` has a btree index on `subject`. Both `app_managed` and
+`managed_synced` modes use the same Postgres graph layout per version
 (`_sync` bulk-data table, `__app` writable companion, and the reader-facing
-union view `g_<dom>_v<n>`).  `rebuild_adjacency` always reads from that
-reader-facing union view regardless of mode.
+union view `g_<dom>_v<n>`).  `rebuild_adjacency` reads hops/`_props` from the
+union view and asserted Preview from `_sync`.
 
 **Neo4j** has none of these companion tables. Native Bolt graph traversal and
 search remain unchanged; no adjacency refresh action is available.

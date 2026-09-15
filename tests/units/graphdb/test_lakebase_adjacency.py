@@ -31,6 +31,12 @@ def test_lakebase_adjacency_table_ids(auth):
     store = LakebaseFlatStore(auth, schema="ontobricks_graph")
     assert store.adjacency_table_ids("G_V1") == ("g_v1_adj_out", "g_v1_adj_in")
     assert store.entity_search_table_id("G_V1") == "g_v1_entity_search"
+    assert store.entity_search_asserted_table_id("G_V1") == (
+        "g_v1_entity_search_asserted"
+    )
+    assert store.entity_search_asserted_table_id("g_v1_sync") == (
+        "g_v1_entity_search_asserted"
+    )
     assert store.props_table_id("G_V1") == "g_v1_props"
 
 
@@ -55,18 +61,20 @@ def test_lakebase_rebuild_adjacency_runs_ddl_and_rebuild_sql(auth):
     assert any("CREATE TABLE IF NOT EXISTS g_v1_adj_out" in s for s in executed)
     assert any("CREATE TABLE IF NOT EXISTS g_v1_adj_in" in s for s in executed)
     assert any("CREATE TABLE IF NOT EXISTS g_v1_entity_search" in s for s in executed)
+    assert any("CREATE TABLE IF NOT EXISTS g_v1_entity_search_asserted" in s for s in executed)
     assert any("CREATE TABLE IF NOT EXISTS g_v1_props" in s for s in executed)
     assert any(
-        "CREATE INDEX IF NOT EXISTS g_v1_adj_out_src_idx ON g_v1_adj_out (src)" in s
+        "CREATE INDEX IF NOT EXISTS g_v1_adj_out_src_idx ON g_v1_adj_out (src, predicate)" in s
         for s in executed
     )
     assert any(
-        "CREATE INDEX IF NOT EXISTS g_v1_adj_in_dst_idx ON g_v1_adj_in (dst)" in s
+        "CREATE INDEX IF NOT EXISTS g_v1_adj_in_dst_idx ON g_v1_adj_in (dst, predicate)" in s
         for s in executed
     )
     assert any("TRUNCATE g_v1_adj_out" in s for s in executed)
     assert any("TRUNCATE g_v1_adj_in" in s for s in executed)
     assert any("TRUNCATE g_v1_entity_search" in s for s in executed)
+    assert any("TRUNCATE g_v1_entity_search_asserted" in s for s in executed)
     assert any("TRUNCATE g_v1_props" in s for s in executed)
     assert any(
         "INSERT INTO g_v1_adj_out (src, predicate, dst) SELECT DISTINCT" in s
@@ -79,6 +87,7 @@ def test_lakebase_rebuild_adjacency_runs_ddl_and_rebuild_sql(auth):
     assert any("ANALYZE g_v1_adj_out" in s for s in executed)
     assert any("ANALYZE g_v1_adj_in" in s for s in executed)
     assert any("ANALYZE g_v1_entity_search" in s for s in executed)
+    assert any("ANALYZE g_v1_entity_search_asserted" in s for s in executed)
     assert any("ANALYZE g_v1_props" in s for s in executed)
 
     tx_sql = [str(c[0][0]) for c in tx_cur.execute.call_args_list]
@@ -219,6 +228,29 @@ def test_long_entity_search_name_fits_postgres_identifier_limit():
     name = _adjacency_ddl.entity_search_phy("Domain_" + ("A" * 120))
     assert len(name.encode("utf-8")) <= 63
     assert name.endswith("_entity_search")
+
+
+def test_long_asserted_entity_search_name_fits_postgres_identifier_limit():
+    name = _adjacency_ddl.entity_search_asserted_phy("Domain_" + ("A" * 120))
+    assert len(name.encode("utf-8")) <= 63
+    assert name.endswith("_entity_search_asserted")
+
+
+def test_entity_search_adds_gin_when_pg_trgm_present():
+    cur = MagicMock()
+    cur.fetchone.return_value = (1,)
+    _adjacency_ddl.ensure_entity_search_table(cur, "g_search")
+    sql = [str(c[0][0]) for c in cur.execute.call_args_list]
+    assert any("USING gin (label_lc gin_trgm_ops)" in s for s in sql)
+    assert any("USING gin (uri_lc gin_trgm_ops)" in s for s in sql)
+
+
+def test_entity_search_skips_gin_when_pg_trgm_missing():
+    cur = MagicMock()
+    cur.fetchone.return_value = None
+    _adjacency_ddl.ensure_entity_search_table(cur, "g_search")
+    sql = [str(c[0][0]) for c in cur.execute.call_args_list]
+    assert not any("gin_trgm_ops" in s for s in sql)
 
 
 def test_long_props_name_fits_postgres_identifier_limit():

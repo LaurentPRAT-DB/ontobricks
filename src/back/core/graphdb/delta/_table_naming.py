@@ -14,7 +14,30 @@ _SUFFIX_ANALYTICS = "_analytics"
 _SUFFIX_ADJ_OUT = "_adj_out"
 _SUFFIX_ADJ_IN = "_adj_in"
 _SUFFIX_ENTITY_SEARCH = "_entity_search"
+_SUFFIX_ENTITY_SEARCH_ASSERTED = "_entity_search_asserted"
 _SUFFIX_PROPS = "_props"
+
+
+def graph_leaf_suffixes() -> tuple[str, ...]:
+    """Longest-first suffixes stripped when deriving the mapping-view stem."""
+    return (
+        _SUFFIX_ENTITY_SEARCH_ASSERTED,
+        _SUFFIX_ENTITY_SEARCH,
+        _SUFFIX_ADJ_OUT,
+        _SUFFIX_ADJ_IN,
+        _SUFFIX_PROPS,
+        _SUFFIX_ANALYTICS,
+        _SUFFIX_INFERRED,
+        _SUFFIX_GRAPH,
+        _SUFFIX_DATA,
+    )
+
+
+def strip_graph_leaf_suffix(leaf: str) -> str:
+    for suffix in graph_leaf_suffixes():
+        if leaf.endswith(suffix):
+            return leaf[: -len(suffix)]
+    return leaf
 
 
 def view_fqn(domain: Any, settings: Any = None) -> str:
@@ -90,6 +113,15 @@ def entity_search_fqn(domain: Any, settings: Any = None) -> str:
     return f"{cat}.{sch}.{base}{_SUFFIX_ENTITY_SEARCH}"
 
 
+def entity_search_asserted_fqn(domain: Any, settings: Any = None) -> str:
+    """Asserted-only entity-search table FQN (``..._entity_search_asserted``)."""
+    view = view_fqn(domain, settings)
+    if not view or view.count(".") != 2:
+        return ""
+    cat, sch, base = view.split(".", 2)
+    return f"{cat}.{sch}.{base}{_SUFFIX_ENTITY_SEARCH_ASSERTED}"
+
+
 def props_fqn(domain: Any, settings: Any = None) -> str:
     """Property-companion table FQN (``..._props``)."""
     view = view_fqn(domain, settings)
@@ -125,6 +157,10 @@ def adj_in_suffix() -> str:
 
 def entity_search_suffix() -> str:
     return _SUFFIX_ENTITY_SEARCH
+
+
+def entity_search_asserted_suffix() -> str:
+    return _SUFFIX_ENTITY_SEARCH_ASSERTED
 
 
 def props_suffix() -> str:

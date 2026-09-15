@@ -26,6 +26,7 @@ from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.entity_search import (
     is_asserted_only_relation,
     preview_select_sql,
+    sort_preview_rows,
 )
 
 logger = get_logger(__name__)
@@ -859,12 +860,11 @@ class GraphDBBackend(ABC):
         """Return Preview rows with URI, type URI, and label."""
         probe_limit = int(limit) if limit else 0
         search_table = ""
-        if (
-            self.supports_entity_search
-            and not is_asserted_only_relation(table_name)
-            and probe_limit > 0
-        ):
-            search_table = self.entity_search_table_id(table_name)
+        if self.supports_entity_search and probe_limit > 0:
+            if is_asserted_only_relation(table_name):
+                search_table = self.entity_search_asserted_table_id(table_name)
+            else:
+                search_table = self.entity_search_table_id(table_name)
         if search_table:
             try:
                 rows = self.execute_query(
@@ -878,14 +878,16 @@ class GraphDBBackend(ABC):
                         escape=self._sql_escape,
                     )
                 ) or []
-                return [
-                    {
-                        "uri": row["uri"],
-                        "type": row.get("type_uri") or "",
-                        "label": row.get("label") or "",
-                    }
-                    for row in rows
-                ]
+                return sort_preview_rows(
+                    [
+                        {
+                            "uri": row["uri"],
+                            "type": row.get("type_uri") or "",
+                            "label": row.get("label") or "",
+                        }
+                        for row in rows
+                    ]
+                )
             except Exception as exc:  # noqa: BLE001
                 message = str(exc).lower()
                 if (
@@ -909,7 +911,7 @@ class GraphDBBackend(ABC):
                 limit=probe_limit,
             )
         )
-        return self.get_entity_metadata(table_name, subjects)
+        return sort_preview_rows(self.get_entity_metadata(table_name, subjects))
 
     def find_subjects_by_patterns(
         self, table_name: str, like_patterns: List[str]
@@ -1122,10 +1124,10 @@ class GraphDBBackend(ABC):
         return ("", "")
 
     def rebuild_adjacency(self, table_name: str) -> None:
-        """Materialise ``_adj_out``, ``_adj_in``, ``_entity_search``, and ``_props``.
+        """Materialise adj, ``_entity_search``, asserted search, and ``_props``.
 
-        Default is a no-op. SQL backends rebuild all four from the
-        reader-facing SPO relation.
+        Default is a no-op. SQL backends rebuild companions from the
+        reader-facing SPO relation plus an asserted-only entity-search table.
         """
 
     def adjacency_ready(self, table_name: str) -> bool:
@@ -1138,7 +1140,11 @@ class GraphDBBackend(ABC):
         return self.table_exists(adj_out) and self.table_exists(adj_in)
 
     def entity_search_table_id(self, table_name: str) -> str:
-        """Return the entity-search table identifier for *table_name*."""
+        """Return the union entity-search table identifier for *table_name*."""
+        return ""
+
+    def entity_search_asserted_table_id(self, table_name: str) -> str:
+        """Return the asserted-only entity-search table identifier."""
         return ""
 
     def props_table_id(self, table_name: str) -> str:
@@ -1146,10 +1152,13 @@ class GraphDBBackend(ABC):
         return ""
 
     def entity_search_ready(self, table_name: str) -> bool:
-        """Whether Preview can use the entity-search snapshot."""
-        if not self.supports_entity_search or is_asserted_only_relation(table_name):
+        """Whether Preview can use the matching entity-search snapshot."""
+        if not self.supports_entity_search:
             return False
-        search_table = self.entity_search_table_id(table_name)
+        if is_asserted_only_relation(table_name):
+            search_table = self.entity_search_asserted_table_id(table_name)
+        else:
+            search_table = self.entity_search_table_id(table_name)
         return bool(search_table) and self.table_exists(search_table)
 
     # ------------------------------------------------------------------

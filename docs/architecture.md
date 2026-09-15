@@ -909,23 +909,22 @@ Switching a domain between modes needs the stale relation of the other kind drop
 
 #### Adjacency index objects
 
-In addition to the four-object triple-store family, **Build** produces four
+In addition to the four-object triple-store family, **Build** produces
 graph-index tables for Explorer:
 
 | Object | Kind | Clustering | Created when | Used by |
 |--------|------|------------|--------------|---------|
-| `triplestore_<domain>_V<n>_adj_out` | Delta TABLE | `CLUSTER BY (src)` | End of Build (after `_data` in table mode; from `_graph` in view mode) | Outgoing hops — Explorer expansion, `expand_entity_neighbors` |
-| `triplestore_<domain>_V<n>_adj_in`  | Delta TABLE | `CLUSTER BY (dst)` | same | Reverse (incoming) hops |
-| `triplestore_<domain>_V<n>_entity_search` | Delta TABLE | `CLUSTER BY (type_uri)` | same | Preview search — one row per typed entity |
+| `triplestore_<domain>_V<n>_adj_out` | Delta TABLE | `CLUSTER BY (src, predicate)` | End of Build (after `_data` in table mode; from `_graph` in view mode) | Outgoing hops — Explorer expansion, `expand_entity_neighbors` |
+| `triplestore_<domain>_V<n>_adj_in`  | Delta TABLE | `CLUSTER BY (dst, predicate)` | same | Reverse (incoming) hops |
+| `triplestore_<domain>_V<n>_entity_search` | Delta TABLE | `CLUSTER BY (type_uri, label_lc)` | same | Preview search (Inferred on) |
+| `triplestore_<domain>_V<n>_entity_search_asserted` | Delta TABLE | same | same, from `_data` | Preview search (Inferred off) |
 | `triplestore_<domain>_V<n>_props` | Delta TABLE | `CLUSTER BY (subject)` | same | Expansion payload — outgoing triples of typed subjects |
 
-Lakebase stores equivalent `_adj_out`, `_adj_in`, `_entity_search`, and
-`_props` tables. The entity table carries normalized URI/label fields and type
-metadata; `_props` has a btree index on `subject`. Both `app_managed`
-and `managed_synced` modes share the same four-index Postgres layout
-(`_sync` bulk-data table, `__app` companion, reader-facing union view);
-`rebuild_adjacency` always reads from the reader-facing union view regardless
-of mode.
+Lakebase stores equivalent `_adj_out`, `_adj_in`, `_entity_search`,
+`_entity_search_asserted`, and `_props` tables. The entity table carries
+normalized URI/label fields and type metadata; `_props` has a btree index on
+`subject`. `rebuild_adjacency` reads hops/`_props` from the union view and
+asserted Preview from `_sync`.
 Neo4j uses native Bolt traversal/search and has no graph-index companions.
 
 The **Refresh cache** action (builder/admin, Lakehouse and Lakebase only)

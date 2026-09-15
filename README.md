@@ -117,7 +117,7 @@ graph built (Mapping and Knowledge Graph are disabled and the MCP surface
 serves only ontology information).
 Connection config stays workspace-global. Lakehouse and Lakebase Build also
 materialise Explorer indexes (`_adj_out` / `_adj_in`, `_entity_search`,
-`_props`); Neo4j keeps native traversal. Full reference:
+`_entity_search_asserted`, `_props`); Neo4j keeps native traversal. Full reference:
 [Lakebase Graph DB](docs/lakebase-graphdb.md) ·
 [Graph DB Integration](docs/graphdb-integration.md) ·
 [Graph Query Optimizations](docs/optimizations.md).

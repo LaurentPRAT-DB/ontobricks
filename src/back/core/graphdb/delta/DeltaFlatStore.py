@@ -98,19 +98,7 @@ class DeltaFlatStore(GraphDBBackend):
         if "." not in table_name or table_name.count(".") != 2:
             return ("", "")
         cat, sch, base = table_name.split(".", 2)
-        for suffix in (
-            _table_naming.data_suffix(),
-            _table_naming.graph_suffix(),
-            _table_naming.inferred_suffix(),
-            _table_naming.analytics_suffix(),
-            _table_naming.adj_out_suffix(),
-            _table_naming.adj_in_suffix(),
-            _table_naming.entity_search_suffix(),
-            _table_naming.props_suffix(),
-        ):
-            if base.endswith(suffix):
-                base = base[: -len(suffix)]
-                break
+        base = _table_naming.strip_graph_leaf_suffix(base)
         return (
             f"{cat}.{sch}.{base}{_table_naming.adj_out_suffix()}",
             f"{cat}.{sch}.{base}{_table_naming.adj_in_suffix()}",
@@ -124,20 +112,21 @@ class DeltaFlatStore(GraphDBBackend):
         if "." not in table_name or table_name.count(".") != 2:
             return ""
         cat, sch, base = table_name.split(".", 2)
-        for suffix in (
-            _table_naming.data_suffix(),
-            _table_naming.graph_suffix(),
-            _table_naming.inferred_suffix(),
-            _table_naming.analytics_suffix(),
-            _table_naming.adj_out_suffix(),
-            _table_naming.adj_in_suffix(),
-            _table_naming.entity_search_suffix(),
-            _table_naming.props_suffix(),
-        ):
-            if base.endswith(suffix):
-                base = base[: -len(suffix)]
-                break
+        base = _table_naming.strip_graph_leaf_suffix(base)
         return f"{cat}.{sch}.{base}{_table_naming.entity_search_suffix()}"
+
+    def entity_search_asserted_table_id(self, table_name: str) -> str:
+        if self._domain is not None:
+            search = _table_naming.entity_search_asserted_fqn(
+                self._domain, self._settings
+            )
+            if search:
+                return search
+        if "." not in table_name or table_name.count(".") != 2:
+            return ""
+        cat, sch, base = table_name.split(".", 2)
+        base = _table_naming.strip_graph_leaf_suffix(base)
+        return f"{cat}.{sch}.{base}{_table_naming.entity_search_asserted_suffix()}"
 
     def props_table_id(self, table_name: str) -> str:
         if self._domain is not None:
@@ -147,25 +136,14 @@ class DeltaFlatStore(GraphDBBackend):
         if "." not in table_name or table_name.count(".") != 2:
             return ""
         cat, sch, base = table_name.split(".", 2)
-        for suffix in (
-            _table_naming.data_suffix(),
-            _table_naming.graph_suffix(),
-            _table_naming.inferred_suffix(),
-            _table_naming.analytics_suffix(),
-            _table_naming.adj_out_suffix(),
-            _table_naming.adj_in_suffix(),
-            _table_naming.entity_search_suffix(),
-            _table_naming.props_suffix(),
-        ):
-            if base.endswith(suffix):
-                base = base[: -len(suffix)]
-                break
+        base = _table_naming.strip_graph_leaf_suffix(base)
         return f"{cat}.{sch}.{base}{_table_naming.props_suffix()}"
 
     def rebuild_adjacency(self, table_name: str) -> None:
         relation = self._sql_relation(table_name)
         adj_out, adj_in = self.adjacency_table_ids(table_name)
         search = self.entity_search_table_id(table_name)
+        search_asserted = self.entity_search_asserted_table_id(table_name)
         props = self.props_table_id(table_name)
         if not adj_out or not adj_in or not search or not props:
             logger.warning("Skipping graph-index rebuild, unresolved table ids for %s", table_name)
@@ -181,14 +159,10 @@ class DeltaFlatStore(GraphDBBackend):
                 logger.warning(
                     "OPTIMIZE adjacency table failed for %s: %s", adj_fqn, exc
                 )
-        materialize.drop_relation(self._client, search, kind="view")
-        self._client.execute_statement(
-            materialize.build_entity_search_ctas_sql(relation, search)
-        )
-        try:
-            materialize.optimize_table(self._client, search)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("OPTIMIZE entity-search table failed for %s: %s", search, exc)
+        self._rebuild_entity_search_table(relation, search)
+        asserted_spo = self.synced_table_name(table_name)
+        if search_asserted and asserted_spo:
+            self._rebuild_entity_search_table(asserted_spo, search_asserted)
         materialize.drop_relation(self._client, props, kind="view")
         self._client.execute_statement(
             materialize.build_props_ctas_sql(relation, props)
@@ -197,6 +171,21 @@ class DeltaFlatStore(GraphDBBackend):
             materialize.optimize_table(self._client, props)
         except Exception as exc:  # noqa: BLE001
             logger.warning("OPTIMIZE property table failed for %s: %s", props, exc)
+
+    def _rebuild_entity_search_table(self, spo_fqn: str, search_fqn: str) -> None:
+        materialize.drop_relation(self._client, search_fqn, kind="view")
+        self._client.execute_statement(
+            materialize.build_entity_search_ctas_sql(spo_fqn, search_fqn)
+        )
+        materialize.set_bloom_filter_columns(
+            self._client, search_fqn, "label_lc,uri_lc"
+        )
+        try:
+            materialize.optimize_table(self._client, search_fqn)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "OPTIMIZE entity-search table failed for %s: %s", search_fqn, exc
+            )
 
     def _writable_table_fqn(self, table_name: str) -> str:
         """Route app writes to the inferred companion table (Lakebase ``__app`` analogue)."""
@@ -233,6 +222,10 @@ class DeltaFlatStore(GraphDBBackend):
         """Base data table without inferred companion rows."""
         if table_name.endswith(_table_naming.data_suffix()):
             return table_name
+        if self._domain is not None:
+            data = _table_naming.data_table_fqn(self._domain, self._settings)
+            if data:
+                return data
         if "." in table_name and table_name.count(".") == 2:
             cat, sch, base = table_name.split(".", 2)
             if base.endswith(_table_naming.inferred_suffix()):

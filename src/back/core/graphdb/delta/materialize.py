@@ -64,10 +64,10 @@ def build_adj_ctas_sql(
     validate_table_name(adj_fqn)
     if direction == "out":
         select_sql = typed_out_select(spo_fqn)
-        cluster_key = "src"
+        cluster_key = "src, predicate"
     elif direction == "in":
         select_sql = typed_in_select(spo_fqn)
-        cluster_key = "dst"
+        cluster_key = "dst, predicate"
     else:
         raise ValueError(f"Unsupported adjacency direction: {direction}")
     return (
@@ -83,9 +83,23 @@ def build_entity_search_ctas_sql(spo_fqn: str, search_fqn: str) -> str:
     validate_table_name(search_fqn)
     return (
         f"CREATE OR REPLACE TABLE {search_fqn} USING DELTA "
-        "CLUSTER BY (type_uri) "
+        "CLUSTER BY (type_uri, label_lc) "
         f"AS {entity_search_select(spo_fqn)}"
     )
+
+
+def set_bloom_filter_columns(client: Any, table_fqn: str, columns: str) -> None:
+    """Best-effort Delta Bloom filters on lowercase search columns."""
+    validate_table_name(table_fqn)
+    try:
+        client.execute_statement(
+            f"ALTER TABLE {table_fqn} SET TBLPROPERTIES ("
+            f"'delta.bloomFilter.columns' = '{columns}')"
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Bloom filter TBLPROPERTIES failed for %s: %s", table_fqn, exc
+        )
 
 
 def build_props_ctas_sql(spo_fqn: str, props_fqn: str) -> str:

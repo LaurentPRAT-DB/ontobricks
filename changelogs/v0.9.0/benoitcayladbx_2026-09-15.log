@@ -1001,3 +1001,82 @@ Tests:
 - Full suite: `uv run --frozen pytest -q -m "not scenario"` →
   `6161 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.96s`.
 - Diagnostics: IDE lint inspection reported no errors.
+
+## Ship remaining Explorer search/traversal optimizations
+
+Context: The Search / transversal Asana backlog still had Preview warehouse
+`ORDER BY`, a Contains default, asserted-only SPO Preview, no `pg_trgm` / Bloom,
+and adj clustered only by endpoint. Waves 1–2 plus adj clustering are now in
+code. Types-on-adjacency stays open (Explorer has no hop-type filter).
+
+Changes:
+
+1. src/back/core/graphdb/entity_search.py
+   Dropped warehouse ORDER BY and sort Preview rows in Python.
+2. src/back/core/graphdb/GraphDBBackend.py
+   Preview uses `_entity_search_asserted` when Inferred is off.
+3. src/back/core/graphdb/delta/_table_naming.py
+   Added `_entity_search_asserted` FQN helpers.
+4. src/back/core/graphdb/delta/materialize.py
+   Clustered search on `(type_uri, label_lc)`, adj on `(src|dst, predicate)`, Bloom TBLPROPERTIES.
+5. src/back/core/graphdb/delta/DeltaFlatStore.py
+   Rebuilds asserted search from `_data` and resolves synced FQN via the domain.
+6. src/back/core/graphdb/lakebase/_adjacency_ddl.py
+   Added asserted search table, `pg_trgm` GIN, composite adj btrees.
+7. src/back/core/graphdb/lakebase/LakebaseFlatStore.py
+   Rebuilds asserted search from `_sync`.
+8. src/front/templates/partials/dtwin/_query_sigmagraph.html
+   Defaulted Match to Starts with.
+9. src/front/static/query/js/query-sigmagraph.js
+   Defaulted the Search fallback to starts; local-name lookup still uses contains.
+10. tests/units/graphdb/test_entity_search_sql.py
+    Covered LIMIT without ORDER BY and in-app sort.
+11. tests/units/graphdb/test_graphdb_adjacency_contract.py
+    Covered asserted-index Preview.
+12. tests/units/graphdb/delta/test_delta_package.py
+    Covered new cluster keys, asserted FQN, and Bloom SQL.
+13. tests/units/graphdb/delta/test_delta_flat_store.py
+    Covered asserted CTAS and extra OPTIMIZE.
+14. tests/units/graphdb/test_lakebase_adjacency.py
+    Covered asserted DDL, GIN skip/apply, composite indexes.
+15. tests/units/front/test_explorer_match_default.py
+    Covered Starts-with default vs programmatic contains.
+16. docs/optimizations.md
+    Documented the new Preview and layout techniques.
+17. docs/graphdb-integration.md
+    Listed `_entity_search_asserted` and updated cluster keys.
+18. docs/architecture.md
+    Matched the graph-index object table.
+19. docs/lakebase-graphdb.md
+    Documented asserted search and `pg_trgm`.
+20. docs/user-guide.md
+    Noted Starts-with default and asserted Preview index.
+21. README.md
+    Mentioned `_entity_search_asserted`.
+
+Modified files:
+- src/back/core/graphdb/entity_search.py
+- src/back/core/graphdb/GraphDBBackend.py
+- src/back/core/graphdb/delta/_table_naming.py
+- src/back/core/graphdb/delta/materialize.py
+- src/back/core/graphdb/delta/DeltaFlatStore.py
+- src/back/core/graphdb/lakebase/_adjacency_ddl.py
+- src/back/core/graphdb/lakebase/LakebaseFlatStore.py
+- src/front/templates/partials/dtwin/_query_sigmagraph.html
+- src/front/static/query/js/query-sigmagraph.js
+- tests/units/graphdb/test_entity_search_sql.py
+- tests/units/graphdb/test_graphdb_adjacency_contract.py
+- tests/units/graphdb/delta/test_delta_package.py
+- tests/units/graphdb/delta/test_delta_flat_store.py
+- tests/units/graphdb/test_lakebase_adjacency.py
+- tests/units/front/test_explorer_match_default.py
+- docs/optimizations.md
+- docs/graphdb-integration.md
+- docs/architecture.md
+- docs/lakebase-graphdb.md
+- docs/user-guide.md
+- README.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6173 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.64s
+

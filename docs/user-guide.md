@@ -641,11 +641,11 @@ Click **Build** in the sidebar to manage your triple store:
 In both modes `…_inferred` stays a Delta table, so reasoning and cohort writes are unaffected.
 
 **Explorer index snapshot.** Build materialises `_adj_out` / `_adj_in` for
-entity expansion, `_entity_search` for the first Preview search, and `_props`
-for the final expansion payload fetch. The **Refresh cache** action
-refreshes all four from the same graph snapshot.
-Preview with **Inferred** disabled keeps the asserted-only SPO path instead of
-using the union search snapshot. On Lakehouse domains, this action always uses
+entity expansion, `_entity_search` (union) and `_entity_search_asserted` for
+Preview, and `_props` for the final expansion payload fetch. The **Refresh cache**
+action refreshes those companions from the same graph snapshot.
+Preview with **Inferred** disabled uses `_entity_search_asserted` instead of
+the union search snapshot. On Lakehouse domains, this action always uses
 the configured **Build SQL Warehouse**; the optional Lakehouse/RT warehouse is
 used only for graph reads and cannot execute the required table DDL. Freshness
 depends on backend and mode:
@@ -714,7 +714,9 @@ select seed entities and returns after you choose **Explore selected**.
 
 **Find & Filter:**
 - **Find**: Search for entities by label or URI — matching entities and their neighbors are highlighted and the camera zooms to focus on results
-- **Filters**: Advanced filtering by entity type, field (label/URI), match type (contains, exact, starts with, ends with), with relationship depth control — rebuilds the graph with only matching triples
+- **Filters**: Advanced filtering by entity type, field (label/URI), match type
+  (starts with by default; contains, exact, ends with), with relationship depth
+  control — rebuilds the graph with only matching triples
 
 **Entity Details Panel (right):**
 When you click on an entity in the graph, the right panel shows:

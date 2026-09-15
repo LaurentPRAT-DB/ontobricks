@@ -2087,7 +2087,7 @@ var SigmaGraph = (function () {
     // -- Phase 1: preview search ----------------------------------------
     async function _executeGraphSearch() {
         var entityType = (document.getElementById('sgFilterEntityType')?.value || '').trim();
-        var matchType = document.getElementById('sgFilterMatchType')?.value || 'contains';
+        var matchType = document.getElementById('sgFilterMatchType')?.value || 'starts';
         var searchValue = (document.getElementById('sgFilterValue')?.value || '').trim();
 
         if (!searchValue && !entityType) return;

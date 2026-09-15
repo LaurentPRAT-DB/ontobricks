@@ -9,6 +9,7 @@ from back.core.graphdb.entity_search import (
     entity_search_select,
     is_asserted_only_relation,
     preview_select_sql,
+    sort_preview_rows,
 )
 
 
@@ -53,7 +54,7 @@ def test_preview_sql_any_contains_and_limit() -> None:
     assert "FROM g_entity_search" in sql
     assert "label_lc LIKE '%jac%'" in sql
     assert "uri_lc LIKE '%jac%'" in sql
-    assert "ORDER BY type_uri, label" in sql
+    assert "ORDER BY" not in sql
     assert "LIMIT 501" in sql
 
 
@@ -67,7 +68,7 @@ def test_preview_sql_type_and_exact_label() -> None:
         limit=10,
         escape=_escape,
     )
-    where = sql.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
+    where = sql.split("WHERE", 1)[1].split("LIMIT", 1)[0]
     assert "type_uri = 'http://ex/Person'" in where
     assert "label_lc = 'ada'" in where
     assert "uri_lc" not in where
@@ -84,3 +85,26 @@ def test_preview_sql_rejects_non_positive_limit() -> None:
             limit=0,
             escape=_escape,
         )
+
+
+def test_preview_select_sql_has_no_warehouse_order_by() -> None:
+    sql = preview_select_sql(
+        search_table="g_entity_search",
+        entity_type="",
+        field="any",
+        match_type="contains",
+        value="ada",
+        limit=501,
+        escape=_escape,
+    )
+    assert "ORDER BY" not in sql
+    assert "LIMIT 501" in sql
+
+
+def test_sort_preview_rows_orders_type_then_label_then_uri() -> None:
+    rows = [
+        {"uri": "u2", "type": "T", "label": "b"},
+        {"uri": "u1", "type": "T", "label": "a"},
+        {"uri": "u3", "type": "A", "label": "z"},
+    ]
+    assert [r["uri"] for r in sort_preview_rows(rows)] == ["u3", "u1", "u2"]

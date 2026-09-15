@@ -19,6 +19,7 @@ class FakeStore(GraphDBBackend):
         self.queries: List[str] = []
         self._adj_ready = False
         self._search_ready = False
+        self._search_asserted_ready = False
 
     def sql_flavor(self) -> Optional[Literal["spark", "postgres"]]:
         return "postgres"
@@ -29,12 +30,17 @@ class FakeStore(GraphDBBackend):
     def entity_search_table_id(self, table_name: str) -> str:
         return "g_entity_search"
 
+    def entity_search_asserted_table_id(self, table_name: str) -> str:
+        return "g_entity_search_asserted"
+
     def props_table_id(self, table_name: str) -> str:
         return "g_props"
 
     def table_exists(self, table_name: str) -> bool:
         if table_name == "g_entity_search":
             return self._search_ready
+        if table_name == "g_entity_search_asserted":
+            return self._search_asserted_ready
         return self._adj_ready and table_name in {"g_adj_out", "g_adj_in"}
 
     def execute_query(self, query: str) -> List[Dict[str, Any]]:
@@ -111,6 +117,9 @@ def test_entity_search_ready_requires_support_table_and_union_relation():
     assert store.entity_search_ready("g") is True
     assert store.entity_search_ready("g_data") is False
     assert store.entity_search_ready("g_sync") is False
+    store._search_asserted_ready = True
+    assert store.entity_search_ready("g_data") is True
+    assert store.entity_search_ready("g_sync") is True
     store.supports_entity_search = False
     assert store.entity_search_ready("g") is False
 
@@ -138,12 +147,25 @@ def test_find_preview_seeds_falls_back_when_entity_table_is_missing():
     assert "g_entity_search" not in execute.call_args_list[1].args[0]
 
 
-def test_find_preview_seeds_bypasses_union_index_for_asserted_relation():
+def test_find_preview_seeds_uses_asserted_index_for_asserted_relation():
     store = FakeStore()
     store.find_preview_seeds("g_data", value="ada", limit=2)
     assert len(store.queries) == 1
-    assert "g_entity_search" not in store.queries[0]
-    assert "FROM g_data" in store.queries[0]
+    assert "g_entity_search_asserted" in store.queries[0]
+    assert "FROM g_entity_search " not in store.queries[0]
+    assert "ORDER BY" not in store.queries[0]
+
+
+def test_find_preview_seeds_sorts_index_rows():
+    store = FakeStore()
+    rows = [
+        {"uri": "u2", "type_uri": "T", "label": "b"},
+        {"uri": "u1", "type_uri": "T", "label": "a"},
+        {"uri": "u3", "type_uri": "A", "label": "z"},
+    ]
+    with patch.object(store, "execute_query", return_value=rows):
+        got = store.find_preview_seeds("g", value="x", limit=10)
+    assert [r["uri"] for r in got] == ["u3", "u1", "u2"]
 
 
 def test_find_preview_seeds_does_not_swallow_index_query_failures():

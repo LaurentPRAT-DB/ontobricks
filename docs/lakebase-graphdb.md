@@ -365,15 +365,17 @@ per domain version, plus **four Explorer graph-index tables** rebuilt by
 | Sync table | App (`app_managed`) / Lakeflow (`managed_synced`) | `g_<domain>_v<n>_sync` | Bulk warehouse data; `(subject, predicate, object, datatype, lang)`. App writes via `COPY FROM STDIN`; Lakeflow writes via snapshot pipeline. |
 | Companion table | App (read/write) | `g_<domain>_v<n>__app` | Reasoning / cohort / materialise triples; `(subject, predicate, object, datatype, lang)` |
 | UNION view | App DDL | `g_<domain>_v<n>` | `SELECT … FROM _sync UNION ALL SELECT … FROM __app`; exposes the back-compat 5-column shape |
-| Adjacency out | App | `g_<domain>_v<n>_adj_out` | Typed entity–entity outgoing edges; btree on `src` |
-| Adjacency in | App | `g_<domain>_v<n>_adj_in` | Typed incoming edges; btree on `dst` |
-| Entity search | App | `g_<domain>_v<n>_entity_search` | One row per typed instance for Explorer Preview |
+| Adjacency out | App | `g_<domain>_v<n>_adj_out` | Typed entity–entity outgoing edges; btree on `(src, predicate)` |
+| Adjacency in | App | `g_<domain>_v<n>_adj_in` | Typed incoming edges; btree on `(dst, predicate)` |
+| Entity search | App | `g_<domain>_v<n>_entity_search` | Preview with Inferred on; prefix + optional `pg_trgm` GIN |
+| Entity search (asserted) | App | `g_<domain>_v<n>_entity_search_asserted` | Preview with Inferred off; rebuilt from `_sync` |
 | Property companion | App | `g_<domain>_v<n>_props` | Outgoing triples of typed subjects; btree on `subject` |
 
 SPARQL still targets the union view `g_<domain>_v<n>`. Explorer hops use the
-adjacency tables; Preview uses `_entity_search`; expansion payload fetch uses
-`_props` (SPO fallback if that table is missing). Indexes are snapshots —
-**Refresh cache** or a full Build refreshes all four together.
+adjacency tables; Preview uses `_entity_search` or `_entity_search_asserted`;
+expansion payload fetch uses `_props` (SPO fallback if that table is missing).
+Indexes are snapshots — **Refresh cache** or a full Build refreshes them
+together.
 
 ### 6.3 — Drop cascade (both modes)
 

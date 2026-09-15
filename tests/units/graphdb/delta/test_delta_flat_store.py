@@ -118,6 +118,20 @@ class TestDeltaFlatStoreInferredRouting:
         assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_adj_out" in statements
         assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_adj_in" in statements
         assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_entity_search" in statements
+        assert any(
+            "CREATE OR REPLACE TABLE cat.sch.triplestore_mydomain_V1_entity_search_asserted"
+            in sql
+            for sql in statements
+        )
+        assert any(
+            "FROM cat.sch.triplestore_mydomain_V1_data" in sql
+            and "_entity_search_asserted" in sql
+            for sql in statements
+        )
+        assert any(
+            "delta.bloomFilter.columns" in sql for sql in statements
+        )
+        assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_entity_search_asserted" in statements
         assert "OPTIMIZE cat.sch.triplestore_mydomain_V1_props" in statements
 
     def test_rebuild_adjacency_keeps_going_when_optimize_fails(self):
@@ -138,7 +152,7 @@ class TestDeltaFlatStoreInferredRouting:
         assert any("_adj_in USING DELTA" in sql for sql in statements)
         assert any("_entity_search USING DELTA" in sql for sql in statements)
         assert any("_props USING DELTA" in sql for sql in statements)
-        assert mock_warning.call_count == 4
+        assert mock_warning.call_count == 5
 
     def test_rebuild_adjacency_still_fails_when_ctas_fails(self):
         client = MagicMock()

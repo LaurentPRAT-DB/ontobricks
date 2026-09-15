@@ -13,6 +13,7 @@ __all__ = [
     "entity_search_select",
     "is_asserted_only_relation",
     "preview_select_sql",
+    "sort_preview_rows",
 ]
 
 
@@ -83,5 +84,13 @@ def preview_select_sql(
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     return (
         f"SELECT uri, type_uri, label FROM {search_table}{where} "
-        f"ORDER BY type_uri, label LIMIT {int(limit)}"
+        f"LIMIT {int(limit)}"
+    )
+
+
+def sort_preview_rows(rows: list[dict]) -> list[dict]:
+    """Stable UI order after a warehouse LIMIT (no ORDER BY in SQL)."""
+    return sorted(
+        rows,
+        key=lambda r: (r.get("type") or "", r.get("label") or "", r.get("uri") or ""),
     )

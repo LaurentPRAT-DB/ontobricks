@@ -169,6 +169,9 @@ class LakebaseFlatStore(LakebaseBase):
     def entity_search_table_id(self, table_name: str) -> str:
         return _adjacency_ddl.entity_search_phy(table_name)
 
+    def entity_search_asserted_table_id(self, table_name: str) -> str:
+        return _adjacency_ddl.entity_search_asserted_phy(table_name)
+
     def props_table_id(self, table_name: str) -> str:
         return _adjacency_ddl.props_phy(table_name)
 
@@ -177,18 +180,25 @@ class LakebaseFlatStore(LakebaseBase):
         union_view = self._sql_relation(table_name)
         adj_out, adj_in = self.adjacency_table_ids(table_name)
         search = self.entity_search_table_id(table_name)
+        search_asserted = self.entity_search_asserted_table_id(table_name)
+        asserted_spo = self.synced_table_name(table_name)
         props = self.props_table_id(table_name)
         with self._cursor() as cur:
             _adjacency_ddl.ensure_adjacency_tables(cur, adj_out, adj_in)
             _adjacency_ddl.ensure_entity_search_table(cur, search)
+            _adjacency_ddl.ensure_entity_search_table(cur, search_asserted)
             _adjacency_ddl.ensure_props_table(cur, props)
         with self._txn_cursor() as (_, cur):
             _adjacency_ddl.rebuild_adjacency_data(cur, union_view, adj_out, adj_in)
             _adjacency_ddl.rebuild_entity_search_data(cur, union_view, search)
+            _adjacency_ddl.rebuild_entity_search_data(
+                cur, asserted_spo, search_asserted
+            )
             _adjacency_ddl.rebuild_props_data(cur, union_view, props)
         with self._cursor() as cur:
             _adjacency_ddl.analyze_adjacency_tables(cur, adj_out, adj_in)
             _adjacency_ddl.analyze_entity_search_table(cur, search)
+            _adjacency_ddl.analyze_entity_search_table(cur, search_asserted)
             _adjacency_ddl.analyze_props_table(cur, props)
 
     # -- Table-name resolution --------------------------------------------

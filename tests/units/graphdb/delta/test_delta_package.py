@@ -54,6 +54,12 @@ class TestTableNaming:
             "cat.sch.triplestore_mydomain_V1_entity_search"
         )
 
+    def test_entity_search_asserted_fqn(self):
+        domain = _domain()
+        assert _table_naming.entity_search_asserted_fqn(domain) == (
+            "cat.sch.triplestore_mydomain_V1_entity_search_asserted"
+        )
+
     def test_props_fqn(self):
         domain = _domain()
         assert _table_naming.props_fqn(domain) == (
@@ -91,7 +97,7 @@ class TestMaterializeSql:
             "cat.sch.g_graph", "cat.sch.g_adj_out", "out"
         )
         assert "CREATE OR REPLACE TABLE cat.sch.g_adj_out USING DELTA" in sql
-        assert "CLUSTER BY (src)" in sql
+        assert "CLUSTER BY (src, predicate)" in sql
         assert typed_out_select("cat.sch.g_graph") in sql
         assert "typed.predicate = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'" in sql
         assert "t.predicate != 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'" in sql
@@ -103,7 +109,7 @@ class TestMaterializeSql:
             "cat.sch.g_graph", "cat.sch.g_adj_in", "in"
         )
         assert "CREATE OR REPLACE TABLE cat.sch.g_adj_in USING DELTA" in sql
-        assert "CLUSTER BY (dst)" in sql
+        assert "CLUSTER BY (dst, predicate)" in sql
         assert typed_in_select("cat.sch.g_graph") in sql
         assert "typed.predicate = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'" in sql
         assert "t.predicate != 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'" in sql
@@ -116,7 +122,7 @@ class TestMaterializeSql:
         )
         expected = (
             "CREATE OR REPLACE TABLE cat.sch.g_adj_out USING DELTA "
-            "CLUSTER BY (src) "
+            "CLUSTER BY (src, predicate) "
             f"AS {typed_out_select('cat.sch.g_graph')}"
         )
         assert sql == expected
@@ -127,7 +133,7 @@ class TestMaterializeSql:
         )
         expected = (
             "CREATE OR REPLACE TABLE cat.sch.g_adj_in USING DELTA "
-            "CLUSTER BY (dst) "
+            "CLUSTER BY (dst, predicate) "
             f"AS {typed_in_select('cat.sch.g_graph')}"
         )
         assert sql == expected
@@ -139,8 +145,24 @@ class TestMaterializeSql:
         )
         assert sql == (
             "CREATE OR REPLACE TABLE cat.sch.g_entity_search USING DELTA "
-            "CLUSTER BY (type_uri) "
+            "CLUSTER BY (type_uri, label_lc) "
             f"AS {select_sql}"
+        )
+
+    def test_set_bloom_filter_columns_emits_tblproperties(self):
+        client = MagicMock()
+        materialize.set_bloom_filter_columns(
+            client, "cat.sch.g_entity_search", "label_lc,uri_lc"
+        )
+        sql = client.execute_statement.call_args[0][0]
+        assert "ALTER TABLE cat.sch.g_entity_search SET TBLPROPERTIES" in sql
+        assert "'delta.bloomFilter.columns' = 'label_lc,uri_lc'" in sql
+
+    def test_set_bloom_filter_columns_swallows_alter_errors(self):
+        client = MagicMock()
+        client.execute_statement.side_effect = RuntimeError("no bloom")
+        materialize.set_bloom_filter_columns(
+            client, "cat.sch.g_entity_search", "label_lc,uri_lc"
         )
 
     def test_props_ctas_clusters_subject_without_duplicate_from(self):

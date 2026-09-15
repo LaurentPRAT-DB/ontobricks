@@ -23,14 +23,15 @@ An Explorer search is split into three database/display phases:
    discovered entities.
 
 Lakehouse and Lakebase avoid repeatedly scanning the full
-subject-predicate-object (SPO) relation by materializing four graph-index
+subject-predicate-object (SPO) relation by materializing graph-index
 companions:
 
 | Companion | Shape | Purpose |
 |-----------|-------|---------|
 | `_adj_out` | `(src, predicate, dst)` | Outgoing typed entity-to-entity hops |
 | `_adj_in` | `(dst, predicate, src)` | Incoming typed entity-to-entity hops |
-| `_entity_search` | `(uri, type_uri, label, uri_lc, label_lc)` | Seed Preview |
+| `_entity_search` | `(uri, type_uri, label, uri_lc, label_lc)` | Preview (Inferred on) |
+| `_entity_search_asserted` | same | Preview (Inferred off) |
 | `_props` | `(subject, predicate, object)` | Expansion payload for typed subjects |
 
 The companions are snapshots of the reader-facing graph. Build and **Refresh
@@ -53,7 +54,7 @@ files and applies Liquid Clustering after builds. App-written inferred triples
 remain in `_inferred`; the `_graph` view combines `_data` and `_inferred`.
 
 In `view` materialization mode, `_data` remains a pass-through view. This avoids
-copying source data but makes raw SPO queries re-run mapping SQL. The four
+copying source data but makes raw SPO queries re-run mapping SQL. The
 physical graph-index companions are therefore especially important in this
 mode.
 
@@ -73,13 +74,17 @@ lookup. It stores one deterministic row per typed entity:
 - normalized lowercase URI and label columns.
 
 Preview filters directly on `type_uri`, `uri_lc`, and `label_lc`, then probes
-with `LIMIT 501`. The extra row indicates that the displayed 500-result list
-was capped without running a separate count query.
+with `LIMIT 501` (no warehouse `ORDER BY`). The extra row indicates that the
+displayed 500-result list was capped without running a separate count query.
+Rows are sorted by type then label in the app. Explorer Search defaults to
+**Starts with**; **Contains** remains available, including programmatic
+local-name lookup.
 
 ### Lakehouse layout
 
-The Delta table uses `CLUSTER BY (type_uri)`, which improves type-restricted
-searches.
+The Delta table uses `CLUSTER BY (type_uri, label_lc)` plus a best-effort
+Bloom filter on `label_lc` and `uri_lc`. Type-restricted prefix searches
+benefit most; Bloom helps equality more than leading-wildcard `contains`.
 
 ### Lakebase indexes
 
@@ -87,19 +92,19 @@ Lakebase creates:
 
 - a primary key on `uri`;
 - a btree on `type_uri`;
-- `text_pattern_ops` btrees on `label_lc` and `uri_lc`.
+- `text_pattern_ops` btrees on `label_lc` and `uri_lc`;
+- `pg_trgm` GIN indexes on `label_lc` and `uri_lc` when the extension can be
+  created (skipped if the role cannot `CREATE EXTENSION`).
 
 The pattern indexes accelerate equality and prefix (`starts with`) lookups.
-They do **not** make leading-wildcard `contains` expressions
-(`LIKE '%value%'`) indexable.
+GIN accelerates `contains` (`LIKE '%value%'`) when the planner selects it.
 
-### Current fallback
+### Asserted-only Preview
 
-The optimized table is used for the reader-facing union (Explorer **Inferred**
-enabled). Asserted-only Preview currently falls back to the asserted SPO
-relation to prevent inferred entities from leaking into results. A missing
-`_entity_search` table also triggers the SPO fallback; unrelated SQL errors are
-not swallowed.
+The optimized union table is used when Explorer **Inferred** is enabled.
+When Inferred is off, Preview uses `_entity_search_asserted`, rebuilt from
+`_data` (Lakehouse) or `_sync` (Lakebase). A missing companion falls back to
+the asserted SPO relation; unrelated SQL errors are not swallowed.
 
 Implementation:
 
@@ -152,8 +157,8 @@ Physical layout:
 
 | Backend | `_adj_out` | `_adj_in` |
 |---------|------------|-----------|
-| Lakehouse | `CLUSTER BY (src)` | `CLUSTER BY (dst)` |
-| Lakebase | primary key `(src, predicate, dst)` + btree `(src)` | primary key `(dst, predicate, src)` + btree `(dst)` |
+| Lakehouse | `CLUSTER BY (src, predicate)` | `CLUSTER BY (dst, predicate)` |
+| Lakebase | primary key `(src, predicate, dst)` + btree `(src, predicate)` | primary key `(dst, predicate, src)` + btree `(dst, predicate)` |
 
 This makes both outgoing and incoming exploration key-based rather than a scan
 of the SPO union.
