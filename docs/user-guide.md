@@ -1263,6 +1263,11 @@ review workflow that collects reviewer sign-offs and keeps a durable audit trail
 1. Use **Load Domain** in the top navbar (or **Registry → Browse** → **Load** on a version row).
 2. Pick domain and version in the dialog. Loading an **older** than latest version enables read-only mode for edits that require the tip version — create a new version or switch back to the latest to edit freely.
 
+When the Registry popup opens, OntoBricks briefly reuses a recently loaded
+Browse list and starts loading Bridges in the background. This avoids duplicate
+requests during modal opening and makes the first switch to Bridges faster.
+Use the tab's **Refresh** button whenever an immediate server refresh is needed.
+
 ### Version status (loaded vs latest vs MCP-active)
 
 Three related ideas:

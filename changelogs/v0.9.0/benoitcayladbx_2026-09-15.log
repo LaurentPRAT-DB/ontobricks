@@ -538,6 +538,49 @@ Modified files:
 Tests: `uv run --frozen pytest -q -m "not scenario"` →
 `6126 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.07s`.
 
+## Reduce Registry modal loading waits
+
+Context: Opening the Registry modal started another Browse request even when
+the page-load request had just completed or remained in flight. Bridges did
+not begin loading until its tab was selected, and rapid open/switch actions
+could start duplicate aggregation requests.
+
+Changes:
+
+1. src/front/static/registry/js/registry.js
+   Added in-flight deduplication and a 15-second freshness window for Browse,
+   deduplicated Bridges loads, prefetched Bridges on modal open, preserved
+   forced Refresh behavior, and invalidated prefetched Bridges after domain
+   mutations.
+2. src/front/static/global/js/registry-modal.js
+   Identified modal-originated section events so Registry loading can prefetch
+   only for the popup interaction.
+3. tests/units/front/test_registry_modal_loading.py
+   Added contracts for modal event sourcing, Browse caching, Bridges prefetch
+   deduplication, explicit refreshes, and mutation invalidation.
+4. tests/units/front/test_registry_backend_column.py
+   Updated the Backend-column contract for the extracted internal Browse
+   loader.
+5. docs/user-guide.md
+   Documented short-lived Browse reuse, background Bridges loading, and
+   explicit Refresh behavior.
+
+Modified files:
+- src/front/static/registry/js/registry.js
+- src/front/static/global/js/registry-modal.js
+- tests/units/front/test_registry_modal_loading.py
+- tests/units/front/test_registry_backend_column.py
+- docs/user-guide.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/front/test_registry_modal_loading.py`
+  → `3 failed` before implementation.
+- Focused: `uv run --frozen pytest -q tests/units/front/test_registry_modal_loading.py tests/units/front/test_registry_operational_status.py tests/units/front/test_registry_stacked_obx_modals.py tests/units/api/test_ui_rendering.py::TestSettingsPage::test_registry_modal_on_home`
+  → `13 passed, 1 warning in 1.40s`.
+- Full non-scenario suite: `uv run --frozen pytest -q -m "not scenario"` →
+  `6130 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.12s`.
+
 ## Gate Lakehouse Build content while loading
 
 Context: The Lakehouse Build page displayed placeholder object information and

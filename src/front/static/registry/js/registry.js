@@ -268,7 +268,21 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- Registry domain list ---
 
-    async function loadRegistryDomains() {
+    const DOMAINS_CACHE_TTL_MS = 15000;
+    let domainsLoadPromise = null;
+    let domainsLoadedAt = 0;
+
+    function loadRegistryDomains(force = false) {
+        const cacheIsFresh = Date.now() - domainsLoadedAt < DOMAINS_CACHE_TTL_MS;
+        if (!force && cacheIsFresh) return Promise.resolve();
+        if (domainsLoadPromise) return domainsLoadPromise;
+
+        domainsLoadPromise = _loadRegistryDomains()
+            .finally(() => { domainsLoadPromise = null; });
+        return domainsLoadPromise;
+    }
+
+    async function _loadRegistryDomains() {
         const section = document.getElementById('registryDomainsSection');
         const listDiv = document.getElementById('registryDomainsList');
         if (!section || !listDiv) return;
@@ -292,6 +306,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
+            domainsLoadedAt = Date.now();
             const rows = data.domains || data.projects || [];
             if (!rows.length) {
                 listDiv.innerHTML = '<div class="text-muted small py-3 text-center">' +
@@ -482,7 +497,8 @@ document.addEventListener('DOMContentLoaded', function () {
             const data = await resp.json();
             if (data.success) {
                 showNotification(data.message, 'success');
-                loadRegistryDomains();
+                invalidateRegistryBridges();
+                loadRegistryDomains(true);
             } else {
                 showNotification('Error: ' + data.message, 'error');
             }
@@ -509,7 +525,8 @@ document.addEventListener('DOMContentLoaded', function () {
             const data = await resp.json();
             if (data.success) {
                 showNotification(data.message, 'success');
-                loadRegistryDomains();
+                invalidateRegistryBridges();
+                loadRegistryDomains(true);
             } else {
                 showNotification('Error: ' + data.message, 'error');
             }
@@ -587,7 +604,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    document.getElementById('btnRefreshDomains')?.addEventListener('click', () => loadRegistryDomains());
+    document.getElementById('btnRefreshDomains')?.addEventListener('click', () => loadRegistryDomains(true));
 
     // =====================================================================
     //  OBX EXPORT / IMPORT
@@ -942,7 +959,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.warn('OBX import warnings:', data.errors);
             }
             bootstrap.Modal.getInstance(document.getElementById('importObxModal'))?.hide();
-            loadRegistryDomains();
+            invalidateRegistryBridges();
+            loadRegistryDomains(true);
         } catch (e) {
             showNotification('Import error: ' + e.message, 'error');
         } finally {
@@ -964,6 +982,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     let bridgesLoaded = false;
     let bridgesData = null;
+    let bridgesLoadPromise = null;
+
+    function invalidateRegistryBridges() {
+        bridgesLoaded = false;
+        bridgesData = null;
+    }
 
     function _ensureD3() {
         if (typeof d3 !== 'undefined') return Promise.resolve();
@@ -1028,17 +1052,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
     document.addEventListener('sidebarSectionChanged', (e) => {
         const section = e.detail?.section;
-        // Re-fetch the domain list every time the user navigates back
-        // to the Domains (Browse) section. The list can go stale when
-        // versions are loaded / activated / deleted from another tab,
-        // when an admin switches the Lakebase database in Settings,
-        // or simply because new versions appeared after a build. Skip
-        // the refresh while the registry is still being
-        // configured (no point hammering the API on a non-configured
-        // registry) — the initial ``loadRegistryConfig`` already
-        // primes the list once the config is ready.
+        // Reuse a recent domain list when navigating back to Browse. The
+        // short TTL avoids duplicate modal-open requests while still
+        // refreshing data that may have changed in another tab or after a
+        // build. Skip requests while the registry is still being configured;
+        // the initial loadRegistryConfig call primes the list when ready.
         if (section === 'domains' && registryConfigured) {
             loadRegistryDomains();
+        }
+        if (e.detail?.source === 'registry-modal' && !bridgesLoaded) {
+            loadRegistryBridges();
         }
         if (section === 'bridges') {
             if (!bridgesLoaded) {
@@ -1061,9 +1084,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     document.getElementById('btnRefreshBridges')?.addEventListener('click', () => {
-        bridgesLoaded = false;
-        bridgesData = null;
-        loadRegistryBridges();
+        loadRegistryBridges(true);
     });
 
     // --- Build entity-level graph model grouped by domain ---
@@ -1376,7 +1397,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // --- Main load function ---
 
-    async function loadRegistryBridges() {
+    function loadRegistryBridges(force = false) {
+        if (!force && bridgesLoaded) return Promise.resolve();
+        if (bridgesLoadPromise) return bridgesLoadPromise;
+        if (force) {
+            bridgesLoaded = false;
+            bridgesData = null;
+        }
+
+        bridgesLoadPromise = _loadRegistryBridges()
+            .finally(() => { bridgesLoadPromise = null; });
+        return bridgesLoadPromise;
+    }
+
+    async function _loadRegistryBridges() {
         const content = document.getElementById('bridgesContent');
         const status = document.getElementById('bridgesStatus');
         const graphContainer = document.getElementById('bridgesGraphContainer');
