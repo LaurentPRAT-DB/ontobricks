@@ -130,6 +130,7 @@ def _minimal_run_pipeline(*, materialization: str = "table"):
     return pipe
 
 
+
 @pytest.mark.unit
 def test_run_builds_adjacency_index_after_graph_view() -> None:
     pipe = _minimal_run_pipeline(materialization="table")
@@ -188,3 +189,40 @@ def test_run_in_table_mode_optimizes_data_before_adjacency() -> None:
         pipe.run()
 
     assert order == ["data_optimize", "adjacency"]
+
+
+@pytest.mark.unit
+def test_run_in_table_mode_advances_all_post_materialization_stages() -> None:
+    pipe = _minimal_run_pipeline(materialization="table")
+
+    with (
+        patch("back.core.graphdb.delta.DeltaTripleStoreBuildPipeline.DeltaFlatStore"),
+        patch("back.core.graphdb.delta.materialize.optimize_table"),
+    ):
+        pipe.run()
+
+    assert [call.args[1] for call in pipe.tm.advance_step.call_args_list] == [
+        "Preparing inferred-triples table...",
+        "Creating knowledge graph view...",
+        "Optimizing Delta table...",
+        "Building adjacency indexes...",
+    ]
+
+
+@pytest.mark.unit
+def test_view_build_skips_optimize_stage() -> None:
+    pipe = _minimal_run_pipeline(materialization="view")
+
+    with (
+        patch("back.core.graphdb.delta.DeltaTripleStoreBuildPipeline.DeltaFlatStore"),
+        patch(
+            "back.core.graphdb.delta.DeltaTripleStoreBuildPipeline."
+            "materialize.optimize_table"
+        ) as optimize,
+    ):
+        pipe.run()
+
+    pipe.tm.skip_step.assert_called_once_with(
+        pipe.task_id, "Optimization not needed for pass-through view"
+    )
+    optimize.assert_not_called()

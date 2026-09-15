@@ -135,6 +135,7 @@ class DeltaTripleStoreBuildPipeline:
             self._log_phase("materialize", t_phase)
 
             t_phase = time.time()
+            self.tm.advance_step(self.task_id, "Preparing inferred-triples table...")
             self._ensure_inferred_companion()
             self._log_phase("ensure_inferred", t_phase)
 
@@ -143,6 +144,7 @@ class DeltaTripleStoreBuildPipeline:
             self._log_phase("truncate_inferred", t_phase)
 
             t_phase = time.time()
+            self.tm.advance_step(self.task_id, "Creating knowledge graph view...")
             self._ensure_graph_view()
             self._log_phase("ensure_graph_view", t_phase)
 
@@ -150,10 +152,14 @@ class DeltaTripleStoreBuildPipeline:
             # applies to a Delta table.
             if not self._is_view_mode:
                 t_phase = time.time()
+                self.tm.advance_step(self.task_id, "Optimizing Delta table...")
                 materialize.optimize_table(self.source_client, self.data_table)
                 self._log_phase("optimize", t_phase)
+            else:
+                self._skip_step("Optimization not needed for pass-through view")
 
             t_phase = time.time()
+            self.tm.advance_step(self.task_id, "Building adjacency indexes...")
             self._rebuild_adjacency_index()
             self._log_phase("rebuild_adjacency", t_phase)
 
@@ -354,11 +360,18 @@ class DeltaTripleStoreBuildPipeline:
         source = getattr(self, "graph_view", "") or self.data_table
         if not source:
             return
-        self.tm.advance_step(self.task_id, "Building adjacency index...")
         store = DeltaFlatStore(
             self.source_client, domain=self.domain, settings=self.settings
         )
         store.rebuild_adjacency(source)
+
+    def _skip_step(self, message: str) -> None:
+        skip_step = getattr(self.tm, "skip_step", None)
+        if callable(skip_step):
+            skip_step(self.task_id, message)
+            return
+        # Backward compatibility for lightweight test stubs / legacy managers.
+        self.tm.update_progress(self.task_id, 90, message)
 
     def _complete_task(self) -> None:
         duration = time.time() - self.start_time

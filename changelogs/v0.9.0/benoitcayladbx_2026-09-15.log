@@ -190,3 +190,35 @@ Tests:
   `6 passed, 1 warning in 0.83s`.
 - Full suite: `uv run --frozen pytest -q -m "not scenario"` →
   `6111 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 42.39s`.
+
+## Align Lakehouse runtime stage transitions
+
+Context: Task 2 of the Lakehouse build-progress plan requires runtime
+`TaskManager` transitions to match the seven-stage contract introduced in Task 1,
+including a view-mode optimization skip signal.
+
+Changes:
+
+1. `tests/units/graphdb/delta/test_delta_build_pipeline.py`
+   Added RED-first transition assertions for table mode post-materialization
+   stages and view-mode optimization skip behavior; also fixed a missing
+   top-level blank line near the new Task 1 parameterized test block.
+2. `src/back/core/graphdb/delta/DeltaTripleStoreBuildPipeline.py`
+   Advanced explicit stage transitions for inferred preparation, graph-view
+   creation, optimization, and adjacency rebuild; moved adjacency stage
+   activation to the orchestrator; added view-mode `skip_step` reporting with a
+   backward-compatible fallback when `skip_step` is not implemented.
+
+Modified files:
+- tests/units/graphdb/delta/test_delta_build_pipeline.py
+- src/back/core/graphdb/delta/DeltaTripleStoreBuildPipeline.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py` →
+  `2 failed, 6 passed` (missing inferred/graph_view/optimize transitions and
+  view-mode `skip_step`, expected before implementation).
+- GREEN (focused): `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py` →
+  `8 passed, 1 warning in 0.88s`.
+- GREEN (full required suite): `uv run --frozen pytest -q -m "not scenario"` →
+  `6113 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 42.38s`.
