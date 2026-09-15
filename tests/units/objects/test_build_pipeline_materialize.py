@@ -36,6 +36,9 @@ class _StubTM:
     def update_progress(self, task_id, pct, msg="") -> None:
         self.steps.append(str(msg))
 
+    def skip_step(self, task_id, msg="") -> None:
+        self.steps.append(str(msg))
+
     def fail_task(self, task_id, msg="") -> None:
         self.failed = True
         self.failure_message = str(msg)

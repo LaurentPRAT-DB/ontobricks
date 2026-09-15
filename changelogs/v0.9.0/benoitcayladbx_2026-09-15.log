@@ -245,6 +245,30 @@ Tests:
 - Focused: `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py` →
   `8 passed, 1 warning in 0.90s`.
 
+## Task 2 regression follow-up: stub skip_step
+
+Context: After restoring direct `TaskManager.skip_step` semantics in Task 2, the
+lightweight `_StubTM` used by
+`tests/units/objects/test_build_pipeline_materialize.py` lacked `skip_step`,
+causing a focused full-suite regression in view-mode reporting coverage.
+
+Changes:
+
+1. `tests/units/objects/test_build_pipeline_materialize.py`
+   Added a minimal `_StubTM.skip_step(task_id, msg="")` method that records the
+   message in `steps`, consistent with the stub's existing progress/step
+   recording behavior.
+
+Modified files:
+- tests/units/objects/test_build_pipeline_materialize.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-15.log
+
+Tests:
+- `uv run --frozen pytest -q tests/units/objects/test_build_pipeline_materialize.py::TestWhatABuildReports::test_a_view_only_build_reports_its_mode` →
+  `1 passed, 1 warning in 0.97s`.
+- `uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_build_pipeline.py tests/units/objects/test_build_pipeline_materialize.py` →
+  `21 passed, 1 warning in 0.93s`.
+
 ## Extract shared timed task-log renderer
 
 Context: Task 3 of the Lakehouse build-progress plan requires moving the
