@@ -4,7 +4,11 @@
 
 **Goal:** Ship the remaining Asana Search / transversal backlog as three independent, testable waves without touching Neo4j or renaming Refresh adjacency.
 
-**Architecture:** Preview still hits `_entity_search` (union only) with warehouse `ORDER BY` and default `contains`. Expansion already uses adj + `_props`. Remaining work is Preview query shape/UX, then engine-specific indexes, then optional hop-layout tweaks.
+**Architecture:** Preview uses the union or asserted `_entity_search` companion,
+sorts bounded rows in the application, and defaults to Starts with. Expansion
+uses adjacency plus `_props`. This plan is retained as implementation history;
+new measured expansion work lives in
+`docs/superpowers/plans/2026-09-16-expansion-fallback-latency.md`.
 
 **Tech Stack:** Python 3.10+, Spark SQL / Delta, Lakebase Postgres (`psycopg`, optional `pg_trgm`), Explorer JS in `query-sigmagraph.js`, pytest, `uv run --frozen`.
 
@@ -17,19 +21,15 @@
 - Comments, changelogs, this plan: English only.
 - Tests: `uv run --frozen pytest -q -m "not scenario"`.
 
-## Already shipped (do not re-do)
+## Status
 
-Adj, `_entity_search`, Lakebase `text_pattern_ops`, Delta clustering, Explorer timing, `_props` payload fetch.
+Waves 1 and 2 are shipped: application-side Preview sorting, Starts-with
+default, asserted-only search, Lakebase `pg_trgm`, and Lakehouse search
+clustering/Bloom.
 
-## Recommended order
-
-| Wave | Asana items | Why this order |
-|------|-------------|----------------|
-| **1** | Sort Preview in-app; default match starts-with | Tiny, both engines, uses indexes you already have. Independent of rebuilds. |
-| **2** | Asserted-only `_entity_search`; Lakebase `pg_trgm`; Lakehouse `(type_uri, label_lc)` + Bloom | Real Preview cost for `contains` / Inferred-off. Needs rebuild + DDL. |
-| **3** | Types on adj; cluster adj `(src, predicate)` | Expansion is already adj+_props. Only if stopwatch still shows hop/filter cost. |
-
-Skip unless a later spec says otherwise: N-hop tables, interned IDs, CSR, process LRU.
+Wave 3 remains conditional. Do not add type columns or change adjacency layout
+without a measured hop filter bottleneck. Skip N-hop tables, interned IDs, CSR,
+and process-local neighborhood caches unless a later design approves them.
 
 ---
 

@@ -4,6 +4,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from back.core.graphdb.delta.DeltaFlatStore import DeltaFlatStore
+from back.core.graphdb.props import (
+    known_missing_props,
+    remember_missing_props,
+    reset_missing_props_cache,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_missing_props_cache():
+    reset_missing_props_cache()
+    yield
+    reset_missing_props_cache()
 
 
 def _domain(name="MyDomain", version=1, catalog="cat", schema="sch"):
@@ -90,9 +102,12 @@ class TestDeltaFlatStoreInferredRouting:
         client = MagicMock()
         domain = _domain()
         store = DeltaFlatStore(client, domain=domain)
+        props = store.props_table_id("MyDomain_V1")
+        remember_missing_props(props)
 
         store.rebuild_adjacency("MyDomain_V1")
 
+        assert known_missing_props(props) is False
         statements = [call[0][0] for call in client.execute_statement.call_args_list]
         assert any(
             "CREATE OR REPLACE TABLE cat.sch.triplestore_mydomain_V1_adj_out"
@@ -309,6 +324,40 @@ class TestDeltaSingleStatementExpansion:
         ]
         assert "FROM cat.sch.triplestore_mydomain_V1_props triples" in first_sql
         assert "FROM cat.sch.triplestore_mydomain_V1_data triples" in fallback_sql
+
+    def test_when_props_is_known_missing_expansion_skips_props_sql(self):
+        store = DeltaFlatStore(MagicMock(), domain=_domain())
+        store.table_exists = MagicMock(return_value=True)
+        store.execute_query = MagicMock(
+            side_effect=[
+                RuntimeError(
+                    "TABLE_OR_VIEW_NOT_FOUND: "
+                    "cat.sch.triplestore_mydomain_V1_props"
+                ),
+                [],
+                [],
+            ]
+        )
+
+        for _ in range(2):
+            store.expand_and_fetch_subgraph(
+                "cat.sch.triplestore_mydomain_V1_data",
+                ["http://ex/a"],
+                1,
+                50,
+                100,
+            )
+
+        assert store.execute_query.call_count == 3
+        second_expand_sql = store.execute_query.call_args_list[2].args[0]
+        assert (
+            "FROM cat.sch.triplestore_mydomain_V1_props triples"
+            not in second_expand_sql
+        )
+        assert (
+            "FROM cat.sch.triplestore_mydomain_V1_data triples"
+            in second_expand_sql
+        )
 
     def test_unrelated_props_query_failure_propagates(self):
         store = DeltaFlatStore(MagicMock(), domain=_domain())

@@ -2,9 +2,46 @@
 
 from __future__ import annotations
 
-from back.core.graphdb.constants import RDF_TYPE
+from typing import Any, Callable
 
-__all__ = ["is_missing_props_error", "props_select"]
+from back.core.graphdb.constants import RDF_TYPE
+from back.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+ExecuteQuery = Callable[[str], list[dict[str, Any]]]
+_missing_props_tables: set[str] = set()
+
+__all__ = [
+    "execute_expand_with_props_fallback",
+    "forget_missing_props",
+    "is_missing_props_error",
+    "known_missing_props",
+    "props_select",
+    "remember_missing_props",
+    "reset_missing_props_cache",
+]
+
+
+def remember_missing_props(props_table: str) -> None:
+    """Remember that a property companion is unavailable in this process."""
+    if props_table:
+        _missing_props_tables.add(props_table)
+
+
+def known_missing_props(props_table: str) -> bool:
+    """Whether a property companion previously returned a missing-table error."""
+    return bool(props_table) and props_table in _missing_props_tables
+
+
+def forget_missing_props(props_table: str) -> None:
+    """Forget a stale negative after a successful companion rebuild."""
+    _missing_props_tables.discard(props_table)
+
+
+def reset_missing_props_cache() -> None:
+    """Clear property companion negatives."""
+    _missing_props_tables.clear()
 
 
 def is_missing_props_error(exc: Exception, props_table: str) -> bool:
@@ -18,6 +55,31 @@ def is_missing_props_error(exc: Exception, props_table: str) -> bool:
             "undefined table",
         )
     )
+
+
+def execute_expand_with_props_fallback(
+    *,
+    execute_query: ExecuteQuery,
+    sql: str,
+    props_table: str,
+    fallback_sql: str,
+) -> list[dict[str, Any]]:
+    """Execute property-backed expansion, remembering a missing companion."""
+    if not props_table:
+        return execute_query(sql) or []
+    if known_missing_props(props_table):
+        return execute_query(fallback_sql) or []
+    try:
+        return execute_query(sql) or []
+    except Exception as exc:  # noqa: BLE001
+        if not is_missing_props_error(exc, props_table):
+            raise
+        remember_missing_props(props_table)
+        logger.info(
+            "Property table is unavailable; using SPO expansion fallback: %s",
+            exc,
+        )
+        return execute_query(fallback_sql) or []
 
 
 def props_select(spo: str) -> str:

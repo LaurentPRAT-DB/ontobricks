@@ -8,7 +8,10 @@ from back.core.graphdb.GraphDBBackend import GraphDBBackend
 from back.core.graphdb.adjacency import expand_and_fetch_sql
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.delta import _table_naming, materialize
-from back.core.graphdb.props import is_missing_props_error
+from back.core.graphdb.props import (
+    execute_expand_with_props_fallback,
+    forget_missing_props,
+)
 from back.core.helpers import sql_escape as _escape_sql_string, validate_table_name
 from back.core.logging import get_logger
 
@@ -171,6 +174,7 @@ class DeltaFlatStore(GraphDBBackend):
             materialize.optimize_table(self._client, props)
         except Exception as exc:  # noqa: BLE001
             logger.warning("OPTIMIZE property table failed for %s: %s", props, exc)
+        forget_missing_props(props)
 
     def _rebuild_entity_search_table(self, spo_fqn: str, search_fqn: str) -> None:
         materialize.drop_relation(self._client, search_fqn, kind="view")
@@ -533,15 +537,7 @@ class DeltaFlatStore(GraphDBBackend):
                 + f"LIMIT {max_triples + 1}"
             )
 
-        try:
-            rows = self.execute_query(sql) or []
-        except Exception as exc:  # noqa: BLE001
-            if not props or not is_missing_props_error(exc, props):
-                raise
-            logger.info(
-                "Property table is unavailable; using SPO expansion fallback: %s",
-                exc,
-            )
+        if props:
             adj_out, adj_in = self.adjacency_table_ids(table_name)
             fallback_sql = expand_and_fetch_sql(
                 flavor=self.sql_flavor(),
@@ -554,7 +550,14 @@ class DeltaFlatStore(GraphDBBackend):
                 max_triples=max_triples,
                 escape=self._sql_escape,
             )
-            rows = self.execute_query(fallback_sql) or []
+            rows = execute_expand_with_props_fallback(
+                execute_query=self.execute_query,
+                sql=sql,
+                props_table=props,
+                fallback_sql=fallback_sql,
+            )
+        else:
+            rows = self.execute_query(sql) or []
         discovered_count = (
             int(rows[0].get("_ob_expanded_count") or 0)
             if rows

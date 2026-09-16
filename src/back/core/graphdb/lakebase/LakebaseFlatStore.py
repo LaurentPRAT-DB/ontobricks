@@ -29,7 +29,10 @@ from back.core.graphdb.lakebase.LakebaseBase import LakebaseBase
 from back.core.graphdb.lakebase.SyncedTableManager import (
     DEFAULT_TIMEOUT_S as _SYNC_DEFAULT_TIMEOUT_S,
 )
-from back.core.graphdb.props import is_missing_props_error
+from back.core.graphdb.props import (
+    execute_expand_with_props_fallback,
+    forget_missing_props,
+)
 from back.core.helpers import validate_table_name
 from back.core.logging import get_logger
 
@@ -200,6 +203,7 @@ class LakebaseFlatStore(LakebaseBase):
             _adjacency_ddl.analyze_entity_search_table(cur, search)
             _adjacency_ddl.analyze_entity_search_table(cur, search_asserted)
             _adjacency_ddl.analyze_props_table(cur, props)
+        forget_missing_props(props)
 
     # -- Table-name resolution --------------------------------------------
 
@@ -627,15 +631,7 @@ class LakebaseFlatStore(LakebaseBase):
                 max_triples=max_triples,
             )
 
-        try:
-            rows = self.execute_query(sql) or []
-        except Exception as exc:  # noqa: BLE001
-            if not props or not is_missing_props_error(exc, props):
-                raise
-            logger.info(
-                "Property table is unavailable; using SPO expansion fallback: %s",
-                exc,
-            )
+        if props:
             adj_out, adj_in = self.adjacency_table_ids(table_name)
             fallback_sql = expand_and_fetch_sql(
                 flavor=self.sql_flavor(),
@@ -648,7 +644,14 @@ class LakebaseFlatStore(LakebaseBase):
                 max_triples=max_triples,
                 escape=self._sql_escape,
             )
-            rows = self.execute_query(fallback_sql) or []
+            rows = execute_expand_with_props_fallback(
+                execute_query=self.execute_query,
+                sql=sql,
+                props_table=props,
+                fallback_sql=fallback_sql,
+            )
+        else:
+            rows = self.execute_query(sql) or []
         discovered_count = (
             int(rows[0].get("_ob_expanded_count") or 0)
             if rows

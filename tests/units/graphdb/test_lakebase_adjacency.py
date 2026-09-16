@@ -9,6 +9,11 @@ pytest.importorskip("psycopg")
 
 from back.core.graphdb.lakebase.LakebaseFlatStore import LakebaseFlatStore
 from back.core.graphdb.lakebase import _adjacency_ddl
+from back.core.graphdb.props import (
+    known_missing_props,
+    remember_missing_props,
+    reset_missing_props_cache,
+)
 
 
 @pytest.fixture
@@ -17,6 +22,13 @@ def auth():
     a.database = "appdb"
     a.is_available = True
     return a
+
+
+@pytest.fixture(autouse=True)
+def _clear_missing_props_cache():
+    reset_missing_props_cache()
+    yield
+    reset_missing_props_cache()
 
 
 def _cursor_ctx(mock_cur):
@@ -45,6 +57,8 @@ def test_lakebase_rebuild_adjacency_runs_ddl_and_rebuild_sql(auth):
     tx_cur = MagicMock()
     analyze_cur = MagicMock()
     store = LakebaseFlatStore(auth, schema="ontobricks_graph")
+    props = store.props_table_id("G_V1")
+    remember_missing_props(props)
 
     @contextmanager
     def _tx_cm():
@@ -55,6 +69,7 @@ def test_lakebase_rebuild_adjacency_runs_ddl_and_rebuild_sql(auth):
     ), patch.object(store, "_txn_cursor", _tx_cm):
         store.rebuild_adjacency("G_V1")
 
+    assert known_missing_props(props) is False
     executed = [str(c[0][0]) for c in setup_cur.execute.call_args_list]
     executed += [str(c[0][0]) for c in tx_cur.execute.call_args_list]
     executed += [str(c[0][0]) for c in analyze_cur.execute.call_args_list]
@@ -203,6 +218,28 @@ def test_expand_and_fetch_subgraph_retries_spo_when_props_missing(auth):
     first_sql, fallback_sql = [call.args[0] for call in mock_query.call_args_list]
     assert "FROM g_v1_props triples" in first_sql
     assert "FROM g_v1 triples" in fallback_sql
+
+
+def test_expand_and_fetch_subgraph_skips_props_when_known_missing(auth):
+    store = LakebaseFlatStore(auth, schema="ontobricks_graph")
+    with patch.object(store, "table_exists", return_value=True), patch.object(
+        store,
+        "execute_query",
+        side_effect=[
+            RuntimeError("relation g_v1_props does not exist"),
+            [],
+            [],
+        ],
+    ) as mock_query:
+        for _ in range(2):
+            store.expand_and_fetch_subgraph(
+                "G_V1", ["http://ex/a"], 1, 50, 100
+            )
+
+    assert mock_query.call_count == 3
+    second_expand_sql = mock_query.call_args_list[2].args[0]
+    assert "FROM g_v1_props triples" not in second_expand_sql
+    assert "FROM g_v1 triples" in second_expand_sql
 
 
 def test_expand_and_fetch_subgraph_propagates_unrelated_props_failure(auth):

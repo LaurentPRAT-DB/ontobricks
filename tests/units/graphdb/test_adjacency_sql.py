@@ -110,3 +110,58 @@ def test_expansion_uses_props_only_for_final_payload_fetch():
     assert "FROM i t" in sql
     assert "FROM g_props triples" in sql
     assert "FROM g triples" not in sql
+
+
+def test_depth_zero_filters_payload_by_subject_in():
+    sql = expand_and_fetch_sql(
+        flavor="spark",
+        adj_out="o",
+        adj_in="i",
+        spo="g",
+        props="g_props",
+        selected_uris=["http://ex/a", "http://ex/a"],
+        depth=0,
+        max_entities=10,
+        max_triples=20,
+        escape=lambda s: s.replace("'", "''"),
+    )
+
+    assert "level_1" not in sql
+    assert "CROSS JOIN entity_stats" not in sql
+    assert "WHERE subject IN" in sql
+    assert "FROM g_props" in sql
+    assert sql.count("http://ex/a") == 1
+    assert "LIMIT 21" in sql
+    assert "1 AS _ob_expanded_count" in sql
+
+
+def test_spark_payload_join_broadcasts_entities():
+    sql = expand_and_fetch_sql(
+        flavor="spark",
+        adj_out="o",
+        adj_in="i",
+        spo="g",
+        selected_uris=["http://ex/a"],
+        depth=1,
+        max_entities=5,
+        max_triples=20,
+        escape=lambda s: s.replace("'", "''"),
+    )
+
+    assert "/*+ BROADCAST(entities) */" in sql
+
+
+def test_postgres_payload_join_has_no_broadcast_hint():
+    sql = expand_and_fetch_sql(
+        flavor="postgres",
+        adj_out="o",
+        adj_in="i",
+        spo="g",
+        selected_uris=["http://ex/a"],
+        depth=1,
+        max_entities=5,
+        max_triples=20,
+        escape=lambda s: s.replace("'", "''"),
+    )
+
+    assert "BROADCAST" not in sql

@@ -90,6 +90,17 @@ def expand_and_fetch_sql(
     max_entities = max(1, int(max_entities))
     max_triples = max(1, int(max_triples))
     payload_relation = props or spo
+    if depth == 0:
+        seeds = list(dict.fromkeys(selected_uris))[:max_entities]
+        in_clause = ", ".join(f"'{escape(uri)}'" for uri in seeds)
+        return (
+            f"SELECT subject, predicate, object, "
+            f"{len(seeds)} AS _ob_expanded_count "
+            f"FROM {payload_relation} "
+            f"WHERE subject IN ({in_clause}) "
+            f"LIMIT {max_triples + 1}"
+        )
+
     seed_values = ", ".join(
         f"('{escape(uri)}')" for uri in dict.fromkeys(selected_uris)
     )
@@ -140,11 +151,12 @@ def expand_and_fetch_sql(
             ),
         ]
     )
+    hint = "/*+ BROADCAST(entities) */ " if flavor == "spark" else ""
     return (
         "WITH "
         + ", ".join(ctes)
         + " "
-        + "SELECT triples.subject, triples.predicate, triples.object, "
+        + f"SELECT {hint}triples.subject, triples.predicate, triples.object, "
         + "stats._ob_expanded_count "
         + f"FROM {payload_relation} triples "
         + "JOIN entities ON entities.entity = triples.subject "

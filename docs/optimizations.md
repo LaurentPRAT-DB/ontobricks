@@ -215,7 +215,13 @@ Physical layout:
 If `_props` is absent on a graph built before this optimization, the backend
 retries the same adjacency expansion with the reader-facing SPO relation for
 the final payload. Only a missing-table error triggers this compatibility
-fallback.
+fallback. The process remembers that negative result so later expansions skip
+the guaranteed-failing companion query. A successful Build or **Refresh cache**
+clears the negative after rebuilding `_props`.
+
+Depth-zero expansion bypasses BFS CTEs and filters the payload relation directly
+with `WHERE subject IN (...)`. Spark BFS payload joins broadcast the bounded
+entity set instead of shuffling it with the graph relation.
 
 Implementation: `src/back/core/graphdb/props.py`.
 
@@ -369,6 +375,23 @@ The total excludes user dwell in the seed-selection dialog. This split helps
 distinguish database search cost, traversal/payload cost, and browser rendering
 cost before choosing the next optimization.
 
+On 2026-09-16, a BIGCustomers Lakehouse graph built before `_props` measured:
+
+- Preview: about 870 ms for both Starts with and Contains on one selective term;
+- Expansion depth 0 / 1 / 2 / 3: 10.85 s / 5.84 s / 2.90 s / 3.71 s;
+- depth 3 returned 14,594 triples, while request transfer added only 2–3 ms.
+
+The missing `_props` error and SPO retry occurred on every expansion. These
+measurements prioritize companion refresh and expansion SQL over more Preview
+work. Re-run the same comparison after `_props` is present before drawing
+conclusions about rendering or payload changes.
+
+After **Refresh cache** rebuilt `_props`, the same three-run benchmark measured
+1.48 s / 1.83 s / 1.69 s for depths 0 / 1 / 2. That is approximately 86%,
+69%, and 42% faster than the stale-companion path, respectively. No missing
+`_props` errors appeared. The first request at each shape remained slower,
+consistent with warehouse/cache warm-up.
+
 Implementation: `src/front/static/query/js/query-sigmagraph.js`.
 
 ## 15. Concrete operating example
@@ -377,11 +400,13 @@ After a Build or after reasoning/cohort writes:
 
 1. Open **Knowledge Graph → Build**.
 2. Run **Refresh cache** if a full Build is not required.
-3. In Explorer Search, select an entity type when possible.
-4. Prefer **Exact** or **Starts with** over **Contains** for selective indexed
+3. Confirm an old graph no longer logs a missing `_props` companion during
+   expansion before tuning Preview.
+4. In Explorer Search, select an entity type when possible.
+5. Prefer **Exact** or **Starts with** over **Contains** for selective indexed
    Preview searches.
-5. Keep depth and entity/triple caps as low as the use case allows.
-6. Open the search timing details. Optimize Preview if Preview dominates;
+6. Keep depth and entity/triple caps as low as the use case allows.
+7. Open the search timing details. Optimize Preview if Preview dominates;
    optimize hop/payload paths only if Expansion dominates.
 
 For a Lakehouse table-mode domain, use a full Build when source tables changed;
@@ -401,20 +426,18 @@ Refresh cache alone only reindexes the existing `_data` snapshot.
 
 ## 17. Planned, not yet implemented
 
-The following items are tracked separately and must not be assumed active:
+Application-side Preview sorting, Starts-with default, asserted search,
+Lakebase trigram indexes, and Lakehouse search clustering/Bloom are shipped.
 
-- application-side Preview sorting instead of warehouse `ORDER BY`;
-- Starts-with as the default manual Search match;
-- an asserted-only entity-search companion;
-- Lakebase `pg_trgm` GIN indexes for `contains`;
-- Lakehouse `_entity_search` clustering by `(type_uri, label_lc)` and Bloom
-  filters;
-- type columns denormalized onto adjacency;
-- adjacency clustering/indexing by endpoint plus predicate;
-- N-hop materialization, integer ID interning, CSR arrays, or process-local
-  neighborhood caches.
+Do not implement type columns on adjacency, N-hop materialization, integer ID
+interning, CSR arrays, visualization-only payloads, or process-local
+neighborhood caches without new timings after `_props` is present. Predicate
+layout changes are useful only for a measured predicate-filtered traversal.
 
-See `docs/superpowers/plans/2026-09-15-search-transversal-next.md`.
+See:
+
+- `docs/superpowers/plans/2026-09-15-search-transversal-next.md`
+- `docs/superpowers/plans/2026-09-16-expansion-fallback-latency.md`
 
 ## Related documentation
 
