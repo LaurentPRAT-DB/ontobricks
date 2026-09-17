@@ -73,12 +73,14 @@ Changes:
 
 1. docs/optimizations.md
    Expand the companion-snapshot paragraph (§1) to state that rebuilds are
-   full snapshots (not incremental), that Lakehouse rebuilds all five
-   companions concurrently via a `ThreadPoolExecutor` capped at `max_workers=5`
-   per rebuild, that each worker uses the stateless per-request SQL client so
-   the five CTAS statements run in true parallel, and that per-companion and
-   total timings are logged at INFO. Document that Lakebase remains serial
-   within a single Postgres transaction.
+   full snapshots (not incremental), that Lakehouse rebuilds four or five
+   companions concurrently via `ThreadPoolExecutor(max_workers=min(5, N))` where
+   N is the scheduled companion count (five when `entity_search_asserted`
+   resolves, four otherwise), that each worker uses the stateless per-request
+   SQL client so the CTAS statements run in true parallel, and that per-companion
+   and total timings are logged at INFO. Document that Lakebase runs DDL
+   outside a transaction, replaces all companion data in a single Postgres
+   transaction, and runs ANALYZE in a separate non-transactional step.
    Add new §18 "Parallel companion rebuild — measured performance" with the
    before/after benchmark table, per-companion timing breakdown, and smoke-check
    confirmation.
@@ -93,10 +95,49 @@ test_delta_flat_store.py.
 Tests: uv run --frozen pytest -q -m "not scenario" → 6190 passed, 304 skipped,
 6 deselected, 1 xfailed in 50.92s.
 
-Benchmark (BIGCustomers Lakehouse, parallel, 2026-09-17):
-- Serial baseline: 128.62 s
-- Parallel wall time: 45.0 s (2.86×, 65% reduction)
+Benchmark (BIGCustomers Lakehouse, parallel, 2026-09-17, indicative):
+- Serial baseline: 128.62 s (recorded 2026-09-16; exact data equality not
+  confirmed — speedup is indicative, not a controlled benchmark)
+- Parallel wall time: 45.0 s, N=5 workers (entity_search_asserted resolved)
+  using ThreadPoolExecutor(max_workers=min(5, 5))
 - adj_in: 37.3 s | adj_out: 38.6 s | entity_search_asserted: 44.4 s |
   props: 44.5 s | entity_search: 45.0 s
+- Indicative speedup: ~2.86× / ~65% wall-time reduction
 - Post-rebuild: adjacency_ready=True, search OK, expansion OK (6 entities,
   30 triples at depth 1).
+
+## Task 3 documentation review corrections
+
+Context: Post-commit review identified four imprecisions in the Task 3 docs.
+Corrected in both docs/optimizations.md and the changelog without re-running
+the already-green Python suite.
+
+Changes:
+
+1. docs/optimizations.md §1
+   - "five companion tables" → "four or five companion tables"; explain that
+     entity_search_asserted is conditional on asserted-SPO resolution.
+   - "max_workers=5" → "ThreadPoolExecutor(max_workers=min(5, N))" with N
+     defined as the number of companions scheduled.
+   - "five CTAS statements" → "the statements"; new sentence retains the N=5
+     fact but scopes it to the specific benchmark run.
+   - Lakebase transaction description corrected: DDL runs outside a
+     transaction; only the data-rebuild phase is transactional; ANALYZE runs
+     in a separate non-transactional step.
+2. docs/optimizations.md §18
+   - Benchmark caveat added: baseline was 2026-09-16, parallel run 2026-09-17;
+     exact data equality not recorded; speedup is indicative, not controlled.
+   - Benchmark table label updated to "N=5 workers" with
+     "ThreadPoolExecutor(max_workers=min(5, 5))".
+   - "all five workers" sentence qualified with N=5 context.
+3. changelogs/v0.9.0/benoitcayladbx_2026-09-17.log (Task 3 section)
+   - Same max_workers and companion-count corrections applied.
+   - Benchmark line updated with indicative caveat and data-equality note.
+
+Modified files:
+- docs/optimizations.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Verification: rg checks confirm zero remaining instances of "max_workers=5"
+(literal), "within a single Postgres transaction", or "five companion[s]" as
+a general claim. "indicative" appears in both files.

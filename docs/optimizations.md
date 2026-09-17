@@ -40,17 +40,23 @@ Build and **Refresh cache** both trigger the same `rebuild_adjacency` backend
 operation; Refresh cache is a lightweight alternative when the underlying source
 data has not changed and only the indexes need to be brought up to date.
 
-For Lakehouse (Delta) graphs, the five companion tables are rebuilt concurrently
-using a `ThreadPoolExecutor` capped at `max_workers=5` per rebuild invocation.
-Each worker submits its CTAS statement through the same pooled Databricks SQL
-client; because the Statement Execution API connection is stateless per request,
-the five CTAS statements run on the warehouse in true parallel without
-contention on the Python-side connection. Per-companion elapsed time and total
-wall time are logged at `INFO` level on completion.
+For Lakehouse (Delta) graphs, four or five companion tables are rebuilt
+concurrently using a `ThreadPoolExecutor(max_workers=min(5, N))` per rebuild
+invocation, where N is the number of companions scheduled. The fifth companion,
+`entity_search_asserted`, is conditional: it is added only when both the
+asserted-SPO table and the companion FQN resolve to non-empty strings. Each
+worker submits its CTAS statement through the same pooled Databricks SQL client;
+because the Statement Execution API connection is stateless per request, the
+statements run on the warehouse in true parallel without contention on the
+Python-side connection. Per-companion elapsed time and total wall time are
+logged at `INFO` level on completion.
 
-Lakebase graphs rebuild adjacency within a single Postgres transaction and
-therefore remain serial. The serial guarantee keeps the reader-facing union view
-consistent throughout the rebuild and avoids partial reads during the window.
+Lakebase graphs rebuild adjacency in three sequential steps that remain serial:
+DDL (table creation / schema changes) runs outside a transaction, then all
+companion data is replaced inside a single Postgres transaction, then ANALYZE
+runs in a separate non-transactional step. The transactional data-rebuild phase
+keeps the reader-facing union view consistent and avoids partial reads during
+the window; DDL and ANALYZE are intentionally excluded from the transaction.
 
 ## 2. Materialized Delta read layer
 
@@ -458,15 +464,19 @@ See:
 
 On 2026-09-17, a **Refresh cache** on the BIGCustomers Lakehouse domain
 (~1.35 M entity-search rows, ~1.70 M adjacency rows, ~7.64 M props rows) was
-timed before and after the parallel implementation shipped in
-`e5e6ced7`:
+timed before and after the parallel implementation shipped in `e5e6ced7`.
+The serial baseline was recorded on 2026-09-16; the parallel run on 2026-09-17.
+Exact data equality between the two runs was not recorded — the speedup is
+**indicative rather than a controlled benchmark** but represents the same named
+domain under comparable load.
 
 | Run | Wall time | Method |
 |-----|-----------|--------|
 | Prior serial baseline | 128.62 s | Sequential rebuild |
-| Parallel (5 workers) | **45.0 s** | `ThreadPoolExecutor(max_workers=5)` |
+| Parallel (N=5 workers) | **45.0 s** | `ThreadPoolExecutor(max_workers=min(5, 5))` |
 
-**Speedup: 2.86× / 65 % wall-time reduction.**
+N=5 because `entity_search_asserted` resolved (asserted-SPO table present).
+**Indicative speedup: ~2.86× / ~65 % wall-time reduction.**
 
 Per-companion log lines from the parallel run:
 
@@ -481,7 +491,8 @@ Per-companion log lines from the parallel run:
 The adjacency tables complete first (37–38 s); the three heavier companions
 finish together at the 44–45 s mark. The critical path is `entity_search` at
 45 s — exactly what the full wall time measures. No warehouse admission queuing
-was observed; all five workers ran their CTAS statements in parallel.
+was observed; all five CTAS statements ran in parallel because `entity_search_asserted`
+was present (N=5).
 
 Post-rebuild smoke checks confirmed `adjacency_ready = True`, correct row
 counts in all five companions, successful entity search (label lookup), and
