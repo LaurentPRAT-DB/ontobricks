@@ -12,6 +12,8 @@ from back.core.databricks import DatabricksClient
 from back.core.helpers import (
     get_databricks_client,
     get_databricks_credentials,
+    require_domain_llm,
+    resolve_warehouse_id,
     run_blocking,
 )
 from back.core.logging import get_logger
@@ -472,7 +474,7 @@ async def generate_sql_from_prompt(
     """Generate SQL from natural language prompt using LLM.
 
     Request body:
-        endpoint_name: Name of the model serving endpoint
+        endpoint_name: Deprecated; the saved domain LLM target is authoritative
         catalog: Unity Catalog catalog name
         schema: Schema name
         prompt: Natural language description of the query
@@ -486,7 +488,6 @@ async def generate_sql_from_prompt(
 
         data = await request.json()
 
-        endpoint_name = data.get("endpoint_name")
         catalog = data.get("catalog")  # deprecated - only used if no schema_context
         schema = data.get("schema")  # deprecated - only used if no schema_context
         prompt = data.get("prompt")
@@ -497,8 +498,8 @@ async def generate_sql_from_prompt(
         )  # Pre-built context with tables (each has full_name)
         mapping_type = data.get("mapping_type")  # 'entity', 'relationship', or None
 
-        if not endpoint_name or not prompt:
-            raise ValidationError("Missing required fields: endpoint_name, prompt")
+        if not prompt:
+            raise ValidationError("Missing required field: prompt")
 
         # If no schema_context provided, we need catalog/schema to fetch from UC (deprecated path)
         if not schema_context or not schema_context.get("tables"):
@@ -508,6 +509,9 @@ async def generate_sql_from_prompt(
                 )
 
         domain = get_domain(session_mgr)
+        _host, _token, endpoint_name, endpoint_kind = require_domain_llm(
+            domain, settings
+        )
         client = get_databricks_client(domain, settings)
 
         if not client:
@@ -517,6 +521,7 @@ async def generate_sql_from_prompt(
 
         result = wizard.generate_sql(
             endpoint_name=endpoint_name,
+            endpoint_kind=endpoint_kind,
             user_prompt=prompt,
             limit=limit,
             validate_plan=validate_plan,
@@ -611,7 +616,10 @@ async def start_auto_assign(
 
     # Validate configuration
     domain = get_domain(session_mgr)
-    host, token, warehouse_id = get_databricks_credentials(domain, settings)
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
+    warehouse_id = resolve_warehouse_id(domain, settings)
 
     try:
         schema_context = Mapping(domain).resolve_auto_assign_schema_context(
@@ -627,18 +635,9 @@ async def start_auto_assign(
         len(schema_context.get("tables", [])),
     )
 
-    if not host or not token:
-        logger.warning("Auto-assign: Databricks credentials missing")
-        raise ValidationError("Databricks not configured")
-
     if not warehouse_id:
         logger.warning("Auto-assign: no SQL warehouse configured")
         raise ValidationError("No SQL warehouse configured")
-
-    llm_endpoint = domain.info.get("llm_endpoint", "")
-    if not llm_endpoint:
-        logger.warning("Auto-assign: no LLM serving endpoint configured")
-        raise ValidationError("No LLM serving endpoint configured")
 
     logger.info(
         "Auto-assign: config OK — host=%s, warehouse=%s, llm_endpoint=%s",
@@ -736,16 +735,13 @@ async def single_auto_assign(
         raise ValidationError("Provide type ('entity'|'relationship') and item.")
 
     domain = get_domain(session_mgr)
-    host, token, warehouse_id = get_databricks_credentials(domain, settings)
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
+    warehouse_id = resolve_warehouse_id(domain, settings)
 
-    if not host or not token:
-        raise ValidationError("Databricks not configured")
     if not warehouse_id:
         raise ValidationError("No SQL warehouse configured")
-
-    llm_endpoint = domain.info.get("llm_endpoint", "")
-    if not llm_endpoint:
-        raise ValidationError("No LLM serving endpoint configured")
 
     try:
         schema_context = Mapping(domain).resolve_auto_assign_schema_context(None)

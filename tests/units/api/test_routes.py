@@ -3,7 +3,8 @@
 import json
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch, MagicMock
 
 from shared.fastapi.main import app
 
@@ -208,6 +209,46 @@ class TestOntologyRoutes:
         response = client.get("/ontology/axioms/list")
         assert response.status_code == 200
 
+    @pytest.mark.asyncio
+    async def test_assistant_invoke_uses_saved_endpoint_over_request_override(self):
+        from api.routers.internal import ontology
+
+        request = MagicMock()
+        request.json = AsyncMock(
+            return_value={
+                "input": [{"role": "user", "content": "Add Vehicle"}],
+                "custom_inputs": {"endpoint_name": "request.override"},
+            }
+        )
+        domain = MagicMock()
+        domain.ontology = {}
+        domain.get_classes.return_value = []
+        domain.get_properties.return_value = []
+        agent = MagicMock()
+        agent.predict.return_value = SimpleNamespace(
+            custom_outputs={},
+            model_dump=lambda: {"success": True},
+        )
+
+        with patch.object(ontology, "get_domain", return_value=domain), patch.object(
+            ontology,
+            "require_domain_llm",
+            return_value=("https://h", "t", "main.ai.saved", "ai_gateway"),
+        ), patch(
+            "agents.agent_ontology_assistant.OntologyAssistantResponsesAgent",
+            return_value=agent,
+        ), patch(
+            "mlflow.types.responses.ResponsesAgentRequest",
+            side_effect=lambda **kwargs: kwargs,
+        ):
+            result = await ontology.ontology_assistant_invoke(
+                request, MagicMock(), MagicMock()
+            )
+
+        assert result == {"success": True}
+        custom_inputs = agent.predict.call_args.args[0]["custom_inputs"]
+        assert custom_inputs["endpoint_name"] == "main.ai.saved"
+
 
 class TestAutoAssignIconsAsync:
     """The icon-assignment endpoint must be non-blocking and task-tracked.
@@ -249,8 +290,8 @@ class TestAutoAssignIconsAsync:
         )
 
         with patch(
-            "api.routers.internal.ontology.require_serving_llm",
-            return_value=("https://h", "t", "ep"),
+            "api.routers.internal.ontology.require_domain_llm",
+            return_value=("https://h", "t", "main.ai.model", "ai_gateway"),
         ), patch.object(
             __import__(
                 "api.routers.internal.ontology", fromlist=["Ontology"]
@@ -291,8 +332,8 @@ class TestAutoAssignIconsAsync:
         )
 
         with patch(
-            "api.routers.internal.ontology.require_serving_llm",
-            return_value=("https://h", "t", "ep"),
+            "api.routers.internal.ontology.require_domain_llm",
+            return_value=("https://h", "t", "main.ai.model", "ai_gateway"),
         ), patch.object(
             __import__(
                 "api.routers.internal.ontology", fromlist=["Ontology"]

@@ -20,7 +20,7 @@ from back.core.task_manager import get_task_manager
 from back.core.helpers import (
     get_databricks_host_and_token,
     make_volume_file_service,
-    require_serving_llm,
+    require_domain_llm,
     resolve_warehouse_id,
 )
 from agents.serialization import serialize_agent_steps
@@ -1238,7 +1238,9 @@ async def generate_business_rules_async(
     documents = data.get("documents", [])
 
     domain = get_domain(session_mgr)
-    host, token, llm_endpoint = require_serving_llm(domain, settings)
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
     warehouse_id = resolve_warehouse_id(domain, settings)
 
     tm = get_task_manager()
@@ -1841,7 +1843,9 @@ async def generate_ontology_async(
     tables_count = len(metadata.get("tables", []))
 
     domain = get_domain(session_mgr)
-    host, token, llm_endpoint = require_serving_llm(domain, settings)
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
     warehouse_id = resolve_warehouse_id(domain, settings)
 
     tm = get_task_manager()
@@ -1964,7 +1968,9 @@ async def auto_assign_icons(
         raise ValidationError("No entity names provided")
 
     domain = get_domain(session_mgr)
-    host, token, llm_endpoint = require_serving_llm(domain, settings)
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
 
     tm = get_task_manager()
     task = tm.create_task(
@@ -2091,7 +2097,9 @@ async def ontology_assistant_chat(
         raise ValidationError("No message provided")
 
     domain = get_domain(session_mgr)
-    host, token, llm_endpoint = require_serving_llm(domain, settings)
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
 
     classes = list(domain.get_classes())
     properties = list(domain.get_properties())
@@ -2159,8 +2167,8 @@ async def ontology_assistant_invoke(
     """Invoke the Ontology Assistant via the MLflow ResponsesAgent interface.
 
     Accepts the OpenAI Responses-compatible schema used by the Databricks
-    Agent Framework.  The caller can either supply Databricks credentials in
-    ``custom_inputs`` or let the route fill them from the active session.
+    Agent Framework. The route injects the saved domain LLM target and fills
+    missing Databricks credentials from the active session.
 
     Expects JSON body (ResponsesAgentRequest)::
 
@@ -2168,10 +2176,9 @@ async def ontology_assistant_invoke(
             "input": [
                 {"role": "user", "content": "Add an entity called Vehicle"}
             ],
-            "custom_inputs": {          // optional overrides
+            "custom_inputs": {          // optional credentials
                 "host": "...",
-                "token": "...",
-                "endpoint_name": "..."
+                "token": "..."
             }
         }
 
@@ -2184,23 +2191,19 @@ async def ontology_assistant_invoke(
     data = await request.json()
 
     domain = get_domain(session_mgr)
-    host, token = get_databricks_host_and_token(domain, settings)
-    llm_endpoint = domain.info.get("llm_endpoint", "")
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
     base_uri = domain.ontology.get("base_uri") or DEFAULT_BASE_URI
 
     custom_inputs = data.get("custom_inputs", {})
     custom_inputs.setdefault("host", host)
     custom_inputs.setdefault("token", token)
-    custom_inputs.setdefault("endpoint_name", llm_endpoint)
+    custom_inputs["endpoint_name"] = llm_endpoint
     custom_inputs.setdefault("base_uri", base_uri)
     custom_inputs.setdefault("classes", list(domain.get_classes()))
     custom_inputs.setdefault("properties", list(domain.get_properties()))
     data["custom_inputs"] = custom_inputs
-
-    if not custom_inputs.get("host") or not custom_inputs.get("token"):
-        raise ValidationError("Databricks credentials not configured")
-    if not custom_inputs.get("endpoint_name"):
-        raise ValidationError("No LLM serving endpoint configured.")
 
     with map_route_errors("Ontology assistant invoke failed", logger):
         agent = OntologyAssistantResponsesAgent()
