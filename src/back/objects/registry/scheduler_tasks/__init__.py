@@ -18,13 +18,14 @@ from typing import Any, Callable, Dict, List, Optional
 
 from back.core.errors import ValidationError
 
-from . import analytics, build, cohort, reasoning
+from . import analytics, build, cache_refresh, cohort, reasoning
 from .context import RunOutcome, TaskContext, load_domain_headless
 
 TASK_BUILD = "build"
 TASK_COHORT = "cohort"
 TASK_ANALYTICS = "analytics"
 TASK_REASONING = "reasoning"
+TASK_CACHE_REFRESH = "cache_refresh"
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,17 @@ TASK_TYPES: Dict[str, TaskTypeSpec] = {
         detail_keys=["inferred_count", "append_graph_count", "materialize_count"],
         count_key="inferred_count",
     ),
+    TASK_CACHE_REFRESH: TaskTypeSpec(
+        key=TASK_CACHE_REFRESH,
+        label="Graph Cache Refresh",
+        task_tag="scheduled_cache_refresh",
+        steps=[
+            {"name": "open", "description": "Opening graph backend"},
+            {"name": "adjacency", "description": "Rebuilding graph indexes"},
+        ],
+        normalize_config=cache_refresh.normalize_config,
+        run=cache_refresh.run,
+    ),
 }
 
 
@@ -146,6 +158,7 @@ __all__ = [
     "RunOutcome",
     "TASK_ANALYTICS",
     "TASK_BUILD",
+    "TASK_CACHE_REFRESH",
     "TASK_COHORT",
     "TASK_REASONING",
     "TASK_TYPES",
