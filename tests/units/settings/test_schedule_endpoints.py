@@ -48,6 +48,7 @@ class TestListing:
             "cohort",
             "analytics",
             "reasoning",
+            "cache_refresh",
         }
 
 

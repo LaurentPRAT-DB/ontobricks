@@ -32,7 +32,7 @@ def script() -> str:
 
 class TestTheTypeSelector:
     @pytest.mark.parametrize(
-        "task_type", ["build", "cohort", "analytics", "reasoning"]
+        "task_type", ["build", "cohort", "analytics", "reasoning", "cache_refresh"]
     )
     def test_every_backend_type_has_a_radio(self, template, task_type):
         assert f'name="scheduleType" id="scheduleType' in template
