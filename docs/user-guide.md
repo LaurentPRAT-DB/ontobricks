@@ -853,7 +853,9 @@ After an analysis completes, an **Interpret** button (✦ icon) appears in the t
    - **Recommendations** — 2–4 actionable suggestions
 3. Click **Add to audit trail** (journal icon in the card header) to save the AI insights as a comment on the current domain version. The discussion panel opens automatically so you can see the new entry.
 
-> **Tip**: The LLM endpoint used is the one set in **Domain → Information → LLM Endpoint**. If none is configured, interpretation is unavailable and the Interpret button will not appear after analysis.
+> **Tip**: The LLM target used is the one saved in **Domain Information → AI**.
+> With **No LLM** selected, Interpret remains visible but unavailable and
+> provides guidance to configure a model.
 
 #### Discussion Panel
 
@@ -972,6 +974,20 @@ The **Global** tab in the Domain Information section contains the main domain se
 | **Description** | Free-text description of the domain. |
 | **Author** | Automatically pre-filled with the current Databricks user email. Editable. |
 | **API / MCP** | Toggle **Expose via API & MCP** to make this domain visible through the REST API (`/api/v1/domains`) and the MCP server. Disabled by default. Once exposed, the [MCP tab](#mcp-tab) narrows down which tools and ontology attachments the domain actually publishes. |
+
+#### No LLM mode
+
+Selecting **No LLM** and saving the domain is a strict domain-level opt-out.
+All domain-scoped LLM actions remain visible but unavailable: Ontology
+generation, Assistant and automatic icons, AI Business Rules, Mapping Auto-Map
+and SQL generation, Graph Chat, and Analytics Interpret. Activating one points
+you back to **Domain Information → AI** and does not start an LLM request.
+
+The AI tab and **Browse** picker remain usable. Select and save an AI Gateway
+model service or Model Serving endpoint to make the LLM actions available
+again without reloading the page. Deterministic features remain available with
+No LLM, including ontology pitfalls, OWL/SWRL reasoning, SHACL validation, and
+cohort operations.
 
 #### Triple Store Tab
 

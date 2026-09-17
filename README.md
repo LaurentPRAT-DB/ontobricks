@@ -67,6 +67,15 @@ Prefer full control? Every step is also available as a guided **manual
 workflow** — design, map, build, query, and reason at column-level precision.
 See the [User Guide](docs/user-guide.md).
 
+### Run a domain without an LLM
+
+Selecting **No LLM** is a strict domain-level opt-out. LLM actions remain
+visible but unavailable and direct API calls are rejected with guidance to
+select a model in **Domain Information → AI**. Select and save an LLM there to
+make those actions available again without reloading the page. Deterministic
+reasoning and validation, including OWL/SWRL inference, ontology pitfalls, and
+SHACL data-quality checks, remain available while No LLM is selected.
+
 ## What's inside
 
 ### Design ontologies visually or with AI

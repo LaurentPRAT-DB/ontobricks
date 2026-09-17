@@ -487,3 +487,75 @@ Tests:
 - JavaScript syntax: node --check src/front/static/global/js/permissions.js; node --check src/front/static/global/js/navbar.js; node --check src/front/static/mapping/js/mapping-shared.js; node --check src/front/static/mapping/js/mapping-design.js → passed.
 - Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6259 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 50.33s.
 - Browser: not run; neither Playwright nor Puppeteer is installed in this worktree.
+
+## Document strict No-LLM behavior
+
+Context: Complete the No-LLM AI gating work by documenting that an empty saved
+domain target is a strict opt-out. LLM actions stay visible but unavailable
+until a model is selected and saved in Domain Information → AI, while
+deterministic reasoning and validation remain available.
+
+Changes:
+
+1. Backend domain guard and routes
+   Reject every scoped Ontology, Mapping, Graph Chat, and Analytics LLM request
+   before task creation or model invocation, use the saved target as authority,
+   and remove Graph LLM auto-discovery.
+2. Global frontend availability gate
+   Start fail-closed, follow saved domain state, block mouse and keyboard
+   activation with common guidance, and preserve independent permission,
+   lifecycle, ARIA, and native-disabled state.
+3. Domain-scoped LLM controls
+   Mark Ontology generation, Assistant, automatic icons, AI Business Rules,
+   Mapping Auto-Map/SQL, Graph Chat, and Analytics Interpret while leaving the
+   AI tab, Browse picker, and deterministic actions usable.
+4. README.md and docs/user-guide.md
+   Document the strict opt-out, visible unavailable actions, re-enable path,
+   live availability refresh, and deterministic reasoning and validation.
+5. Tests
+   Cover the backend guard and route contract, saved-target precedence,
+   fail-closed UI behavior, complete trigger inventory, and picker exclusions.
+
+Modified files:
+- README.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+- docs/superpowers/plans/2026-09-17-no-llm-ai-gating.md
+- docs/superpowers/specs/2026-09-17-no-llm-ai-gating-design.md
+- docs/user-guide.md
+- src/api/routers/internal/dtwin.py
+- src/api/routers/internal/mapping.py
+- src/api/routers/internal/ontology.py
+- src/back/core/helpers/DatabricksHelpers.py
+- src/back/core/helpers/__init__.py
+- src/back/core/sqlwizard/SQLWizardService.py
+- src/front/static/global/css/permissions.css
+- src/front/static/global/js/navbar.js
+- src/front/static/global/js/permissions.js
+- src/front/static/mapping/js/mapping-design.js
+- src/front/static/mapping/js/mapping-shared.js
+- src/front/templates/base.html
+- src/front/templates/partials/dtwin/_query_analytics.html
+- src/front/templates/partials/dtwin/_query_chat.html
+- src/front/templates/partials/mapping/_mapping_autoassign.html
+- src/front/templates/partials/mapping/_mapping_design.html
+- src/front/templates/partials/mapping/_mapping_manual.html
+- src/front/templates/partials/ontology/_ontology_business_rules.html
+- src/front/templates/partials/ontology/_ontology_map.html
+- src/front/templates/partials/ontology/_ontology_wizard.html
+- src/shared/llm_target.py
+- tests/units/api/test_dtwin_assistant_chat.py
+- tests/units/api/test_no_llm_route_contract.py
+- tests/units/api/test_routes.py
+- tests/units/core/test_domain_llm_guard.py
+- tests/units/core/test_sql_wizard.py
+- tests/units/dtwin/test_no_llm_gating.py
+- tests/units/front/test_no_llm_ui_gate.py
+- tests/units/shared/test_llm_target.py
+
+Tests:
+- Focused: uv run --frozen pytest -q tests/units/core/test_domain_llm_guard.py tests/units/api/test_no_llm_route_contract.py tests/units/api/test_routes.py tests/units/api/test_dtwin_assistant_chat.py tests/units/core/test_sql_wizard.py tests/units/dtwin/test_no_llm_gating.py tests/units/front/test_no_llm_ui_gate.py tests/units/front/test_llm_endpoint_picker.py → 159 passed, 1 warning in 8.04s.
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6259 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.43s.
+- Ruff: the exact requested scoped command exited 1 with 61 existing violations (41 fixable) in committed implementation files; no Ruff findings apply to this documentation-only Task 6 change.
+- JavaScript syntax: node --check permissions.js, navbar.js, and mapping-shared.js → passed.
+- Diff and diagnostics: git diff --check passed; README.md and docs/user-guide.md have no IDE diagnostics.
+- Browser: not run because this worker has no browser automation tool. Desktop and 375 px verification remains required for No LLM save; visual gating of Ontology Generate, Assistant, Auto Icons, Business Rules, Mapping Auto-Map/SQL, Graph Chat, and Analytics Interpret; blocked mouse and keyboard activation with no request and guidance; usable AI tab and Browse picker; model save re-enable without reload; and clean console/network.
