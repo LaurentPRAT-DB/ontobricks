@@ -330,6 +330,9 @@ async function saveDomainInfo() {
         
         if (data.success) {
             showNotification('Domain info saved successfully!', 'success');
+            window.OB?.updateLlmAvailability(
+                Boolean((data.info?.llm_endpoint || '').trim())
+            );
             // Keep the selector's baseline in step so a later refresh of the
             // Settings connection list re-selects what was just persisted.
             if (neo4jDbEl) {

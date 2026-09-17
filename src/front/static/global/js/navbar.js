@@ -797,12 +797,19 @@ async function saveDomainInfoBeforeSave() {
         if (Object.keys(domainInfoPayload).length > 0) {
             console.log('[Domain] Auto-saving domain info before UC save:', domainInfoPayload);
             try {
-                await fetch('/domain/info', {
+                const response = await fetch('/domain/info', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(domainInfoPayload),
                     credentials: 'same-origin'
                 });
+                const data = await response.json();
+                if (!response.ok || data.success !== true) {
+                    throw new Error(data.message || 'Domain info save failed');
+                }
+                window.OB?.updateLlmAvailability(
+                    Boolean((data.info?.llm_endpoint || '').trim())
+                );
                 invalidateDomainCaches();
             } catch (e) {
                 console.warn('Could not auto-save domain info:', e);
