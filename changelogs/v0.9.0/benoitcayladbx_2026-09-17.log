@@ -141,3 +141,66 @@ Modified files:
 Verification: rg checks confirm zero remaining instances of "max_workers=5"
 (literal), "within a single Postgres transaction", or "five companion[s]" as
 a general claim. "indicative" appears in both files.
+
+## Final-fix wave: three minor findings from parallel cache-refresh review
+
+Context: Post-implementation review of the parallel companion rebuild (Task 2)
+identified three minor findings that were addressed in a single focused fix wave.
+
+Changes:
+
+1. docs/optimizations.md
+   Corrected thread-safety attribution in §1: replaced the incorrect claim that
+   the Statement Execution API (SEA) enables parallel CTAS workers with the
+   accurate statement that the DDL/write rebuild path uses the Databricks SQL
+   connector's thread-safe connection pool (each worker borrows a separate
+   pooled connection). Added a parenthetical clarifying that SEA is used only
+   for real-time reads.
+
+2. docs/superpowers/plans/2026-09-17-cache-refresh-parallel-rebuild.md
+   Same SEA correction applied to the Architecture paragraph that previously
+   said "Statement Execution mode uses stateless HTTP requests". Replaced with
+   accurate connector/connection-pool wording.
+
+3. src/back/objects/digitaltwin/DigitalTwin.py
+   `run_adjacency_refresh_task`: progress message at pct=70 is now
+   backend-specific — Databricks says "Rebuilding graph indexes in parallel
+   for <graph>", Lakebase says "Rebuilding graph indexes sequentially for
+   <graph>". The Lakebase wording correctly reflects the single-transaction
+   sequential path.
+
+4. tests/units/api/test_dtwin_adjacency_refresh.py
+   `_TaskManager.update_progress` now records messages in
+   `progress_messages`. Added `TestAdjacencyRefreshProgressWording` with two
+   focused tests: one asserting "in parallel" appears for Databricks, one
+   asserting "sequentially" appears for Lakebase.
+
+5. src/back/core/graphdb/delta/DeltaFlatStore.py
+   Extracted `_try_optimize(self, table_fqn, kind)` private helper that wraps
+   `materialize.optimize_table` in a best-effort try/except and logs the
+   failure with the supplied *kind* label for context. Replaced the three
+   duplicated inline OPTIMIZE try/except blocks in `_rebuild_adjacency_table`,
+   `_rebuild_props_table`, and `_rebuild_entity_search_table` with calls to
+   this helper. All best-effort semantics and per-table warning messages are
+   preserved.
+
+6. tests/units/graphdb/delta/test_delta_flat_store.py
+   Added three focused tests for the `_try_optimize` helper:
+   - `test_try_optimize_calls_optimize_table`: verifies the delegate call.
+   - `test_try_optimize_logs_kind_on_failure_and_does_not_raise`: verifies
+     the kind label appears in the warning and no exception escapes.
+   - `test_each_rebuild_helper_passes_correct_kind_to_try_optimize` (parametrized
+     over adjacency/props/entity-search): verifies each rebuild helper passes
+     the correct kind string.
+
+Modified files:
+- docs/optimizations.md
+- docs/superpowers/plans/2026-09-17-cache-refresh-parallel-rebuild.md
+- src/back/objects/digitaltwin/DigitalTwin.py
+- tests/units/api/test_dtwin_adjacency_refresh.py
+- src/back/core/graphdb/delta/DeltaFlatStore.py
+- tests/units/graphdb/delta/test_delta_flat_store.py
+
+Tests:
+- Focused: uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_flat_store.py tests/units/api/test_dtwin_adjacency_refresh.py → 39 passed in 1.29s
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6197 passed, 304 skipped, 6 deselected, 1 xfailed in 54.83s

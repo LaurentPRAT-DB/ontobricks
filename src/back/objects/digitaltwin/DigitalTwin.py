@@ -2233,11 +2233,15 @@ class DigitalTwin:
                 )
                 return
 
-            tm.update_progress(
-                task_id,
-                70,
-                f"Rebuilding graph indexes for {graph_name}",
-            )
+            if backend == "databricks":
+                _rebuild_msg = (
+                    f"Rebuilding graph indexes in parallel for {graph_name}"
+                )
+            else:
+                _rebuild_msg = (
+                    f"Rebuilding graph indexes sequentially for {graph_name}"
+                )
+            tm.update_progress(task_id, 70, _rebuild_msg)
             store.rebuild_adjacency(graph_name)
 
             tm.complete_task(

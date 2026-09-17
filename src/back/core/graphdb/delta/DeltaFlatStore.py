@@ -144,6 +144,13 @@ class DeltaFlatStore(GraphDBBackend):
         base = _table_naming.strip_graph_leaf_suffix(base)
         return f"{cat}.{sch}.{base}{_table_naming.props_suffix()}"
 
+    def _try_optimize(self, table_fqn: str, kind: str) -> None:
+        """Run OPTIMIZE best-effort; log a warning with *kind* context on failure."""
+        try:
+            materialize.optimize_table(self._client, table_fqn)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OPTIMIZE %s failed for %s: %s", kind, table_fqn, exc)
+
     def _run_rebuild_job(self, name: str, rebuild: Callable[[], None]) -> None:
         started = time.perf_counter()
         rebuild()
@@ -202,19 +209,13 @@ class DeltaFlatStore(GraphDBBackend):
         self._client.execute_statement(
             materialize.build_adj_ctas_sql(relation, adj_fqn, direction)
         )
-        try:
-            materialize.optimize_table(self._client, adj_fqn)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("OPTIMIZE adjacency table failed for %s: %s", adj_fqn, exc)
+        self._try_optimize(adj_fqn, "adjacency table")
 
     def _rebuild_props_table(self, relation: str, props: str) -> None:
         materialize.drop_relation(self._client, props, kind="view")
         self._client.execute_statement(materialize.build_props_ctas_sql(relation, props))
-        try:
-            materialize.optimize_table(self._client, props)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("OPTIMIZE property table failed for %s: %s", props, exc)
-        # CTAS succeeded; OPTIMIZE above is best-effort only.
+        # CTAS succeeded; OPTIMIZE below is best-effort only.
+        self._try_optimize(props, "property table")
         forget_missing_props(props)
 
     def _rebuild_entity_search_table(self, spo_fqn: str, search_fqn: str) -> None:
@@ -225,12 +226,7 @@ class DeltaFlatStore(GraphDBBackend):
         materialize.set_bloom_filter_columns(
             self._client, search_fqn, "label_lc,uri_lc"
         )
-        try:
-            materialize.optimize_table(self._client, search_fqn)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "OPTIMIZE entity-search table failed for %s: %s", search_fqn, exc
-            )
+        self._try_optimize(search_fqn, "entity-search table")
 
     def _writable_table_fqn(self, table_name: str) -> str:
         """Route app writes to the inferred companion table (Lakebase ``__app`` analogue)."""

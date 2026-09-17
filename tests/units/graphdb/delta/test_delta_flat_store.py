@@ -284,6 +284,72 @@ class TestDeltaFlatStoreInferredRouting:
             with pytest.raises(RuntimeError, match="props failed"):
                 store.rebuild_adjacency("MyDomain_V1")
 
+    # ------------------------------------------------------------------
+    # _try_optimize helper — kind label preserved, best-effort semantics
+    # ------------------------------------------------------------------
+
+    def test_try_optimize_calls_optimize_table(self):
+        client = MagicMock()
+        store = DeltaFlatStore(client, domain=_domain())
+        fqn = "cat.sch.some_table"
+
+        with patch(
+            "back.core.graphdb.delta.materialize.optimize_table"
+        ) as mock_opt:
+            store._try_optimize(fqn, "adjacency table")
+
+        mock_opt.assert_called_once_with(client, fqn)
+
+    def test_try_optimize_logs_kind_on_failure_and_does_not_raise(self):
+        store = DeltaFlatStore(MagicMock(), domain=_domain())
+
+        with patch(
+            "back.core.graphdb.delta.materialize.optimize_table",
+            side_effect=RuntimeError("boom"),
+        ), patch(
+            "back.core.graphdb.delta.DeltaFlatStore.logger.warning"
+        ) as mock_warn:
+            store._try_optimize("cat.sch.tbl", "entity-search table")
+
+        mock_warn.assert_called_once()
+        # Reconstruct the formatted message from positional args passed to logger.warning
+        call_args = mock_warn.call_args.args
+        formatted = call_args[0] % call_args[1:]
+        assert "entity-search table" in formatted
+        assert "cat.sch.tbl" in formatted
+
+    @pytest.mark.parametrize(
+        "method,kind",
+        [
+            ("_rebuild_adjacency_table", "adjacency table"),
+            ("_rebuild_props_table", "property table"),
+            ("_rebuild_entity_search_table", "entity-search table"),
+        ],
+    )
+    def test_each_rebuild_helper_passes_correct_kind_to_try_optimize(
+        self, method, kind
+    ):
+        client = MagicMock()
+        store = DeltaFlatStore(client, domain=_domain())
+        recorded: list[str] = []
+
+        def _capture(fqn, k):
+            recorded.append(k)
+
+        with patch.object(store, "_try_optimize", side_effect=_capture):
+            if method == "_rebuild_adjacency_table":
+                store._rebuild_adjacency_table(
+                    "cat.sch.graph", "cat.sch.tbl_adj_out", "out"
+                )
+            elif method == "_rebuild_props_table":
+                store._rebuild_props_table("cat.sch.graph", "cat.sch.tbl_props")
+            else:
+                store._rebuild_entity_search_table(
+                    "cat.sch.graph", "cat.sch.tbl_entity_search"
+                )
+
+        assert recorded == [kind]
+
 
 class TestDeltaSingleStatementExpansion:
     RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"

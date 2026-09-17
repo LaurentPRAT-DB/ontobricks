@@ -4,7 +4,7 @@
 
 **Goal:** Reduce Lakehouse **Refresh cache** wall time by rebuilding independent graph-index companions concurrently while preserving a complete rebuild and Lakebase transaction atomicity.
 
-**Architecture:** `DeltaFlatStore` will express each companion rebuild as one isolated job, execute up to five jobs through a bounded `ThreadPoolExecutor`, and propagate any CTAS failure. The existing `DatabricksClient` is safe for these concurrent calls: connector mode borrows a separate pooled connection per statement, while Statement Execution mode uses stateless HTTP requests. `LakebaseFlatStore` remains unchanged and sequential inside one transaction.
+**Architecture:** `DeltaFlatStore` will express each companion rebuild as one isolated job, execute up to five jobs through a bounded `ThreadPoolExecutor`, and propagate any CTAS failure. The existing `DatabricksClient` is safe for these concurrent calls: the DDL/write rebuild path uses the Databricks SQL connector, whose connection pool is thread-safe — each worker borrows a separate pooled connection. (The Statement Execution API is used only for real-time reads and is not involved in the rebuild DDL workers.) `LakebaseFlatStore` remains unchanged and sequential inside one transaction.
 
 **Tech Stack:** Python 3.12, `concurrent.futures`, Databricks SQL Warehouse, Delta CTAS/OPTIMIZE, pytest.
 

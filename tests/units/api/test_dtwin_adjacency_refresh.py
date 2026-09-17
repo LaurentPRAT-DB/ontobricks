@@ -35,6 +35,7 @@ class _TaskManager:
         self.completed = []
         self.failed = []
         self.started = []
+        self.progress_messages: list[tuple[str, int, str]] = []
 
     def create_task(self, **kwargs):
         self.created.append(kwargs)
@@ -43,7 +44,8 @@ class _TaskManager:
     def start_task(self, task_id, message=""):
         self.started.append((task_id, message))
 
-    def update_progress(self, _task_id, _pct, _message=""):
+    def update_progress(self, task_id, pct, message=""):
+        self.progress_messages.append((task_id, pct, message))
         return None
 
     def complete_task(self, task_id, result=None, message=""):
@@ -201,3 +203,51 @@ class TestAdjacencyRefreshFailures:
         assert tm.failed
         assert "Adjacency refresh failed" in tm.failed[0][1]
         assert "warehouse timeout" in tm.failed[0][1]
+
+
+class TestAdjacencyRefreshProgressWording:
+    """Progress message must be backend-specific: parallel for Databricks, sequential for Lakebase."""
+
+    async def test_databricks_progress_message_says_parallel(self, monkeypatch):
+        dtwin, tm, _domain = _patch_common(monkeypatch, "databricks")
+        import back.core.graphdb as graphdb_pkg
+
+        store = MagicMock()
+        store.supports_adjacency = True
+        store.rebuild_adjacency = MagicMock()
+        monkeypatch.setattr(
+            graphdb_pkg, "get_graphdb", lambda snap, settings, **_kwargs: store
+        )
+
+        await dtwin.refresh_adjacency_only(
+            request=_Request(), session_mgr=object(), settings=object()
+        )
+
+        rebuild_msgs = [msg for _, pct, msg in tm.progress_messages if pct == 70]
+        assert rebuild_msgs, "No progress message at pct=70 found"
+        assert any("in parallel" in msg for msg in rebuild_msgs), (
+            f"Expected 'in parallel' in Databricks progress message, got: {rebuild_msgs}"
+        )
+        assert not any("sequentially" in msg for msg in rebuild_msgs)
+
+    async def test_lakebase_progress_message_says_sequentially(self, monkeypatch):
+        dtwin, tm, _domain = _patch_common(monkeypatch, "lakebase")
+        import back.core.graphdb as graphdb_pkg
+
+        store = MagicMock()
+        store.supports_adjacency = True
+        store.rebuild_adjacency = MagicMock()
+        monkeypatch.setattr(
+            graphdb_pkg, "get_graphdb", lambda snap, settings, **_kwargs: store
+        )
+
+        await dtwin.refresh_adjacency_only(
+            request=_Request(), session_mgr=object(), settings=object()
+        )
+
+        rebuild_msgs = [msg for _, pct, msg in tm.progress_messages if pct == 70]
+        assert rebuild_msgs, "No progress message at pct=70 found"
+        assert any("sequentially" in msg for msg in rebuild_msgs), (
+            f"Expected 'sequentially' in Lakebase progress message, got: {rebuild_msgs}"
+        )
+        assert not any("in parallel" in msg for msg in rebuild_msgs)

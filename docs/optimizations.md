@@ -45,10 +45,11 @@ concurrently using a `ThreadPoolExecutor(max_workers=min(5, N))` per rebuild
 invocation, where N is the number of companions scheduled. The fifth companion,
 `entity_search_asserted`, is conditional: it is added only when both the
 asserted-SPO table and the companion FQN resolve to non-empty strings. Each
-worker submits its CTAS statement through the same pooled Databricks SQL client;
-because the Statement Execution API connection is stateless per request, the
-statements run on the warehouse in true parallel without contention on the
-Python-side connection. Per-companion elapsed time and total wall time are
+worker submits its DDL statement through the Databricks SQL connector, which
+maintains a thread-safe connection pool; each worker borrows a separate pooled
+connection so the CTAS statements run on the warehouse in true parallel without
+contention on the Python-side connection. (The Statement Execution API is used
+only for real-time reads — not for the DDL/write rebuild path.) Per-companion elapsed time and total wall time are
 logged at `INFO` level on completion.
 
 Lakebase graphs rebuild adjacency in three sequential steps that remain serial:
