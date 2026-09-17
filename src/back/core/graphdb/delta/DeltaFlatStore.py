@@ -178,6 +178,7 @@ class DeltaFlatStore(GraphDBBackend):
             materialize.optimize_table(self._client, props)
         except Exception as exc:  # noqa: BLE001
             logger.warning("OPTIMIZE property table failed for %s: %s", props, exc)
+        # CTAS succeeded; OPTIMIZE above is best-effort only.
         forget_missing_props(props)
 
     def _rebuild_entity_search_table(self, spo_fqn: str, search_fqn: str) -> None:

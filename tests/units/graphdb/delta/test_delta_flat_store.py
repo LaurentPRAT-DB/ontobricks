@@ -26,6 +26,17 @@ def _domain(name="MyDomain", version=1, catalog="cat", schema="sch"):
     return d
 
 
+def _executed_statements(client):
+    """Collect SQL strings passed to execute_statement (positional or keyword)."""
+    statements = []
+    for call in client.execute_statement.call_args_list:
+        if call.args:
+            statements.append(call.args[0])
+        elif "query" in call.kwargs:
+            statements.append(call.kwargs["query"])
+    return statements
+
+
 class TestDeltaFlatStoreInferredRouting:
     def test_insert_triples_targets_inferred_companion(self):
         client = MagicMock()
@@ -178,6 +189,37 @@ class TestDeltaFlatStoreInferredRouting:
         with pytest.raises(RuntimeError, match="ctas failed"):
             store.rebuild_adjacency("MyDomain_V1")
 
+    def test_rebuild_adjacency_table_runs_ctas_and_optimize_for_direction(self):
+        client = MagicMock()
+        store = DeltaFlatStore(client, domain=_domain())
+        relation = "cat.sch.graph"
+        adj_out = "cat.sch.triplestore_mydomain_V1_adj_out"
+
+        with patch("back.core.graphdb.delta.materialize.drop_relation") as mock_drop:
+            with patch(
+                "back.core.graphdb.delta.materialize.optimize_table"
+            ) as mock_optimize:
+                store._rebuild_adjacency_table(relation, adj_out, "out")
+
+        mock_drop.assert_called_once_with(client, adj_out, kind="view")
+        ctas_sql, = _executed_statements(client)
+        assert adj_out in ctas_sql
+        assert "_adj_out USING DELTA" in ctas_sql
+        assert "CLUSTER BY (src, predicate)" in ctas_sql
+        mock_optimize.assert_called_once_with(client, adj_out)
+
+        client.reset_mock()
+        adj_in = "cat.sch.triplestore_mydomain_V1_adj_in"
+        with patch("back.core.graphdb.delta.materialize.drop_relation"):
+            with patch("back.core.graphdb.delta.materialize.optimize_table") as mock_optimize:
+                store._rebuild_adjacency_table(relation, adj_in, "in")
+
+        ctas_sql, = _executed_statements(client)
+        assert adj_in in ctas_sql
+        assert "_adj_in USING DELTA" in ctas_sql
+        assert "CLUSTER BY (dst, predicate)" in ctas_sql
+        mock_optimize.assert_called_once_with(client, adj_in)
+
     def test_rebuild_props_forgets_missing_cache_only_after_success(self):
         client = MagicMock()
         store = DeltaFlatStore(client, domain=_domain())
@@ -187,7 +229,22 @@ class TestDeltaFlatStoreInferredRouting:
         store._rebuild_props_table("cat.sch.graph", props)
 
         assert known_missing_props(props) is False
-        assert any("_props USING DELTA" in c.args[0] for c in client.execute_statement.call_args_list)
+        assert any("_props USING DELTA" in sql for sql in _executed_statements(client))
+
+    def test_rebuild_props_forgets_missing_cache_when_optimize_fails(self):
+        client = MagicMock()
+        store = DeltaFlatStore(client, domain=_domain())
+        props = store.props_table_id("MyDomain_V1")
+        remember_missing_props(props)
+
+        with patch(
+            "back.core.graphdb.delta.materialize.optimize_table",
+            side_effect=RuntimeError("optimize failed"),
+        ):
+            store._rebuild_props_table("cat.sch.graph", props)
+
+        assert known_missing_props(props) is False
+        assert any("_props USING DELTA" in sql for sql in _executed_statements(client))
 
     def test_rebuild_props_keeps_missing_cache_when_ctas_fails(self):
         client = MagicMock()
