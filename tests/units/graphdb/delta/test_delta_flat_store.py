@@ -1,5 +1,6 @@
 """Tests for DeltaFlatStore inferred companion routing."""
 
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -257,6 +258,31 @@ class TestDeltaFlatStoreInferredRouting:
             store._rebuild_props_table("cat.sch.graph", props)
 
         assert known_missing_props(props) is True
+
+    def test_rebuild_adjacency_runs_all_companion_jobs_concurrently(self):
+        store = DeltaFlatStore(MagicMock(), domain=_domain())
+        barrier = threading.Barrier(5, timeout=2)
+        calls = []
+
+        def wait_for_peers(*args):
+            calls.append(args)
+            barrier.wait()
+
+        with patch.object(store, "_rebuild_adjacency_table", side_effect=wait_for_peers), \
+             patch.object(store, "_rebuild_entity_search_table", side_effect=wait_for_peers), \
+             patch.object(store, "_rebuild_props_table", side_effect=wait_for_peers):
+            store.rebuild_adjacency("MyDomain_V1")
+
+        assert len(calls) == 5
+
+    def test_parallel_rebuild_propagates_companion_failure(self):
+        store = DeltaFlatStore(MagicMock(), domain=_domain())
+
+        with patch.object(
+            store, "_rebuild_props_table", side_effect=RuntimeError("props failed")
+        ):
+            with pytest.raises(RuntimeError, match="props failed"):
+                store.rebuild_adjacency("MyDomain_V1")
 
 
 class TestDeltaSingleStatementExpansion:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import concurrent.futures
+import time
 from typing import Any, Callable, Dict, List, Optional
 
 from back.core.graphdb.GraphDBBackend import GraphDBBackend
@@ -142,6 +144,15 @@ class DeltaFlatStore(GraphDBBackend):
         base = _table_naming.strip_graph_leaf_suffix(base)
         return f"{cat}.{sch}.{base}{_table_naming.props_suffix()}"
 
+    def _run_rebuild_job(self, name: str, rebuild: Callable[[], None]) -> None:
+        started = time.perf_counter()
+        rebuild()
+        logger.info(
+            "Graph-index companion rebuilt: %s in %.0f ms",
+            name,
+            (time.perf_counter() - started) * 1000,
+        )
+
     def rebuild_adjacency(self, table_name: str) -> None:
         relation = self._sql_relation(table_name)
         adj_out, adj_in = self.adjacency_table_ids(table_name)
@@ -151,13 +162,38 @@ class DeltaFlatStore(GraphDBBackend):
         if not adj_out or not adj_in or not search or not props:
             logger.warning("Skipping graph-index rebuild, unresolved table ids for %s", table_name)
             return
-        for direction, adj_fqn in (("out", adj_out), ("in", adj_in)):
-            self._rebuild_adjacency_table(relation, adj_fqn, direction)
-        self._rebuild_entity_search_table(relation, search)
         asserted_spo = self.synced_table_name(table_name)
+        jobs: Dict[str, Callable[[], None]] = {
+            "adj_out": lambda: self._rebuild_adjacency_table(relation, adj_out, "out"),
+            "adj_in": lambda: self._rebuild_adjacency_table(relation, adj_in, "in"),
+            "entity_search": lambda: self._rebuild_entity_search_table(relation, search),
+            "props": lambda: self._rebuild_props_table(relation, props),
+        }
         if search_asserted and asserted_spo:
-            self._rebuild_entity_search_table(asserted_spo, search_asserted)
-        self._rebuild_props_table(relation, props)
+            jobs["entity_search_asserted"] = lambda: self._rebuild_entity_search_table(
+                asserted_spo, search_asserted
+            )
+        started = time.perf_counter()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(jobs))) as executor:
+            future_names = {
+                executor.submit(self._run_rebuild_job, name, rebuild): name
+                for name, rebuild in jobs.items()
+            }
+            for future in concurrent.futures.as_completed(future_names):
+                try:
+                    future.result()
+                except Exception:
+                    for pending in future_names:
+                        pending.cancel()
+                    logger.exception(
+                        "Graph-index companion rebuild failed: %s", future_names[future]
+                    )
+                    raise
+        logger.info(
+            "Graph-index rebuild completed: %s companions in %.0f ms",
+            len(jobs),
+            (time.perf_counter() - started) * 1000,
+        )
 
     def _rebuild_adjacency_table(
         self, relation: str, adj_fqn: str, direction: str
