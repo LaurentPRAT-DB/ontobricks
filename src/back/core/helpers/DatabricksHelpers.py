@@ -10,6 +10,7 @@ import back.core.databricks as _databricks
 from back.core.errors import ValidationError
 from back.core.logging import get_logger
 from shared.config.constants import DEFAULT_BASE_URI
+from shared.llm_target import normalize_llm_endpoint_kind
 
 logger = get_logger(__name__)
 
@@ -558,6 +559,31 @@ class DatabricksHelpers:
         return _databricks.normalize_host(host), token
 
     @staticmethod
+    def require_domain_llm(domain, settings) -> tuple[str, str, str, str]:
+        """Validate the saved domain LLM target and Databricks credentials.
+
+        Reads and trims ``domain.info.llm_endpoint`` before resolving
+        credentials so an empty endpoint always raises the no-LLM guidance
+        message, even when credentials are missing.
+
+        Returns ``(host, token, endpoint_name, endpoint_kind)`` or raises
+        :class:`ValidationError`.
+        """
+        info = domain.info or {}
+        endpoint = str(info.get("llm_endpoint") or "").strip()
+        if not endpoint:
+            raise ValidationError(
+                "No LLM selected. Select one in Domain Information → AI."
+            )
+        host, token = DatabricksHelpers.get_databricks_host_and_token(domain, settings)
+        if not host or not token:
+            raise ValidationError("Databricks credentials not configured")
+        kind = normalize_llm_endpoint_kind(
+            endpoint, str(info.get("llm_endpoint_kind") or "")
+        )
+        return host, token, endpoint, kind
+
+    @staticmethod
     def require_serving_llm(
         domain,
         settings,
@@ -566,14 +592,9 @@ class DatabricksHelpers:
 
         Returns ``(host, token, endpoint_name)`` or raises :class:`ValidationError`.
         """
-        host, token = DatabricksHelpers.get_databricks_host_and_token(domain, settings)
-        if not host or not token:
-            raise ValidationError("Databricks credentials not configured")
-        endpoint = (domain.info or {}).get("llm_endpoint", "") or ""
-        if not endpoint:
-            raise ValidationError(
-                "No LLM serving endpoint configured. Please set it in Domain Settings.",
-            )
+        host, token, endpoint, _kind = DatabricksHelpers.require_domain_llm(
+            domain, settings
+        )
         return host, token, endpoint
 
 

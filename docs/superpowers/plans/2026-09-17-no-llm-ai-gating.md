@@ -15,7 +15,8 @@
 - Domain Information → AI and the shared LLM picker always remain usable.
 - Deterministic SHACL, reasoning, pitfalls, and cohort features remain enabled.
 - The saved endpoint overrides compatibility request fields.
-- Use the exact guidance: `Select an LLM in Domain Information → AI.`
+- Use the exact full guidance everywhere (backend validation and UI
+  notifications): `No LLM selected. Select one in Domain Information → AI.`
 - Do not change prompts, tools, agent logic, or output behavior; no eval dataset delta is required.
 - Follow TDD for every behavior change.
 - Run all commands with `uv run --frozen`.
@@ -74,6 +75,19 @@ def test_require_domain_llm_rejects_empty_endpoint(_credentials):
         match="No LLM selected. Select one in Domain Information → AI.",
     ):
         DatabricksHelpers.require_domain_llm(_domain(), SimpleNamespace())
+
+
+@patch.object(
+    DatabricksHelpers,
+    "get_databricks_host_and_token",
+    return_value=("", ""),
+)
+def test_require_domain_llm_rejects_empty_endpoint_before_credentials(_credentials):
+    with pytest.raises(
+        ValidationError,
+        match="No LLM selected. Select one in Domain Information → AI.",
+    ):
+        DatabricksHelpers.require_domain_llm(_domain(), SimpleNamespace())
 ```
 
 - [ ] **Step 2: Run the tests and verify RED**
@@ -91,15 +105,15 @@ Expected: FAIL because `require_domain_llm` does not exist.
 ```python
 @staticmethod
 def require_domain_llm(domain, settings) -> tuple[str, str, str, str]:
-    host, token = DatabricksHelpers.get_databricks_host_and_token(domain, settings)
-    if not host or not token:
-        raise ValidationError("Databricks credentials not configured")
     info = domain.info or {}
     endpoint = str(info.get("llm_endpoint") or "").strip()
     if not endpoint:
         raise ValidationError(
             "No LLM selected. Select one in Domain Information → AI."
         )
+    host, token = DatabricksHelpers.get_databricks_host_and_token(domain, settings)
+    if not host or not token:
+        raise ValidationError("Databricks credentials not configured")
     kind = normalize_llm_endpoint_kind(
         endpoint, str(info.get("llm_endpoint_kind") or "")
     )
@@ -467,7 +481,7 @@ stop propagation, and call:
 
 ```javascript
 showNotification(
-    'Select an LLM in Domain Information → AI.',
+    'No LLM selected. Select one in Domain Information → AI.',
     'warning'
 );
 ```

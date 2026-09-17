@@ -71,9 +71,9 @@ require_domain_llm(domain, settings) -> tuple[str, str, str, str]
 
 The result is `(host, token, endpoint_name, endpoint_kind)`. The helper:
 
-1. Resolves Databricks host and token through the existing credential helper.
-2. Reads and trims `domain.info.llm_endpoint`.
-3. Raises one `ValidationError` when the endpoint is empty.
+1. Reads and trims `domain.info.llm_endpoint`.
+2. Raises one `ValidationError` when the endpoint is empty.
+3. Resolves Databricks host and token through the existing credential helper.
 4. Normalizes `llm_endpoint_kind` through the shared LLM target utility.
 
 All scoped routes use this helper before creating a background task or invoking
@@ -140,8 +140,8 @@ The global permissions layer owns the presentation and behavior:
 - muted opacity and `not-allowed` cursor;
 - `aria-disabled="true"` while unavailable;
 - capture-phase blocking for click and keyboard activation;
-- guidance through the existing notification center:
-  “Select an LLM in Domain Information → AI.”
+- guidance through the existing notification center using the exact full text:
+  “No LLM selected. Select one in Domain Information → AI.”
 
 The controller does not overwrite a control's native `disabled` state, so LLM
 availability composes safely with validation, role, inactive-version, and edit

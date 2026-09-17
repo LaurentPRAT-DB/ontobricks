@@ -64,6 +64,7 @@ get_build_sql_credentials = DatabricksHelpers.get_build_sql_credentials
 get_delta_databricks_credentials = DatabricksHelpers.get_delta_databricks_credentials
 get_triplestore_sql_credentials = DatabricksHelpers.get_triplestore_sql_credentials
 get_databricks_host_and_token = DatabricksHelpers.get_databricks_host_and_token
+require_domain_llm = DatabricksHelpers.require_domain_llm
 require_serving_llm = DatabricksHelpers.require_serving_llm
 
 __all__ = [
@@ -91,6 +92,7 @@ __all__ = [
     "get_databricks_host_and_token",
     "make_volume_file_service",
     "get_blocking_pool_stats",
+    "require_domain_llm",
     "require_serving_llm",
     "effective_uc_version_path",
     "sql_escape",
