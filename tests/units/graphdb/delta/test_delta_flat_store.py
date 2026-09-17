@@ -178,6 +178,29 @@ class TestDeltaFlatStoreInferredRouting:
         with pytest.raises(RuntimeError, match="ctas failed"):
             store.rebuild_adjacency("MyDomain_V1")
 
+    def test_rebuild_props_forgets_missing_cache_only_after_success(self):
+        client = MagicMock()
+        store = DeltaFlatStore(client, domain=_domain())
+        props = store.props_table_id("MyDomain_V1")
+        remember_missing_props(props)
+
+        store._rebuild_props_table("cat.sch.graph", props)
+
+        assert known_missing_props(props) is False
+        assert any("_props USING DELTA" in c.args[0] for c in client.execute_statement.call_args_list)
+
+    def test_rebuild_props_keeps_missing_cache_when_ctas_fails(self):
+        client = MagicMock()
+        client.execute_statement.side_effect = RuntimeError("ctas failed")
+        store = DeltaFlatStore(client, domain=_domain())
+        props = store.props_table_id("MyDomain_V1")
+        remember_missing_props(props)
+
+        with pytest.raises(RuntimeError, match="ctas failed"):
+            store._rebuild_props_table("cat.sch.graph", props)
+
+        assert known_missing_props(props) is True
+
 
 class TestDeltaSingleStatementExpansion:
     RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"

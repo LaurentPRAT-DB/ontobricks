@@ -152,24 +152,28 @@ class DeltaFlatStore(GraphDBBackend):
             logger.warning("Skipping graph-index rebuild, unresolved table ids for %s", table_name)
             return
         for direction, adj_fqn in (("out", adj_out), ("in", adj_in)):
-            materialize.drop_relation(self._client, adj_fqn, kind="view")
-            self._client.execute_statement(
-                materialize.build_adj_ctas_sql(relation, adj_fqn, direction)
-            )
-            try:
-                materialize.optimize_table(self._client, adj_fqn)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "OPTIMIZE adjacency table failed for %s: %s", adj_fqn, exc
-                )
+            self._rebuild_adjacency_table(relation, adj_fqn, direction)
         self._rebuild_entity_search_table(relation, search)
         asserted_spo = self.synced_table_name(table_name)
         if search_asserted and asserted_spo:
             self._rebuild_entity_search_table(asserted_spo, search_asserted)
-        materialize.drop_relation(self._client, props, kind="view")
+        self._rebuild_props_table(relation, props)
+
+    def _rebuild_adjacency_table(
+        self, relation: str, adj_fqn: str, direction: str
+    ) -> None:
+        materialize.drop_relation(self._client, adj_fqn, kind="view")
         self._client.execute_statement(
-            materialize.build_props_ctas_sql(relation, props)
+            materialize.build_adj_ctas_sql(relation, adj_fqn, direction)
         )
+        try:
+            materialize.optimize_table(self._client, adj_fqn)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("OPTIMIZE adjacency table failed for %s: %s", adj_fqn, exc)
+
+    def _rebuild_props_table(self, relation: str, props: str) -> None:
+        materialize.drop_relation(self._client, props, kind="view")
+        self._client.execute_statement(materialize.build_props_ctas_sql(relation, props))
         try:
             materialize.optimize_table(self._client, props)
         except Exception as exc:  # noqa: BLE001
