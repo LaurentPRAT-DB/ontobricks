@@ -34,8 +34,23 @@ companions:
 | `_entity_search_asserted` | same | Preview (Inferred off) |
 | `_props` | `(subject, predicate, object)` | Expansion payload for typed subjects |
 
-The companions are snapshots of the reader-facing graph. Build and **Refresh
-cache** rebuild them through the same `rebuild_adjacency` backend operation.
+The companions are snapshots of the reader-facing graph at the moment of the
+rebuild — this is a full snapshot replacement, **not** an incremental refresh.
+Build and **Refresh cache** both trigger the same `rebuild_adjacency` backend
+operation; Refresh cache is a lightweight alternative when the underlying source
+data has not changed and only the indexes need to be brought up to date.
+
+For Lakehouse (Delta) graphs, the five companion tables are rebuilt concurrently
+using a `ThreadPoolExecutor` capped at `max_workers=5` per rebuild invocation.
+Each worker submits its CTAS statement through the same pooled Databricks SQL
+client; because the Statement Execution API connection is stateless per request,
+the five CTAS statements run on the warehouse in true parallel without
+contention on the Python-side connection. Per-companion elapsed time and total
+wall time are logged at `INFO` level on completion.
+
+Lakebase graphs rebuild adjacency within a single Postgres transaction and
+therefore remain serial. The serial guarantee keeps the reader-facing union view
+consistent throughout the rebuild and avoids partial reads during the window.
 
 ## 2. Materialized Delta read layer
 
@@ -438,6 +453,49 @@ See:
 
 - `docs/superpowers/plans/2026-09-15-search-transversal-next.md`
 - `docs/superpowers/plans/2026-09-16-expansion-fallback-latency.md`
+
+## 18. Parallel companion rebuild — measured performance
+
+On 2026-09-17, a **Refresh cache** on the BIGCustomers Lakehouse domain
+(~1.35 M entity-search rows, ~1.70 M adjacency rows, ~7.64 M props rows) was
+timed before and after the parallel implementation shipped in
+`e5e6ced7`:
+
+| Run | Wall time | Method |
+|-----|-----------|--------|
+| Prior serial baseline | 128.62 s | Sequential rebuild |
+| Parallel (5 workers) | **45.0 s** | `ThreadPoolExecutor(max_workers=5)` |
+
+**Speedup: 2.86× / 65 % wall-time reduction.**
+
+Per-companion log lines from the parallel run:
+
+| Companion | Elapsed |
+|-----------|---------|
+| `adj_in` | 37.3 s |
+| `adj_out` | 38.6 s |
+| `entity_search_asserted` | 44.4 s |
+| `props` | 44.5 s |
+| `entity_search` | 45.0 s |
+
+The adjacency tables complete first (37–38 s); the three heavier companions
+finish together at the 44–45 s mark. The critical path is `entity_search` at
+45 s — exactly what the full wall time measures. No warehouse admission queuing
+was observed; all five workers ran their CTAS statements in parallel.
+
+Post-rebuild smoke checks confirmed `adjacency_ready = True`, correct row
+counts in all five companions, successful entity search (label lookup), and
+successful expansion (depth 1, 6 entities, 30 triples from one seed).
+
+The `DROP_COMMAND_TYPE_MISMATCH` warnings that appear when companions already
+exist as tables (rather than legacy views) are benign and handled by the
+existing `materialize.drop_relation` guard. The Bloom filter warning on
+`entity_search` is a warehouse-tier limitation and does not affect search
+correctness.
+
+Implementation: `src/back/core/graphdb/delta/DeltaFlatStore.py`
+(`rebuild_adjacency`, `_rebuild_adjacency_table`, `_rebuild_props_table`,
+`_rebuild_entity_search_table`).
 
 ## Related documentation
 

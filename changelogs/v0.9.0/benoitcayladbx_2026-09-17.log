@@ -19,3 +19,84 @@ Modified files:
 
 Tests: uv run --frozen pytest -q -m "not scenario" → 6184 passed, 304 skipped,
 6 deselected, 1 xfailed in 52.55s.
+
+## Isolate Delta cache rebuild jobs
+
+Context: Parallel cache-refresh work (Task 1) needs isolated adjacency and
+props rebuild helpers before concurrency can be added. Extracted the serial
+rebuild bodies into dedicated methods without changing runtime behavior.
+
+Changes:
+
+1. src/back/core/graphdb/delta/DeltaFlatStore.py
+   Add `_rebuild_adjacency_table` and `_rebuild_props_table`; refactor
+   `rebuild_adjacency` to delegate to them.
+2. tests/units/graphdb/delta/test_delta_flat_store.py
+   Add focused tests for props missing-cache invalidation on success and
+   preservation when CTAS fails.
+
+Modified files:
+- src/back/core/graphdb/delta/DeltaFlatStore.py
+- tests/units/graphdb/delta/test_delta_flat_store.py
+
+Tests: uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_flat_store.py → 21 passed in 0.83s.
+
+## Task 1 review fixes for isolated rebuild helpers
+
+Context: Code review requested direct adjacency-helper coverage, props-cache
+invalidation when OPTIMIZE fails, a clarifying comment before
+`forget_missing_props`, and less fragile SQL assertions.
+
+Changes:
+
+1. src/back/core/graphdb/delta/DeltaFlatStore.py
+   Document that missing-props cache is cleared only after successful CTAS.
+2. tests/units/graphdb/delta/test_delta_flat_store.py
+   Add adjacency-table isolation test, OPTIMIZE-failure props-cache test, and
+   `_executed_statements` helper for SQL assertions.
+
+Modified files:
+- src/back/core/graphdb/delta/DeltaFlatStore.py
+- tests/units/graphdb/delta/test_delta_flat_store.py
+
+Tests: uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_flat_store.py → 23 passed in 1.07s.
+
+## Task 3: Document, verify, and benchmark parallel cache refresh
+
+Context: Document and validate the parallel Lakehouse companion rebuild
+introduced in Task 2 (commit e5e6ced7). Run the mandatory test suite, run IDE
+diagnostics on the modified files, and measure actual wall-time improvement on
+the BIGCustomers Lakehouse domain against the prior serial baseline of 128.62
+seconds.
+
+Changes:
+
+1. docs/optimizations.md
+   Expand the companion-snapshot paragraph (§1) to state that rebuilds are
+   full snapshots (not incremental), that Lakehouse rebuilds all five
+   companions concurrently via a `ThreadPoolExecutor` capped at `max_workers=5`
+   per rebuild, that each worker uses the stateless per-request SQL client so
+   the five CTAS statements run in true parallel, and that per-companion and
+   total timings are logged at INFO. Document that Lakebase remains serial
+   within a single Postgres transaction.
+   Add new §18 "Parallel companion rebuild — measured performance" with the
+   before/after benchmark table, per-companion timing breakdown, and smoke-check
+   confirmation.
+
+Modified files:
+- docs/optimizations.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Diagnostics: no new linter errors on DeltaFlatStore.py or
+test_delta_flat_store.py.
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6190 passed, 304 skipped,
+6 deselected, 1 xfailed in 50.92s.
+
+Benchmark (BIGCustomers Lakehouse, parallel, 2026-09-17):
+- Serial baseline: 128.62 s
+- Parallel wall time: 45.0 s (2.86×, 65% reduction)
+- adj_in: 37.3 s | adj_out: 38.6 s | entity_search_asserted: 44.4 s |
+  props: 44.5 s | entity_search: 45.0 s
+- Post-rebuild: adjacency_ready=True, search OK, expansion OK (6 entities,
+  30 triples at depth 1).
