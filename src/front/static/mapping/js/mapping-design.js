@@ -3270,7 +3270,7 @@ function showMappingMapContextMenu(event, itemData, type, container) {
         </div>
         <div class="mapping-map-context-divider"></div>
         ${!isExcluded ? `
-        <div class="mapping-map-context-item" data-action="auto-assign">
+        <div class="mapping-map-context-item" data-action="auto-assign" data-requires-llm>
             <i class="bi bi-lightning-charge text-primary"></i>
             <span>Auto-Map</span>
         </div>

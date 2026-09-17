@@ -402,13 +402,16 @@ class SQLWizardBase {
     setupEventListeners() {
         const refreshBtn = document.getElementById(this.ids.refreshBtn);
         const promptInput = document.getElementById(this.ids.prompt);
-        const generateBtn = document.getElementById(this.ids.generateBtn);
+        const generateButton = document.getElementById(this.ids.generateBtn);
         const useBtn = document.getElementById(this.ids.useBtn);
         const copyBtn = document.getElementById(this.ids.copyBtn);
         
+        if (generateButton) {
+            generateButton.setAttribute('data-requires-llm', '');
+        }
         if (refreshBtn) refreshBtn.addEventListener('click', this.loadEndpoints);
         if (promptInput) promptInput.addEventListener('input', this.updateGenerateButton);
-        if (generateBtn) generateBtn.addEventListener('click', this.generateSql);
+        if (generateButton) generateButton.addEventListener('click', this.generateSql);
         if (useBtn) useBtn.addEventListener('click', this.useGeneratedSql);
         
         if (copyBtn) {

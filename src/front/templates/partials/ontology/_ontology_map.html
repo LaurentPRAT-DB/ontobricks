@@ -35,10 +35,12 @@
         <!-- These two are hidden outright for viewers (permissions.css), so they stay
              out of the groups above: a hidden member would leave its neighbour with a
              squared edge. -->
-        <button class="btn btn-sm btn-outline-secondary" id="mapAutoAssignIcons" title="Auto-map icons based on entity names" aria-label="Auto-assign icons">
+        <button class="btn btn-sm btn-outline-secondary" id="mapAutoAssignIcons" data-requires-llm
+                title="Auto-map icons based on entity names" aria-label="Auto-assign icons">
             <i class="bi bi-emoji-smile"></i>
         </button>
-        <button class="btn btn-sm btn-outline-secondary" id="mapToggleAssistant" title="Ontology assistant" aria-label="Open the ontology assistant">
+        <button class="btn btn-sm btn-outline-secondary" id="mapToggleAssistant" data-requires-llm
+                title="Ontology assistant" aria-label="Open the ontology assistant">
             <i class="bi bi-stars"></i>
         </button>
         <button class="btn btn-sm btn-outline-primary" id="mapDiscuss" title="Open the ontology discussion (optionally tag an entity/relationship)" aria-label="Open the ontology discussion">
@@ -109,13 +111,16 @@
                     <div class="assistant-welcome-icon"><img data-brand-icon src="{{ ui_branding_for().logo_url }}" alt="{{ ui_branding_for().app_title }}" width="40" height="40"></div>
                     <p>Modify your ontology with natural language:</p>
                     <div class="assistant-suggestions">
-                        <button class="btn btn-sm btn-outline-primary assistant-suggestion" data-message="Show me all entities and their attributes">
+                        <button class="btn btn-sm btn-outline-primary assistant-suggestion" data-requires-llm
+                                data-message="Show me all entities and their attributes">
                             <i class="bi bi-list-ul me-1"></i>List entities
                         </button>
-                        <button class="btn btn-sm btn-outline-primary assistant-suggestion" data-message="Show me all relationships">
+                        <button class="btn btn-sm btn-outline-primary assistant-suggestion" data-requires-llm
+                                data-message="Show me all relationships">
                             <i class="bi bi-arrow-left-right me-1"></i>List relationships
                         </button>
-                        <button class="btn btn-sm btn-outline-danger assistant-suggestion" data-message="Remove all the entities that have no relationship and no inheritance">
+                        <button class="btn btn-sm btn-outline-danger assistant-suggestion" data-requires-llm
+                                data-message="Remove all the entities that have no relationship and no inheritance">
                             <i class="bi bi-trash me-1"></i>Clean orphans
                         </button>
                     </div>
@@ -123,8 +128,10 @@
             </div>
             <div class="assistant-input-area">
                 <div class="assistant-input-wrapper">
-                    <textarea id="assistantInput" class="form-control" placeholder="Ask me to modify your ontology…" rows="1"></textarea>
-                    <button id="assistantSendBtn" class="btn btn-primary" title="Send message" disabled>
+                    <textarea id="assistantInput" class="form-control" data-requires-llm-submit
+                              placeholder="Ask me to modify your ontology…" rows="1"></textarea>
+                    <button id="assistantSendBtn" class="btn btn-primary" data-requires-llm
+                            title="Send message" disabled>
                         <i class="bi bi-send-fill"></i>
                     </button>
                 </div>

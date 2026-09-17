@@ -409,3 +409,81 @@ Tests:
 - JavaScript syntax: node --check permissions.js and navbar.js → passed.
 - Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6253 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 51.36s.
 - Browser: authorized admin and builder controls both resolved to opacity 0.5 / cursor not-allowed while unconfigured, then opacity 1 / cursor auto when configured.
+
+## Mark domain LLM actions
+
+Context: Domain-scoped AI controls must participate in the global fail-closed
+No-LLM gate while deterministic, history, confirmation, cancellation, and LLM
+configuration controls remain available.
+
+Changes:
+
+1. src/front/templates/partials/ontology/_ontology_wizard.html
+   Mark ontology generation as requiring a configured LLM.
+2. src/front/templates/partials/ontology/_ontology_map.html
+   Mark icon assignment, assistant launch, assistant suggestions, and send.
+3. src/front/templates/partials/ontology/_ontology_business_rules.html
+   Mark AI business-rule generation without gating deterministic rule controls.
+4. src/front/templates/partials/mapping/_mapping_autoassign.html
+   Mark full and missing-attribute AI mapping actions while preserving Cancel.
+5. src/front/templates/partials/mapping/_mapping_design.html and src/front/templates/partials/mapping/_mapping_manual.html
+   Mark the static AI auto-map actions while preserving deterministic panel controls.
+6. src/front/templates/partials/dtwin/_query_chat.html and src/front/templates/partials/dtwin/_query_analytics.html
+   Mark Graph Chat turns and AI interpretation without gating graph computation or history.
+7. src/front/static/mapping/js/mapping-shared.js
+   Declaratively mark dynamically configured entity and relationship SQL generate buttons.
+8. tests/units/front/test_no_llm_ui_gate.py
+   Inventory required markers and enforce the Domain Information and picker exclusions.
+
+Modified files:
+- src/front/templates/partials/ontology/_ontology_wizard.html
+- src/front/templates/partials/ontology/_ontology_map.html
+- src/front/templates/partials/ontology/_ontology_business_rules.html
+- src/front/templates/partials/mapping/_mapping_autoassign.html
+- src/front/templates/partials/mapping/_mapping_design.html
+- src/front/templates/partials/mapping/_mapping_manual.html
+- src/front/templates/partials/dtwin/_query_chat.html
+- src/front/templates/partials/dtwin/_query_analytics.html
+- src/front/static/mapping/js/mapping-shared.js
+- tests/units/front/test_no_llm_ui_gate.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Tests:
+- RED: uv run --frozen pytest -q tests/units/front/test_no_llm_ui_gate.py tests/units/front/test_llm_endpoint_picker.py → 2 failed, 17 passed, 1 warning in 0.26s.
+- GREEN: uv run --frozen pytest -q tests/units/front/test_no_llm_ui_gate.py tests/units/front/test_llm_endpoint_picker.py tests/units/front/test_no_backend_ui.py → 52 passed, 1 warning in 0.26s.
+- JavaScript syntax: node --check src/front/static/mapping/js/mapping-shared.js → passed.
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6256 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 54.31s.
+
+## Complete domain LLM interaction gating
+
+Context: Review found two alternate LLM invocation paths outside the initial
+marker inventory: Mapping Designer context-menu Auto-Map and Enter-to-send in
+both chat textareas. These paths now use declarative capture-phase gating
+without blocking spaces or Shift+Enter newlines.
+
+Changes:
+
+1. src/front/static/mapping/js/mapping-design.js
+   Mark the dynamically rendered context-menu Auto-Map item as LLM-dependent.
+2. src/front/templates/partials/ontology/_ontology_map.html and src/front/templates/partials/dtwin/_query_chat.html
+   Add submit-only LLM markers to both chat textareas.
+3. src/front/static/global/js/permissions.js
+   Block unmodified Enter on submit-only markers while preserving normal typing and Shift+Enter.
+4. tests/units/front/test_no_llm_ui_gate.py
+   Cover the dynamic context item, textarea marker isolation, and dedicated Enter branch.
+
+Modified files:
+- src/front/static/mapping/js/mapping-design.js
+- src/front/templates/partials/ontology/_ontology_map.html
+- src/front/templates/partials/dtwin/_query_chat.html
+- src/front/static/global/js/permissions.js
+- tests/units/front/test_no_llm_ui_gate.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Tests:
+- RED: uv run --frozen pytest -q tests/units/front/test_no_llm_ui_gate.py → 3 failed, 10 passed, 1 warning in 0.22s.
+- GREEN: uv run --frozen pytest -q tests/units/front/test_no_llm_ui_gate.py → 13 passed, 1 warning in 0.15s.
+- Focused: uv run --frozen pytest -q tests/units/front/test_no_llm_ui_gate.py tests/units/front/test_llm_endpoint_picker.py tests/units/front/test_no_backend_ui.py → 55 passed, 1 warning in 0.23s.
+- JavaScript syntax: node --check src/front/static/global/js/permissions.js; node --check src/front/static/global/js/navbar.js; node --check src/front/static/mapping/js/mapping-shared.js; node --check src/front/static/mapping/js/mapping-design.js → passed.
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6259 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 50.33s.
+- Browser: not run; neither Playwright nor Puppeteer is installed in this worktree.

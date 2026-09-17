@@ -115,16 +115,7 @@
         });
     }
 
-    function blockUnavailableLlmControl(event) {
-        if (!document.body.classList.contains('llm-unconfigured')) return;
-        if (event.type === 'keydown'
-            && event.key !== 'Enter' && event.key !== ' ') return;
-
-        const target = event.target;
-        const control = target && target.closest
-            ? target.closest('[data-requires-llm]') : null;
-        if (!control || !document.body.contains(control)) return;
-
+    function blockUnavailableLlmInteraction(event) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -132,6 +123,28 @@
             'No LLM selected. Select one in Domain Information → AI.',
             'warning'
         );
+    }
+
+    function blockUnavailableLlmControl(event) {
+        if (!document.body.classList.contains('llm-unconfigured')) return;
+
+        const target = event.target;
+        if (event.type === 'keydown') {
+            const submitControl = target && target.closest
+                ? target.closest('[data-requires-llm-submit]') : null;
+            if (submitControl && document.body.contains(submitControl)
+                && event.key === 'Enter' && !event.shiftKey) {
+                blockUnavailableLlmInteraction(event);
+                return;
+            }
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+        }
+
+        const control = target && target.closest
+            ? target.closest('[data-requires-llm]') : null;
+        if (!control || !document.body.contains(control)) return;
+
+        blockUnavailableLlmInteraction(event);
     }
 
     function observeLlmControls() {
