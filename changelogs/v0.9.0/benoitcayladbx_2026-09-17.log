@@ -310,3 +310,38 @@ Modified files:
 Tests:
 - Focused: uv run --frozen pytest -q tests/units/api/test_no_llm_route_contract.py tests/units/api/test_routes.py tests/units/core/test_sql_wizard.py tests/units/shared/test_llm_target.py → 133 passed, 1 warning in 8.65s
 - Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6249 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.92s
+
+## Require a saved LLM for Graph AI
+
+Context: Graph metrics interpretation and Graph Chat silently discovered an
+LLM when the active domain had no saved target. They now follow the common
+No-LLM gate and return actionable guidance before invoking an agent.
+
+Changes:
+
+1. src/api/routers/internal/dtwin.py
+   Guard metrics interpretation, blocking Graph Chat, and streaming Graph Chat
+   with the saved domain LLM target and remove endpoint auto-discovery.
+2. src/back/core/helpers/DatabricksHelpers.py and src/back/core/helpers/__init__.py
+   Remove the obsolete serving-only compatibility guard and re-export.
+3. tests/units/dtwin/test_no_llm_gating.py
+   Replace auto-discovery preference coverage with strict route guard contracts.
+4. tests/units/api/test_dtwin_assistant_chat.py
+   Verify an empty domain returns the shared HTTP 400 guidance without running
+   the Graph Chat agent.
+5. tests/units/core/test_domain_llm_guard.py
+   Remove compatibility coverage for the deleted serving-only guard.
+
+Modified files:
+- src/api/routers/internal/dtwin.py
+- src/back/core/helpers/DatabricksHelpers.py
+- src/back/core/helpers/__init__.py
+- tests/units/dtwin/test_no_llm_gating.py
+- tests/units/api/test_dtwin_assistant_chat.py
+- tests/units/core/test_domain_llm_guard.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Tests:
+- Focused: uv run --frozen pytest -q tests/units/dtwin/test_no_llm_gating.py tests/units/api/test_dtwin_assistant_chat.py tests/units/core/test_domain_llm_guard.py → 9 passed, 1 warning in 1.41s
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6246 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 55.35s
+- Ruff: the requested command reports 54 existing violations in the legacy modules; the new strict-gating test is clean.

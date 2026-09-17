@@ -53,9 +53,9 @@ from back.core.helpers import (
     effective_view_table,
     get_databricks_client,
     get_triplestore_sql_credentials,
-    get_databricks_host_and_token,
     make_volume_file_service,
     is_uri,
+    require_domain_llm,
     run_blocking,
 )
 
@@ -817,17 +817,9 @@ async def interpret_graph_metrics(
         data = await request.json()
         domain = get_domain(session_mgr)
 
-        host, token = get_databricks_host_and_token(domain, settings)
-        if not host or not token:
-            raise ValidationError("Databricks credentials not configured")
-
-        llm_endpoint = (domain.info or {}).get("llm_endpoint", "") or ""
-        if not llm_endpoint:
-            llm_endpoint = _auto_discover_llm_endpoint(domain, settings)
-        if not llm_endpoint:
-            raise ValidationError(
-                "No LLM serving endpoint available. Please set one in Domain Settings."
-            )
+        host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+            domain, settings
+        )
 
         # Build loopback base URL so the agent can call get_entity_details
         app_port = os.environ.get("DATABRICKS_APP_PORT") or os.environ.get("PORT") or "8000"
@@ -2367,43 +2359,6 @@ def _chat_response_payload(agent_result, event_type: str | None = None) -> dict:
     return payload
 
 
-def _auto_discover_llm_endpoint(domain, settings) -> str:
-    """Best-effort auto-selection of a serving endpoint for Graph Chat.
-
-    Walks the workspace's serving endpoints and returns the first one
-    that looks ready to serve chat completions.  Preference order:
-
-    1. Databricks hosted foundation models (pay-per-token), matched by
-       the ``databricks-`` prefix (e.g. ``databricks-meta-llama-*``).
-    2. Any other ``READY`` endpoint.
-
-    Returns an empty string if nothing usable can be found.
-    """
-    try:
-        from back.core.sqlwizard import SQLWizardService
-
-        client = get_databricks_client(domain, settings)
-        if not client:
-            return ""
-        endpoints = SQLWizardService(client).get_model_serving_endpoints() or []
-    except Exception as exc:
-        logger.debug("GraphChat: auto-discover LLM failed: %s", exc)
-        return ""
-
-    def _is_ready(ep: dict) -> bool:
-        state = (ep.get("state") or "").upper()
-        return state in ("READY", "TRUE", "UP")
-
-    for ep in endpoints:
-        name = ep.get("name") or ""
-        if name.startswith("databricks-") and _is_ready(ep):
-            return name
-    for ep in endpoints:
-        if _is_ready(ep) and ep.get("name"):
-            return ep["name"]
-    return ""
-
-
 @router.post("/assistant/chat")
 async def dtwin_assistant_chat(
     request: Request,
@@ -2432,7 +2387,6 @@ async def dtwin_assistant_chat(
     import os
 
     from api.routers.internal._helpers import map_route_errors
-    from back.core.helpers import get_databricks_host_and_token
     from agents.agent_dtwin_chat import run_agent as run_chat_agent
 
     data = await request.json()
@@ -2453,26 +2407,9 @@ async def dtwin_assistant_chat(
     saved_history = chat_cache["history"].get(domain_key) or []
     history = saved_history if saved_history else client_history
 
-    host, token = get_databricks_host_and_token(domain, settings)
-    if not host or not token:
-        raise ValidationError("Databricks credentials not configured")
-
-    # Always use the domain-selected LLM when available. If the domain
-    # hasn't pinned one yet, fall back to auto-discovering the first
-    # READY serving endpoint in the workspace so Graph Chat never hard-
-    # fails just because "llm_endpoint" wasn't saved in Domain Settings.
-    llm_endpoint = (domain.info or {}).get("llm_endpoint", "") or ""
-    if not llm_endpoint:
-        llm_endpoint = _auto_discover_llm_endpoint(domain, settings)
-        if llm_endpoint:
-            logger.info(
-                "GraphChat: auto-selected LLM endpoint '%s' (no domain default)",
-                llm_endpoint,
-            )
-    if not llm_endpoint:
-        raise ValidationError(
-            "No LLM serving endpoint available. Please set one in Domain Settings.",
-        )
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
 
     reg = DigitalTwin.resolve_registry(session_mgr, settings)
     registry_params = {
@@ -2587,7 +2524,6 @@ async def dtwin_assistant_chat_stream(
 
     from fastapi.responses import StreamingResponse
     from api.routers.internal._helpers import map_route_errors
-    from back.core.helpers import get_databricks_host_and_token
     from agents.agent_dtwin_chat import run_agent as run_chat_agent
     from agents.engine_base import AgentStep
 
@@ -2607,17 +2543,9 @@ async def dtwin_assistant_chat_stream(
     saved_history = chat_cache["history"].get(domain_key) or []
     history = saved_history if saved_history else client_history
 
-    host, token = get_databricks_host_and_token(domain, settings)
-    if not host or not token:
-        raise ValidationError("Databricks credentials not configured")
-
-    llm_endpoint = (domain.info or {}).get("llm_endpoint", "") or ""
-    if not llm_endpoint:
-        llm_endpoint = _auto_discover_llm_endpoint(domain, settings)
-    if not llm_endpoint:
-        raise ValidationError(
-            "No LLM serving endpoint available. Please set one in Domain Settings.",
-        )
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
 
     reg = DigitalTwin.resolve_registry(session_mgr, settings)
     registry_params = {

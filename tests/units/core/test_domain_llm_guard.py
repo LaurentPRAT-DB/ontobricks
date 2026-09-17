@@ -4,7 +4,6 @@ from unittest.mock import patch
 import pytest
 
 from back.core.errors import ValidationError
-from back.core.helpers import require_serving_llm
 from back.core.helpers.DatabricksHelpers import DatabricksHelpers
 
 _NO_LLM_MSG = "No LLM selected. Select one in Domain Information → AI."
@@ -60,24 +59,3 @@ def test_require_domain_llm_rejects_whitespace_endpoint(_credentials):
 def test_require_domain_llm_handles_none_domain_info():
     with pytest.raises(ValidationError, match=_NO_LLM_MSG):
         DatabricksHelpers.require_domain_llm(_domain(info=None), SimpleNamespace())
-
-
-@patch.object(
-    DatabricksHelpers,
-    "get_databricks_host_and_token",
-    return_value=("https://workspace", "token"),
-)
-def test_require_serving_llm_delegates_to_domain_guard(_credentials):
-    assert require_serving_llm(
-        _domain("main.ai.model", ""), SimpleNamespace()
-    ) == ("https://workspace", "token", "main.ai.model")
-
-
-@patch.object(
-    DatabricksHelpers,
-    "get_databricks_host_and_token",
-    return_value=("https://workspace", "token"),
-)
-def test_require_serving_llm_raises_domain_guard_message(_credentials):
-    with pytest.raises(ValidationError, match=_NO_LLM_MSG):
-        require_serving_llm(_domain(), SimpleNamespace())

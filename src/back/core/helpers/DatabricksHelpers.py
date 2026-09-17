@@ -583,21 +583,6 @@ class DatabricksHelpers:
         )
         return host, token, endpoint, kind
 
-    @staticmethod
-    def require_serving_llm(
-        domain,
-        settings,
-    ) -> Tuple[str, str, str]:
-        """Validate host, token, and domain LLM serving endpoint.
-
-        Returns ``(host, token, endpoint_name)`` or raises :class:`ValidationError`.
-        """
-        host, token, endpoint, _kind = DatabricksHelpers.require_domain_llm(
-            domain, settings
-        )
-        return host, token, endpoint
-
-
 def effective_uc_version_path(domain) -> str:
     """Return the version-scoped UC Volume path, with domain-level fallback.
 
