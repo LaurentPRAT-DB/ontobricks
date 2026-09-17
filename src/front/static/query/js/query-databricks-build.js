@@ -358,7 +358,7 @@ function pollDatabricksAdjacencyTask(taskId) {
     const step = document.getElementById('dbxBuildProgressStep');
     if (progressArea) progressArea.classList.remove('d-none');
 
-    const timer = setInterval(async () => {
+    async function pollOnce() {
         try {
             const resp = await fetch('/tasks/' + encodeURIComponent(taskId), { credentials: 'same-origin' });
             const data = await resp.json();
@@ -374,7 +374,6 @@ function pollDatabricksAdjacencyTask(taskId) {
             if (step) step.textContent = _taskStepMessage(task);
 
             if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
-                clearInterval(timer);
                 sessionStorage.removeItem(DBX_ADJ_REFRESH_TASK_KEY);
                 dbxAdjacencyRefreshRunning = false;
                 _finishDbxProgressBar(task.status);
@@ -397,9 +396,10 @@ function pollDatabricksAdjacencyTask(taskId) {
                 }
                 if (typeof refreshTasks === 'function') refreshTasks();
                 await loadDatabricksBuildInfo();
+                return;
             }
+            setTimeout(pollOnce, 1500);
         } catch (e) {
-            clearInterval(timer);
             sessionStorage.removeItem(DBX_ADJ_REFRESH_TASK_KEY);
             dbxAdjacencyRefreshRunning = false;
             _finishDbxProgressBar('failed');
@@ -411,7 +411,9 @@ function pollDatabricksAdjacencyTask(taskId) {
             _dbxNotify('Adjacency refresh monitoring failed: ' + msg, 'error');
             _updateDbxAdjacencyButton();
         }
-    }, 1500);
+    }
+
+    pollOnce();
 }
 
 function _finishDbxBuild(task) {

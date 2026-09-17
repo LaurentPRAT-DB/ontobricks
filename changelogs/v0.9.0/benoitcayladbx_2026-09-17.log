@@ -1,0 +1,21 @@
+## Prevent duplicate cache-refresh notifications
+
+Context: A slow adjacency-refresh status request could outlive the 1.5-second
+poll interval. Multiple overlapping requests then observed the same completed
+task and each displayed an "Adjacency refreshed successfully" notification.
+
+Changes:
+
+1. src/front/static/query/js/query-databricks-build.js
+   Replace the asynchronous interval with sequential polling that schedules the
+   next request only after the current request completes.
+2. tests/units/front/test_adjacency_refresh_ui.py
+   Add a regression contract that rejects overlapping interval polling and
+   requires sequential refresh polling.
+
+Modified files:
+- src/front/static/query/js/query-databricks-build.js
+- tests/units/front/test_adjacency_refresh_ui.py
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6184 passed, 304 skipped,
+6 deselected, 1 xfailed in 52.55s.

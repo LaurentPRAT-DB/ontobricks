@@ -67,6 +67,16 @@ class TestAdjacencyRefreshFlow:
         assert "const resp = await fetch('/tasks/' + encodeURIComponent(taskId)" in dbx_js
         assert "if (task.status === 'running' || task.status === 'pending')" in dbx_js
 
+    def test_lakehouse_refresh_polling_never_overlaps_requests(self):
+        dbx_js = _read(DBX_JS)
+        refresh_polling = dbx_js.split(
+            "function pollDatabricksAdjacencyTask(taskId) {", 1
+        )[1].split("function _finishDbxBuild(task) {", 1)[0]
+
+        assert "setInterval(" not in refresh_polling
+        assert "async function pollOnce()" in refresh_polling
+        assert "setTimeout(pollOnce, 1500);" in refresh_polling
+
     def test_databricks_button_stays_hidden_outside_lakehouse_backend(self):
         dbx_js = _read(DBX_JS)
         assert "backend !== 'databricks'" in dbx_js
