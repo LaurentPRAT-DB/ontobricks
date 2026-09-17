@@ -1247,18 +1247,19 @@ async function updateMappingsFromMetadata() {
         
         const data = await response.json();
         
-        btn.disabled = false;
-        btn.innerHTML = originalHtml;
-        
         if (data.success) {
-            showNotification(data.message, 'success');
+            const persisted = await doDomainSave();
+            if (persisted) {
+                showNotification(`${data.message}. Changes saved to registry.`, 'success');
+            }
         } else {
             showNotification('Error: ' + data.message, 'error');
         }
     } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+    } finally {
         btn.disabled = false;
         btn.innerHTML = originalHtml;
-        showNotification('Error: ' + error.message, 'error');
     }
 }
 

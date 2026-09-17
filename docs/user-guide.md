@@ -1830,6 +1830,13 @@ applied:
 Your own column comments survive a refresh: a comment you typed in OntoBricks is
 carried over whenever the column still exists upstream.
 
+#### Updating mapping data-source locations
+
+After changing a table's catalog or schema, click **Update Mappings** to rewrite
+matching entity and relationship mappings with the current
+`catalog.schema.table` locations. OntoBricks saves the updated domain to the
+registry automatically before reporting success.
+
 #### Removing data sources
 
 Removing a table (**Remove Tables**, or **Clear Data Sources** for all of them)

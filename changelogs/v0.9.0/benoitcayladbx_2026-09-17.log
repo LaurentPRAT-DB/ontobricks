@@ -241,3 +241,30 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
 
 Tests: uv run --frozen pytest -q -m "not scenario" → === 6206 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.55s ===
+
+## Persist mapping location updates automatically
+
+Context: Updating entity and relationship mappings from Domain Data Sources
+only saved the rewritten locations to the active session. The registry version
+could therefore remain unchanged after the UI reported success.
+
+Changes:
+
+1. src/front/static/domain/js/domain-metadata.js
+   Chain the canonical registry save after a successful mapping update and keep
+   the action disabled until both writes finish.
+2. tests/units/front/test_domain_metadata_save.py
+   Add a regression contract proving the registry save follows the mapping
+   update success path.
+3. docs/user-guide.md
+   Document automatic registry persistence for Update Mappings.
+
+Modified files:
+- src/front/static/domain/js/domain-metadata.js
+- tests/units/front/test_domain_metadata_save.py
+- docs/user-guide.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Tests:
+- Focused: uv run --frozen pytest -q tests/units/front/test_domain_metadata_save.py → 2 passed, 1 warning in 0.13s
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6207 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.80s
