@@ -279,6 +279,11 @@ All four companions share one refresh clock:
 - reasoning materialization when triples change;
 - cohort writes that change graph edges/properties.
 
+Graph Cache Refresh can also run as a standalone Scheduler task for a selected
+domain and version. It invokes the same full companion-index rebuild as the
+interactive **Refresh cache** action. The task is available for Lakehouse and
+Lakebase graphs; Neo4j does not use these companions.
+
 Lakebase performs `TRUNCATE` and `INSERT` for all companions in one
 transaction, then runs `ANALYZE` so the Postgres planner sees current
 statistics.

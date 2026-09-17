@@ -204,3 +204,40 @@ Modified files:
 Tests:
 - Focused: uv run --frozen pytest -q tests/units/graphdb/delta/test_delta_flat_store.py tests/units/api/test_dtwin_adjacency_refresh.py → 39 passed in 1.29s
 - Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6197 passed, 304 skipped, 6 deselected, 1 xfailed in 54.83s
+
+## Add scheduled graph cache refresh
+
+Context: Operators can rebuild Lakehouse or Lakebase graph companion indexes
+on a recurring schedule without running a full Knowledge Graph Build.
+
+Changes:
+
+1. src/back/objects/registry/scheduler_tasks/cache_refresh.py
+   Add the headless scheduled cache-refresh executor.
+2. src/back/objects/registry/scheduler_tasks/__init__.py
+   Register Graph Cache Refresh as a scheduler task type.
+3. src/front/templates/partials/settings/_settings_schedule.html
+   Add the Cache type to the Scheduler modal.
+4. src/front/static/config/js/schedule.js
+   Add rendering and configuration metadata for cache-refresh schedules.
+5. tests/units/registry/test_scheduler_tasks.py
+   Cover registration, validation, backend selection, and rebuild execution.
+6. tests/units/front/test_settings_schedule_page.py
+   Cover Scheduler radio and descriptor wiring.
+7. tests/units/settings/test_schedule_endpoints.py
+   Cover the expanded task-type catalogue.
+8. docs/optimizations.md
+   Document scheduled companion-index refresh behavior.
+
+Modified files:
+- src/back/objects/registry/scheduler_tasks/cache_refresh.py
+- src/back/objects/registry/scheduler_tasks/__init__.py
+- src/front/templates/partials/settings/_settings_schedule.html
+- src/front/static/config/js/schedule.js
+- tests/units/registry/test_scheduler_tasks.py
+- tests/units/front/test_settings_schedule_page.py
+- tests/units/settings/test_schedule_endpoints.py
+- docs/optimizations.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → === 6206 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.55s ===
