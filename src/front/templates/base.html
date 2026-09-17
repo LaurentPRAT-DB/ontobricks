@@ -56,7 +56,8 @@
     
     {% block extra_css %}{% endblock %}
 </head>
-<body data-app-role="{{ get_user_role() or 'admin' }}"
+<body class="llm-unconfigured"
+      data-app-role="{{ get_user_role() or 'admin' }}"
       data-domain-role="{{ get_user_domain_role() or 'admin' }}"
       data-app-mode="{{ 'true' if is_app_mode() else 'false' }}"
       data-page="{% block page_id %}{% endblock %}">

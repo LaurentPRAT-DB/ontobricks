@@ -345,3 +345,67 @@ Tests:
 - Focused: uv run --frozen pytest -q tests/units/dtwin/test_no_llm_gating.py tests/units/api/test_dtwin_assistant_chat.py tests/units/core/test_domain_llm_guard.py → 9 passed, 1 warning in 1.41s
 - Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6246 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 55.35s
 - Ruff: the requested command reports 54 existing violations in the legacy modules; the new strict-gating test is clean.
+
+## Add the global No-LLM UI gate
+
+Context: LLM-backed controls need to remain discoverable while preventing
+execution when the active domain has no saved LLM target. The global gate
+starts fail-closed, follows navbar state, and preserves control-owned ARIA and
+native disabled state.
+
+Changes:
+
+1. src/front/templates/base.html
+   Start every page with the fail-closed LLM availability class.
+2. src/front/static/global/js/permissions.js
+   Add the global availability writer, capture-phase interaction guards, ARIA
+   restoration, and dynamic-control observer.
+3. src/front/static/global/js/navbar.js
+   Drive LLM availability from the saved domain endpoint and remain fail-closed
+   when navbar state loading fails.
+4. src/front/static/global/css/permissions.css
+   Add declarative unavailable styling without suppressing pointer events.
+5. tests/units/front/test_no_llm_ui_gate.py
+   Cover initial state, state ownership, interaction guards, dynamic controls,
+   and navbar fail-closed behavior.
+
+Modified files:
+- src/front/templates/base.html
+- src/front/static/global/js/permissions.js
+- src/front/static/global/js/navbar.js
+- src/front/static/global/css/permissions.css
+- tests/units/front/test_no_llm_ui_gate.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Tests:
+- RED: uv run --frozen pytest -q tests/units/front/test_no_llm_ui_gate.py → 6 failed, 1 warning in 0.46s.
+- GREEN: uv run --frozen pytest -q tests/units/front/test_no_llm_ui_gate.py → 6 passed, 1 warning in 0.16s.
+- JavaScript syntax: node --check permissions.js and navbar.js → passed.
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6252 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 50.47s.
+- Browser: dynamic ARIA, capture blocking, native disabled preservation, and restoration passed at 1280 px and 375 px.
+
+## Fix the No-LLM permission cascade
+
+Context: Authorized role rules followed the No-LLM availability selector with
+equal specificity and important declarations, allowing role styling to
+override the fail-closed opacity and cursor.
+
+Changes:
+
+1. src/front/static/global/css/permissions.css
+   Move the dedicated LLM availability block after all role, version, and
+   edit-lock rules so source order deterministically preserves the gate.
+2. tests/units/front/test_no_llm_ui_gate.py
+   Add a regression contract that enforces the required cascade order.
+
+Modified files:
+- src/front/static/global/css/permissions.css
+- tests/units/front/test_no_llm_ui_gate.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Tests:
+- RED: uv run --frozen pytest -q tests/units/front/test_no_llm_ui_gate.py → 1 failed, 6 passed, 1 warning in 0.24s.
+- GREEN: uv run --frozen pytest -q tests/units/front/test_no_llm_ui_gate.py → 7 passed, 1 warning in 0.16s.
+- JavaScript syntax: node --check permissions.js and navbar.js → passed.
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6253 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 51.36s.
+- Browser: authorized admin and builder controls both resolved to opacity 0.5 / cursor not-allowed while unconfigured, then opacity 1 / cursor auto when configured.

@@ -193,6 +193,7 @@ async function loadNavbarState() {
     } catch (error) {
         console.error('Error loading navbar state:', error);
         restoreLastConfirmedDomainInfo();
+        window.OB?.updateLlmAvailability(false);
     }
 }
 
@@ -319,6 +320,8 @@ function applyDomainInfo(data) {
     const currentDomainNameEl = document.getElementById('currentDomainName');
     const domainSectionName = document.getElementById('domainSectionName');
     const hasDomain = domainIsLoaded(data);
+    // The navbar-state source of truth is domain.info.llm_endpoint.
+    window.OB?.updateLlmAvailability(Boolean(data.info?.llm_endpoint?.trim()));
 
     const domainName = (data.info && data.info.name) ? data.info.name : 'NewDomain';
     const version = (data.info && data.info.version) || '1';

@@ -387,3 +387,17 @@ body:is(.read-only-version, .role-viewer, .read-only-locked) .btn.disabled {
     gap: 0.4rem;
     flex: 0 0 auto;
 }
+
+/* ==========================================================================
+   LLM availability gate
+
+   Keep this block after every role, version, and edit-lock rule. Authorized
+   role selectors use equal specificity and !important declarations, so source
+   order makes the independent fail-closed availability state deterministic.
+   The capture-phase controller in permissions.js owns interaction and ARIA.
+   ========================================================================== */
+
+body.llm-unconfigured [data-requires-llm] {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+}
