@@ -60,3 +60,27 @@ Live verification: BIGCustomers graph-index Refresh cache completed in 128.62
 seconds. Three-run medians were Preview 1.27 seconds, expansion depth 0 1.48
 seconds, depth 1 1.83 seconds, and depth 2 1.69 seconds. Expansion logs
 contained no missing `_props` error.
+
+## Navbar domain badge refresh after domain switch
+
+Context: After loading a new domain from Unity Catalog, the navbar badge kept
+showing the previous domain during the 1-second reload delay (and briefly after
+reload, from a stale sessionStorage entry). The server session was already
+correctly pointing at the new domain — this was a frontend-only display lag.
+
+Changes:
+1. src/front/static/global/js/navbar.js — In `doDomainLoad()`, after a
+   successful load, clear the stale remembered badge and repaint the navbar
+   from a fresh `/navbar/state` fetch (`clearRememberedDomainInfo()` +
+   `await loadNavbarState()`) before the reload. The badge now reflects the new
+   domain immediately, and the remembered value is already correct after reload.
+2. tests/units/front/test_navbar_domain_badge_persistence.py — Added a
+   regression contract asserting the badge is refreshed from the server session
+   before the reload, and that stale remembered info is dropped first.
+
+Modified files:
+- src/front/static/global/js/navbar.js
+- tests/units/front/test_navbar_domain_badge_persistence.py
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6183 passed, 304 skipped,
+6 deselected, 1 xfailed in 55.36s.

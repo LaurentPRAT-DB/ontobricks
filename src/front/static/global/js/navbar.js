@@ -1476,7 +1476,13 @@ async function doDomainLoad(domainSlug, version) {
         const data = await response.json();
         if (data.success) {
             showNotification(data.message || 'Domain loaded successfully!', 'success');
+            // The server session already points at the new domain. Drop the
+            // stale remembered badge and repaint from the fresh /navbar/state
+            // *before* reloading, so the navbar never keeps showing the
+            // previous domain during the reload delay (or briefly after it).
             invalidateDomainCaches();
+            clearRememberedDomainInfo();
+            await loadNavbarState();
             setTimeout(() => location.reload(), 1000);
         } else {
             hideDomainLoading();
