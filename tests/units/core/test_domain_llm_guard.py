@@ -7,10 +7,11 @@ from back.core.errors import ValidationError
 from back.core.helpers.DatabricksHelpers import DatabricksHelpers
 
 _NO_LLM_MSG = "No LLM selected. Select one in Domain Information → AI."
+_DEFAULT_INFO = object()
 
 
-def _domain(endpoint="", kind="", info=None):
-    if info is None:
+def _domain(endpoint="", kind="", info=_DEFAULT_INFO):
+    if info is _DEFAULT_INFO:
         info = {"llm_endpoint": endpoint, "llm_endpoint_kind": kind}
     return SimpleNamespace(info=info)
 

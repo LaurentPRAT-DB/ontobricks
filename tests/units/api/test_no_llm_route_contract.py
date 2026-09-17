@@ -4,7 +4,6 @@ import inspect
 
 from api.routers.internal import mapping, ontology
 
-
 ROUTES = [
     ontology.generate_business_rules_async,
     ontology.generate_ontology_async,

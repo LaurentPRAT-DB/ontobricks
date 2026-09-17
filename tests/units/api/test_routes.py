@@ -1,10 +1,11 @@
 """Tests for FastAPI routes."""
 
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from shared.fastapi.main import app
 
@@ -210,14 +211,18 @@ class TestOntologyRoutes:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_assistant_invoke_uses_saved_endpoint_over_request_override(self):
+    async def test_assistant_invoke_uses_saved_credentials_and_endpoint(self):
         from api.routers.internal import ontology
 
         request = MagicMock()
         request.json = AsyncMock(
             return_value={
                 "input": [{"role": "user", "content": "Add Vehicle"}],
-                "custom_inputs": {"endpoint_name": "request.override"},
+                "custom_inputs": {
+                    "host": "https://caller.example.com",
+                    "token": "caller-token",
+                    "endpoint_name": "request.override",
+                },
             }
         )
         domain = MagicMock()
@@ -247,6 +252,8 @@ class TestOntologyRoutes:
 
         assert result == {"success": True}
         custom_inputs = agent.predict.call_args.args[0]["custom_inputs"]
+        assert custom_inputs["host"] == "https://h"
+        assert custom_inputs["token"] == "t"
         assert custom_inputs["endpoint_name"] == "main.ai.saved"
 
 

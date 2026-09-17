@@ -600,3 +600,37 @@ Tests:
 - Actual-path relevant persistence: uv run --frozen pytest -q tests/units/domain/test_domain_service.py -k "save_llm_endpoint_kind or legacy_llm_endpoint_kind_is_inferred" → 2 passed, 46 deselected, 1 warning in 0.95s.
 - Actual-path mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6268 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.39s.
 - Browser: PASS — a successful No LLM save added `llm-unconfigured` before navigation and blocked Mapping Re-Assign with no `POST /mapping/auto-assign/start`; restoring `databricks-claude-opus-4-6` removed the class immediately on the same page; the original model state was restored.
+
+## Harden final No-LLM contracts
+
+Context: Final review found caller-controlled credentials at the internal
+Ontology Assistant trust boundary and several test-contract cleanup issues.
+
+Changes:
+
+1. src/api/routers/internal/ontology.py
+   Make saved guard host, token, and endpoint authoritative for assistant invoke.
+2. src/api/routers/internal/mapping.py
+   Document why SQL generation retains the configuration-aware client factory.
+3. tests/units/
+   Add credential precedence coverage; correct the null-info helper, Graph Chat
+   mock, CSS source-order assertion, and feature-test import ordering.
+
+Modified files:
+- src/api/routers/internal/ontology.py
+- src/api/routers/internal/mapping.py
+- tests/units/api/test_routes.py
+- tests/units/api/test_dtwin_assistant_chat.py
+- tests/units/api/test_no_llm_route_contract.py
+- tests/units/core/test_domain_llm_guard.py
+- tests/units/core/test_sql_wizard.py
+- tests/units/front/test_no_llm_ui_gate.py
+- tests/units/front/test_no_llm_save_gate_sync.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Tests:
+- RED: saved credential precedence test → 1 failed in 2.08s.
+- Focused: complete No-LLM feature suite → 159 passed, 1 warning in 13.55s.
+- Ruff: all eight No-LLM feature test files → passed.
+- JavaScript syntax: five affected contract scripts → passed.
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6268 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.14s.

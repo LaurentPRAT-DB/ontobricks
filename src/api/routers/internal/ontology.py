@@ -2168,7 +2168,7 @@ async def ontology_assistant_invoke(
 
     Accepts the OpenAI Responses-compatible schema used by the Databricks
     Agent Framework. The route injects the saved domain LLM target and fills
-    missing Databricks credentials from the active session.
+    authoritative Databricks credentials from the active session.
 
     Expects JSON body (ResponsesAgentRequest)::
 
@@ -2176,10 +2176,7 @@ async def ontology_assistant_invoke(
             "input": [
                 {"role": "user", "content": "Add an entity called Vehicle"}
             ],
-            "custom_inputs": {          // optional credentials
-                "host": "...",
-                "token": "..."
-            }
+            "custom_inputs": {}         // optional non-credential context
         }
 
     Returns a ``ResponsesAgentResponse`` with ``custom_outputs`` containing
@@ -2197,8 +2194,8 @@ async def ontology_assistant_invoke(
     base_uri = domain.ontology.get("base_uri") or DEFAULT_BASE_URI
 
     custom_inputs = data.get("custom_inputs", {})
-    custom_inputs.setdefault("host", host)
-    custom_inputs.setdefault("token", token)
+    custom_inputs["host"] = host
+    custom_inputs["token"] = token
     custom_inputs["endpoint_name"] = llm_endpoint
     custom_inputs.setdefault("base_uri", base_uri)
     custom_inputs.setdefault("classes", list(domain.get_classes()))

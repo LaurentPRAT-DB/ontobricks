@@ -72,10 +72,12 @@ def test_navbar_updates_gate_and_fails_closed():
 
 def test_llm_availability_style_follows_competing_permission_rules():
     css = _read("src/front/static/global/css/permissions.css")
+    authorized_editor_rule = css.index(
+        'body[data-domain-role="editor"] [data-requires="editor"]'
+    )
     llm_gate = css.index("body.llm-unconfigured [data-requires-llm]")
-    last_permission_rule = css.rindex("#editLockBanner .edit-lock-actions")
 
-    assert llm_gate > last_permission_rule
+    assert llm_gate > authorized_editor_rule
 
 
 def test_every_domain_llm_trigger_has_declarative_marker():

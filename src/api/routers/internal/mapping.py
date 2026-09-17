@@ -512,6 +512,8 @@ async def generate_sql_from_prompt(
         _host, _token, endpoint_name, endpoint_kind = require_domain_llm(
             domain, settings
         )
+        # Keep the factory after the guard: beyond credentials it resolves the
+        # effective warehouse, CloudFetch mode, Apps OAuth, and local CLI auth.
         client = get_databricks_client(domain, settings)
 
         if not client:

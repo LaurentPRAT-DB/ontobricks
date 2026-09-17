@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DOMAIN_JS = REPO_ROOT / "src/front/static/domain/js/domain.js"
 NAVBAR_JS = REPO_ROOT / "src/front/static/global/js/navbar.js"

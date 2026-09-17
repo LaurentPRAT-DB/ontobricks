@@ -3,9 +3,8 @@
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from agents.agent_dtwin_chat.engine import AgentResult, SYSTEM_PROMPT
+from agents.agent_dtwin_chat.engine import SYSTEM_PROMPT, AgentResult
 from api.routers.internal import dtwin
-
 
 _PENDING_ACTION = {
     "token": "confirm-token",
@@ -42,7 +41,6 @@ def test_chat_rejects_empty_domain_llm_before_running_agent(client):
 
     with (
         patch.object(dtwin, "get_domain", return_value=domain),
-        patch.object(dtwin, "get_databricks_client", return_value=None),
         patch("agents.agent_dtwin_chat.run_agent") as run_chat_agent,
     ):
         response = client.post("/dtwin/assistant/chat", json={"message": "Hello"})

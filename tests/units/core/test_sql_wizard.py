@@ -9,11 +9,12 @@ Tests cover:
 - Full generation pipeline
 """
 
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import AsyncMock, Mock, MagicMock, patch
 
 from back.core.errors import InfrastructureError
-from back.core.sqlwizard import SQLWizardService, SchemaContext
+from back.core.sqlwizard import SchemaContext, SQLWizardService
 
 
 class TestSchemaContext:
