@@ -100,3 +100,20 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
 
 Tests: uv run --frozen pytest -q -m "not scenario" → 6270 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.55s
+
+## Document version-named working branches
+
+Context: GitHub no longer has a `develop` branch. Active work lives on a
+version-named branch (`0.9.0` for this release). Agent merge-safety rules
+still told people to merge from `develop`.
+
+Changes:
+
+1. .cursor/07-project-conventions.mdc
+   Replace the develop gitflow with version-named working branches and retarget merge-safety wording.
+
+Modified files:
+- .cursor/07-project-conventions.mdc
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6270 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.93s

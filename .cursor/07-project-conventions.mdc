@@ -124,12 +124,21 @@ scope:
   from back.objects.registry import RegistryService
   ```
 
-### Merge Safety (feature branch → develop)
+### Git branches
 
-When merging `develop` into a long-lived feature branch (or resolving conflicts before a PR):
+There is **no `develop` branch**. GitHub's default branch is `master`.
+
+Active work lives on a **version-named working branch** that matches the
+release in `pyproject.toml` (this working branch is `0.9.0`). Feature
+branches merge into that version branch; the version branch ships to `master`.
+
+### Merge Safety (feature branch → version branch)
+
+When merging the current version branch (e.g. `0.9.0`) into a long-lived
+feature branch (or resolving conflicts before a PR):
 
 1. **Feature branch is always the source of truth.** Resolve every conflict with `--ours`
-   unless the change from `develop` is a genuine independent improvement to a shared file.
+   unless the change from the version branch is a genuine independent improvement to a shared file.
 
 2. **Auto-merges are not safe.** Git can silently resolve a file with no conflict markers
    while still discarding feature content (it picks one side's structure). Always verify
