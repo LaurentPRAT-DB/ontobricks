@@ -316,7 +316,11 @@ paths are derived through `effective_uc_version_path` in `DatabricksHelpers.py`.
         ├── .domain_permissions.json  # Optional per-domain role overrides
         ├── V1/
         │   ├── V1.json                                    # Domain version payload
-        │   └── documents/                                 # Version-scoped documents
+        │   └── documents/                                 # Version-scoped source documents
+        │       ├── specification.pdf                      # Original bytes
+        │       └── _parsed/                               # Internal shared corpus
+        │           ├── specification.pdf.md               # ai_parse_document text
+        │           └── specification.pdf.json             # Hash, parser, and status manifest
         ├── V2/
         │   ├── V2.json
         │   └── documents/
@@ -333,6 +337,14 @@ paths are derived through `effective_uc_version_path` in `DatabricksHelpers.py`.
 6. **Agentic Automation**: LLM-powered agents with MCP-style tools handle complex tasks autonomously (see [Agentic Architecture](architecture.md#agentic-architecture))
 7. **Observability**: MLflow tracing captures every agent → LLM → tool span for debugging, cost tracking, and evaluation
 8. **MCP Integration**: The MCP server exposes knowledge-graph tools (entity search, GraphQL queries, domain selection) to LLM clients via the Model Context Protocol (see [MCP Server](mcp.md))
+
+`DocumentParseService` owns the version-scoped document lifecycle. Uploads
+write a SHA-256 manifest in `pending`, `ready`, or `failed` state. Supported
+binary files are parsed asynchronously through `ai_parse_document`; markdown is
+written before the manifest becomes `ready`. Generate and Mapping are
+read-only corpus consumers and never invoke the extractor. `_parsed` is hidden
+from public lists and document counts but is copied when a new version is
+created.
 
 ---
 

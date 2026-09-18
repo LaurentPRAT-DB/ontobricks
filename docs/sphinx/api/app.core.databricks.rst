@@ -104,6 +104,19 @@ Volume File Service
    :undoc-members:
    :show-inheritance:
 
+Document Parsing
+----------------
+
+.. automodule:: back.core.databricks.DocumentExtractor
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: back.core.databricks.DocumentParseService
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Workspace Service
 -----------------
 

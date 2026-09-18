@@ -63,6 +63,25 @@ Lakehouse backend; UC objects belonging to Lakebase or Neo4j versions are
 excluded. Health answers only one question: "Can this principal operate on the
 configured Registry schema?"
 
+## Domain documents
+
+Use **Domain → Documents** to upload specifications, glossaries, and other
+evidence for ontology Generate and Mapping. OntoBricks stores each original in
+the domain version's Unity Catalog Volume and parses supported binary formats
+once after upload. Both agents then read the same durable text sidecar; agent
+runs never re-parse the source.
+
+The document list shows one of three states:
+
+- **Parsing** — extraction is running; the page refreshes status automatically.
+- **Ready** — the document can be selected as agent evidence.
+- **Parse failed** — the source remains stored; use **Retry** after fixing
+  warehouse access or a transient parser issue.
+
+UTF-8 text formats are ready immediately. Unsupported formats remain failed
+and are not sent to Generate or Mapping. New domain versions copy originals,
+manifests, and ready sidecars together.
+
 ## Application Workflow
 
 OntoBricks follows a 3-step workflow:

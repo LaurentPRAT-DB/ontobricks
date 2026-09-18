@@ -98,5 +98,6 @@ The engine traces planner / generator / evaluator / critic stages; per-item
 
 - [x] Sections 4, 5, 6, 7 filled.
 - [x] Baseline eval: `https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663819/runs/ab43e8f6c175472c8c166112e31d73ce` (`judge_score=0.985`).
+- [x] Post-change eval: `https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663819/runs/55125984c92e4466a3a20ea8ebe4137d` (`judge_score=1.000`).
 - [ ] Baseline eval run URI pasted into PR body.
 - [x] Aggregate threshold declared in §5.

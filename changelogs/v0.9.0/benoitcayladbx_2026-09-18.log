@@ -520,3 +520,41 @@ Tests:
 - `uv run --frozen pytest -q tests/units/front/test_domain_documents_ui.py` → 7 passed, 1 warning in 0.12s.
 - `uv run --frozen pytest -q tests/units/front -m "not scenario"` → 1175 passed, 1 warning in 8.72s.
 - Browser checks at 1440×900 and 375×667 → badges, retry, 2-second single polling, stop-on-ready, keyboard preview, and no document-page horizontal overflow verified.
+
+## Document and verify the shared parsed corpus
+
+Context: The parse-once lifecycle is user-visible and changes which compute
+engine runs during upload, Generate, Mapping, and version creation.
+
+Changes:
+
+1. README.md and docs/user-guide.md
+   Explain shared document evidence, lifecycle states, retry, and version copy.
+2. docs/architecture.md and docs/data-access.md
+   Document sidecar layout, service ownership, REST endpoints, and the single
+   asynchronous `ai_parse_document` execution path.
+3. docs/sphinx/api/app.core.databricks.rst
+   Publish DocumentExtractor and DocumentParseService API symbols.
+4. .planning/agents/agent_owl_generator/SPEC.md and
+   .planning/agents/agent_mapping_pge/SPEC.md
+   Record successful post-change MLflow evaluations.
+5. tests/units/test_user_agent.py
+   Update the Mapping transport contract from raw requests to the shared
+   VolumeFileService.
+
+Modified files:
+- README.md
+- docs/user-guide.md
+- docs/architecture.md
+- docs/data-access.md
+- docs/sphinx/api/app.core.databricks.rst
+- .planning/agents/agent_owl_generator/SPEC.md
+- .planning/agents/agent_mapping_pge/SPEC.md
+- tests/units/test_user_agent.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests:
+- `uv run --frozen pytest -q -m "not scenario"` → 6319 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.33s.
+- `ci/build_docs.sh` → documentation built successfully with no new symbol warnings.
+- OWL post-change live eval → aggregate 1.000, MLflow run `6ef43cc56fb34cb1b74208fd81ae06a9`.
+- Mapping post-change live eval → aggregate 1.000, MLflow run `55125984c92e4466a3a20ea8ebe4137d`.

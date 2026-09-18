@@ -103,6 +103,7 @@ and the engine that ultimately runs (column **Engine**).
 | Data Sources (UC tables preview) | `domain-metadata` | Internal REST → `databricks-sql-connector` | REST → Spark SQL | **Spark SQL** on UC tables (sample queries) |
 | Data source deletion guard | `domain-metadata` | `POST /domain/metadata/removal-impact` | REST | `Mapping.find_mappings_referencing` over the session `assignment` (no warehouse call) |
 | Metadata refresh diff preview | `domain-metadata` | `POST /domain/metadata/update-async` → `GET /tasks/{id}` | REST → Spark SQL | `compute_column_diff` over the pre-merge snapshot; applied only after the user confirms |
+| Documents upload / status / retry | `domain-documents.js` | `/domain/documents/upload`, `/domain/documents/list`, `/domain/documents/retry-parse` | REST → Files API; binary parse via Spark SQL | Originals and `_parsed` sidecars on UC Volumes; one asynchronous `ai_parse_document` call per changed source hash |
 | Versions | `domain-versions` | `/api/v1/domain/versions` | REST | UC Volume listing |
 
 ### 4.2 Ontology Designer
@@ -112,7 +113,7 @@ and the engine that ultimately runs (column **Engine**).
 | Visual ontology editor (`Model`, `Entities`, `Relationships`, `Groups`, `Business Views`) | `ontology-design.js`, `ontology-shared-panels.js`, `ontology-groups.js` | Internal REST `/ontology/...` | REST | Python ontology object model |
 | OWL viewer / generator | `ontology-owl.js`, agent `OWLGenerator` | `/ontology/owl/...`, `/agents/owl-generator/run` | REST | `OntologyParser`, `OntologyGenerator` (rdflib) |
 | Import (OWL, FIBO, CDISC, IOF) | `ontology-import.js` | `/ontology/import/*` | REST | rdflib parsers |
-| Generate (Wizard) | `ontology-wizard.js` | Domain LLM via `agent_owl_generator` | REST → LLM | Saved domain LLM: Databricks AI Gateway or Model Serving + tool-calling |
+| Generate (Wizard) | `ontology-wizard.js` | Domain LLM via `agent_owl_generator` | REST → LLM | Saved domain LLM: Databricks AI Gateway or Model Serving + tool-calling; selected ready documents come from the shared parsed corpus |
 | AI Assistant | Designer floating chat, `agent_ontology_assistant` | `POST /ontology/assistant/chat`, `POST /ontology/assistant/invoke` | REST → LLM | Saved domain LLM (`llm_endpoint` + `llm_endpoint_kind`): AI Gateway chat completions or Model Serving invocations |
 | **Data Quality** rules editor | `ontology-dataquality.js` | `/ontology/dataquality/...` | REST | SHACL (`SHACLService`) on the in-memory ontology |
 | **Business Rules (SWRL)** editor | `ontology-business-rules.js` | `/ontology/swrl/...` | REST | `SWRLParser`, validated against ontology |
@@ -123,7 +124,7 @@ and the engine that ultimately runs (column **Engine**).
 | UI Feature | JS file | Endpoint(s) | Wrapper | Engine |
 |---|---|---|---|---|
 | Mapping designer / manual mapping | `mapping-design.js`, `mapping-manual.js` | `/mapping/...` | REST | `R2RMLGenerator` |
-| Auto-Map (LLM) | `mapping-autoassign.js`, agent `AutoAssignment` | `/mapping/auto-assign/...` | REST → LLM | Databricks AI Gateway or FM API; agent samples UC tables via Spark SQL through `databricks-sql-connector` |
+| Auto-Map (LLM) | `mapping-autoassign.js`, agent `AutoAssignment` | `/mapping/auto-assign/...` | REST → LLM | Databricks AI Gateway or FM API; agent samples UC tables via Spark SQL and preloads the same ready parsed-document corpus as Generate |
 | Diagnostics | `mapping-diagnostics.js` | `/mapping/diagnostics/*` | REST | Python validator |
 | Source schema drift | `mapping-design.js`, `mapping-diagnostics.js` | `GET /mapping/schema-drift` | REST | One `DESCRIBE` per distinct source table via `UnityCatalog.get_table_columns` |
 | **R2RML** view | `mapping-r2rml.js` | `/mapping/r2rml/raw` | REST | rdflib serializer |
