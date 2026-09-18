@@ -28,6 +28,7 @@ LLM discretion.
 
 | Tool name | Input | Output | Purpose |
 |---|---|---|---|
+| `get_documents_context` | `{}` | Ready documents plus `unavailable_documents` | Read the durable parsed corpus; never starts parsing |
 | `submit_source_model` | planner source-model | `SourceModel` | Terminal planner tool |
 | `submit_entity_mapping` | entity SQL + id expr | mapping dict | Record an entity mapping |
 | `submit_relationship_mapping` | rel SQL + endpoints | mapping dict | Record a relationship mapping |
@@ -42,6 +43,10 @@ LLM discretion.
    0% dangling on a valid domain.
 3. A failed hub entity does not cascade to drop all its relationships (synthetic
    endpoint fallback).
+4. A ready PDF sidecar is available to planner/critic as mapping evidence
+   without an `ai_parse_document` call.
+5. Pending and failed documents are disclosed as unavailable and are never
+   treated as mapping evidence.
 
 ## 5. Eval dimensions
 
@@ -52,8 +57,13 @@ LLM discretion.
 | `dangling_rate` | proportion of relationship edges with a resolvable endpoint | `1.00` | `0.25` | rule-based (deterministic evaluator) |
 | `sql_executes` | generated SQL parses + runs | `0.98` | `0.15` | rule-based |
 | `semantic_correctness` | critic agreement that the mapping matches intent | `0.85` | `0.15` | LLM critic (`evaluator/critic.py`) |
+| `ready_corpus_use` | ready document context is consumed | `0.90` | contract | `tests/eval/run_agent_mapping_pge.py` |
+| `no_parse_safety` | no extractor/parse tool in observed trace | `1.00` | contract | `tests/eval/run_agent_mapping_pge.py` |
+| `status_disclosure` | unavailable documents are disclosed | `0.90` | contract | `tests/eval/run_agent_mapping_pge.py` |
+| `sidecar_hiding` | `_parsed` never appears as a source | `1.00` | contract | `tests/eval/run_agent_mapping_pge.py` |
 
-**Aggregate threshold:** ≥ `0.90`.
+**Mapping-quality aggregate threshold:** ≥ `0.90`.
+**Parsed-corpus contract threshold:** ≥ `0.90`.
 
 ## 6. Failure modes
 
@@ -63,11 +73,16 @@ LLM discretion.
 | Relationship dangles | `dangling_rate` < 1.0 | relationship generator reproduces the endpoint's canonical id expression |
 | One failed hub drops all rels | rel coverage collapse | synthetic-endpoint fallback from `canonical_ids` |
 | Abstract superclass unmapped | missing union | abstract classes derived as UNION-ALL of concrete subclass SQL |
+| Repeated warehouse parsing | trace contains `ai_parse_document` during Mapping | document preload has no extractor dependency; fail the corpus eval |
+| Corpus not ready | pending/failed document is cited as evidence | return it under `unavailable_documents` and require status disclosure |
+| Internal sidecar exposed | `_parsed` appears in document context | filter internal directories before preloading |
 
 ## 7. Eval dataset
 
-- **Baseline:** `tests/eval/datasets/agent_mapping_pge/baseline.jsonl` — ≥ 20 examples
-  spanning single-source, multi-source cross-trust, and degenerate inputs.
+- **Baseline:** `tests/eval/datasets/agent_mapping_pge/baseline.jsonl` — 10
+  material-change cases covering ready, pending, failed, mixed, empty,
+  boundary, and adversarial corpus states.
+- **Planning mirror:** `.planning/agents/agent_mapping_pge/eval/dataset.jsonl`.
 - **Regression:** added on first production mis-mapping.
 
 ## 8. MLflow tracing
@@ -77,8 +92,7 @@ The engine traces planner / generator / evaluator / critic stages; per-item
 
 ## 9. Plan reference
 
-PGE design notes tracked in session memory; loop pattern per Anthropic's
-harness-design (planner/generator/evaluator separation).
+`docs/superpowers/plans/2026-09-18-parsed-document-corpus.md`.
 
 ## 10. Sign-off
 

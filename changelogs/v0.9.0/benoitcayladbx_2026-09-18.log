@@ -328,3 +328,47 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
 
 Tests: uv run --frozen pytest -q -m "not scenario" → 6282 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 51.12s
+
+## Baseline shared parsed-corpus agent contracts
+
+Context: Generate and Mapping need an explicit evaluation contract before
+their document tools can move from on-demand extraction to durable parsed
+sidecars.
+
+Changes:
+
+1. .planning/agents/agent_owl_generator/SPEC.md
+   Define the parsed-corpus tool surface, success criteria, failure modes, and
+   contract metrics.
+2. .planning/agents/agent_mapping_pge/SPEC.md
+   Define Mapping's ready and unavailable document-context behavior.
+3. .planning/agents/agent_owl_generator/eval/dataset.jsonl,
+   .planning/agents/agent_mapping_pge/eval/dataset.jsonl,
+   tests/eval/datasets/agent_owl_generator/baseline.jsonl, and
+   tests/eval/datasets/agent_mapping_pge/baseline.jsonl
+   Add ten material-change cases per affected agent.
+4. tests/eval/document_corpus_contract.py,
+   tests/eval/run_agent_owl_generator.py, and
+   tests/eval/run_agent_mapping_pge.py
+   Add shared deterministic contract scoring and live MLflow runner entry
+   points.
+5. tests/eval/thresholds.yaml
+   Require a 0.90 parsed-corpus contract score for both agents.
+
+Modified files:
+- .planning/agents/agent_owl_generator/SPEC.md
+- .planning/agents/agent_mapping_pge/SPEC.md
+- .planning/agents/agent_owl_generator/eval/dataset.jsonl
+- .planning/agents/agent_mapping_pge/eval/dataset.jsonl
+- tests/eval/datasets/agent_owl_generator/baseline.jsonl
+- tests/eval/datasets/agent_mapping_pge/baseline.jsonl
+- tests/eval/document_corpus_contract.py
+- tests/eval/run_agent_owl_generator.py
+- tests/eval/run_agent_mapping_pge.py
+- tests/eval/thresholds.yaml
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests:
+- `uv run --frozen python tests/eval/run_agent_owl_generator.py` → 10/10 cases passed, aggregate 1.000.
+- `uv run --frozen python tests/eval/run_agent_mapping_pge.py` → 10/10 cases passed, aggregate 1.000.
+- Live MLflow baseline pending an explicitly configured LLM endpoint.
