@@ -1238,7 +1238,7 @@ async def generate_business_rules_async(
     documents = data.get("documents", [])
 
     domain = get_domain(session_mgr)
-    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+    host, token, llm_endpoint, llm_endpoint_kind = require_domain_llm(
         domain, settings
     )
     warehouse_id = resolve_warehouse_id(domain, settings)
@@ -2118,6 +2118,7 @@ async def ontology_assistant_chat(
             host=host,
             token=token,
             endpoint_name=llm_endpoint,
+            endpoint_kind=llm_endpoint_kind,
             classes=classes,
             properties=properties,
             base_uri=base_uri,
@@ -2188,7 +2189,7 @@ async def ontology_assistant_invoke(
     data = await request.json()
 
     domain = get_domain(session_mgr)
-    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+    host, token, llm_endpoint, llm_endpoint_kind = require_domain_llm(
         domain, settings
     )
     base_uri = domain.ontology.get("base_uri") or DEFAULT_BASE_URI
@@ -2197,6 +2198,7 @@ async def ontology_assistant_invoke(
     custom_inputs["host"] = host
     custom_inputs["token"] = token
     custom_inputs["endpoint_name"] = llm_endpoint
+    custom_inputs["endpoint_kind"] = llm_endpoint_kind
     custom_inputs.setdefault("base_uri", base_uri)
     custom_inputs.setdefault("classes", list(domain.get_classes()))
     custom_inputs.setdefault("properties", list(domain.get_properties()))

@@ -70,3 +70,33 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
 
 Tests: uv run --frozen pytest -q -m "not scenario" → 6269 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 56.32s
+
+## Honor the domain LLM target in Ontology Assistant
+
+Context: The Ontology Assistant received the saved endpoint name but discarded
+its persisted target kind. It could therefore route an explicitly selected AI
+Gateway model through name inference instead of the authoritative domain
+configuration.
+
+Changes:
+
+1. src/agents/agent_ontology_assistant/engine.py
+   Forward the domain endpoint kind to the shared LLM transport.
+2. src/agents/agent_ontology_assistant/responses_agent.py
+   Preserve the endpoint kind in streaming and fallback ResponsesAgent calls.
+3. src/api/routers/internal/ontology.py
+   Inject the saved domain endpoint kind into both Ontology Assistant APIs.
+4. tests/units/agents/test_agent_ontology_assistant_engine.py
+   Add regression coverage for forwarding an AI Gateway target.
+5. tests/units/api/test_routes.py
+   Verify the ResponsesAgent request receives the authoritative saved kind.
+
+Modified files:
+- src/agents/agent_ontology_assistant/engine.py
+- src/agents/agent_ontology_assistant/responses_agent.py
+- src/api/routers/internal/ontology.py
+- tests/units/agents/test_agent_ontology_assistant_engine.py
+- tests/units/api/test_routes.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6270 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.55s

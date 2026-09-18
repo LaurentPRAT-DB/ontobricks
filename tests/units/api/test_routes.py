@@ -255,6 +255,7 @@ class TestOntologyRoutes:
         assert custom_inputs["host"] == "https://h"
         assert custom_inputs["token"] == "t"
         assert custom_inputs["endpoint_name"] == "main.ai.saved"
+        assert custom_inputs["endpoint_kind"] == "ai_gateway"
 
 
 class TestAutoAssignIconsAsync:
