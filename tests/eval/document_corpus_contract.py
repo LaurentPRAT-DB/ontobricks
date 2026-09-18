@@ -158,6 +158,7 @@ def run_contract(
         [Dict[str, Any]], Tuple[List[str], str, List[str]]
     ] | None = None,
     mlflow_experiment: str | None = None,
+    mlflow_tracking_uri: str | None = None,
 ) -> float:
     """Run dry stub validation or live observations and return aggregate score."""
     examples = load_examples(dataset_path)
@@ -183,6 +184,8 @@ def run_contract(
     if not dry_run and mlflow_experiment:
         import mlflow
 
+        if mlflow_tracking_uri:
+            mlflow.set_tracking_uri(mlflow_tracking_uri)
         mlflow.set_experiment(mlflow_experiment)
         with mlflow.start_run(run_name="parsed-corpus-baseline") as run:
             mlflow.log_metric("judge_score", aggregate)

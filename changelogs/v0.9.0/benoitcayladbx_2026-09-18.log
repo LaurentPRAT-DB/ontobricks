@@ -371,4 +371,5 @@ Modified files:
 Tests:
 - `uv run --frozen python tests/eval/run_agent_owl_generator.py` → 10/10 cases passed, aggregate 1.000.
 - `uv run --frozen python tests/eval/run_agent_mapping_pge.py` → 10/10 cases passed, aggregate 1.000.
-- Live MLflow baseline pending an explicitly configured LLM endpoint.
+- Live OWL baseline → aggregate 0.965, MLflow run `c8ce3cae2014408e9451cc508068fe0d`.
+- Live Mapping baseline → aggregate 0.985, MLflow run `ab43e8f6c175472c8c166112e31d73ce`.

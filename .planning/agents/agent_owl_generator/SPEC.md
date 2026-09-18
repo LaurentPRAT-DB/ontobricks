@@ -83,6 +83,7 @@ Existing: `@trace_agent` on the entry point in `src/agents/agent_owl_generator/`
 ## 10. Sign-off
 
 - [x] Author has filled sections 4, 5, 6, 7.
+- [x] Baseline eval: `https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663818/runs/c8ce3cae2014408e9451cc508068fe0d` (`judge_score=0.965`).
 - [ ] Baseline eval run URI pasted into PR body.
 - [ ] Aggregate threshold ≥ declared value in §5.
 - [ ] Reviewer waiver recorded in the PR, if used.

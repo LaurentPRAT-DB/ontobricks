@@ -97,5 +97,6 @@ The engine traces planner / generator / evaluator / critic stages; per-item
 ## 10. Sign-off
 
 - [x] Sections 4, 5, 6, 7 filled.
-- [ ] Baseline eval run URI pasted into PR body (waiver: calibration grace period per `.cursor/12-ai-feature-lifecycle.mdc`; unit + agent tests cover cold-start).
+- [x] Baseline eval: `https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663819/runs/ab43e8f6c175472c8c166112e31d73ce` (`judge_score=0.985`).
+- [ ] Baseline eval run URI pasted into PR body.
 - [x] Aggregate threshold declared in §5.

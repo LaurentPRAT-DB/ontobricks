@@ -110,6 +110,10 @@ def main() -> None:
         "--mlflow-experiment",
         default="/Shared/ontobricks/agents/owl_generator",
     )
+    parser.add_argument(
+        "--mlflow-tracking-uri",
+        default=os.getenv("MLFLOW_TRACKING_URI", "databricks"),
+    )
     args = parser.parse_args()
     if args.live and not (args.host and args.token and args.endpoint):
         parser.error("--live requires host, token, and endpoint")
@@ -127,6 +131,7 @@ def main() -> None:
         dry_run=not args.live,
         live_runner=live,
         mlflow_experiment=args.mlflow_experiment,
+        mlflow_tracking_uri=args.mlflow_tracking_uri,
     )
 
 
