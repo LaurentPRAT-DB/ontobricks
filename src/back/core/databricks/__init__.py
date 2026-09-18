@@ -22,6 +22,12 @@ from back.core.databricks.DatabricksClient import DatabricksClient  # noqa: F401
 from back.core.databricks.WorkspaceService import WorkspaceService  # noqa: F401
 from back.core.databricks.DashboardService import DashboardService  # noqa: F401
 from back.core.databricks.DocumentExtractor import DocumentExtractor  # noqa: F401
+from back.core.databricks.DocumentParseService import (  # noqa: F401
+    DocumentParseService,
+    ParseManifest,
+    ParseStatus,
+    ParseSubmission,
+)
 
 # Backward-compatible wrappers for previously module-level functions
 is_databricks_app = DatabricksAuth.is_databricks_app
@@ -72,6 +78,10 @@ __all__ = [
     "MetadataService",
     "UCDomainIO",
     "DocumentExtractor",
+    "DocumentParseService",
+    "ParseManifest",
+    "ParseStatus",
+    "ParseSubmission",
     "is_databricks_app",
     "get_local_user_email",
     "normalize_host",

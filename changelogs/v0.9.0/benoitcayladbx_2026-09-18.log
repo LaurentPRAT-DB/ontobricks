@@ -373,3 +373,28 @@ Tests:
 - `uv run --frozen python tests/eval/run_agent_mapping_pge.py` → 10/10 cases passed, aggregate 1.000.
 - Live OWL baseline → aggregate 0.965, MLflow run `c8ce3cae2014408e9451cc508068fe0d`.
 - Live Mapping baseline → aggregate 0.985, MLflow run `ab43e8f6c175472c8c166112e31d73ce`.
+
+## Add the durable parsed-document corpus service
+
+Context: Document uploads need one idempotent lifecycle owner for source
+hashing, parse status, sidecar persistence, retry, and read-only corpus access.
+
+Changes:
+
+1. src/back/core/databricks/DocumentParseService.py
+   Add typed manifests, SHA-256 upload no-op, in-process parse reservation,
+   plaintext handling, binary extraction, retry, truncation, legacy reads, and
+   sidecar cleanup.
+2. src/back/core/databricks/__init__.py
+   Export the parsed-corpus service and value types.
+3. tests/units/core/test_document_parse_service.py
+   Cover pending-to-ready, identical and changed hashes, failures, retries,
+   plaintext, unsupported files, reader behavior, cleanup, and path safety.
+
+Modified files:
+- src/back/core/databricks/DocumentParseService.py
+- src/back/core/databricks/__init__.py
+- tests/units/core/test_document_parse_service.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests: `uv run --frozen pytest -q tests/units/core/test_document_parse_service.py tests/units/core/test_document_extractor.py` → 34 passed, 1 warning in 0.25s.
