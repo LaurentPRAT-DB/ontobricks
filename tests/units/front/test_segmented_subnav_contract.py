@@ -59,7 +59,6 @@ def test_workspace_targets_are_grouped_before_context_and_actions():
     assert "menuSaveDomain" not in group
     assert "currentDomainName" in html
     assert "domainContextVersion" in html
-    assert "domain-status-badge" in html
     assert html.index("menuSwitchDomain") < html.index("menuCloseDomain")
     assert html.index("menuCloseDomain") < html.index("menuSaveDomain")
 

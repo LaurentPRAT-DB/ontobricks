@@ -141,14 +141,28 @@ class TestBaseTemplate:
         assert _find(tags, id_="domainL1NavItem") is None
         context_trigger = _find(tags, id_="domainContextTrigger")
         assert context_trigger is not None
-        assert 'id="currentDomainName"' in html
-        assert html.index('id="domainContextTrigger"') < html.index('id="currentDomainName"')
+        trigger_match = re.search(
+            r'<a\b[^>]*id="domainContextTrigger"[^>]*>(.*?)</a>',
+            html,
+            flags=re.DOTALL,
+        )
+        assert trigger_match is not None
+        trigger_html = trigger_match.group(1)
+        assert 'id="currentDomainName"' in trigger_html
 
         registry_toggle = _find(tags, id_="registryModalToggle")
         assert registry_toggle is not None
-        assert "bi-grid-3x3-gap" in html
-        assert '<span class="ob-visually-hidden">Registry</span>' in html
-        assert "<span>Registry</span>" not in html
+        assert registry_toggle.get("title") == "Registry"
+        assert registry_toggle.get("aria-label") == "Open Registry"
+        registry_match = re.search(
+            r'<a\b[^>]*id="registryModalToggle"[^>]*>(.*?)</a>',
+            html,
+            flags=re.DOTALL,
+        )
+        assert registry_match is not None
+        registry_inner = registry_match.group(1)
+        assert re.search(r'<i\b[^>]*class="[^"]*\bbi-boxes\b[^"]*"[^>]*>', registry_inner)
+        assert "<span" not in registry_inner
 
     def test_subnav_has_domain_dropdown(self, client):
         """Domain dropdown is in the L2 subnav."""
