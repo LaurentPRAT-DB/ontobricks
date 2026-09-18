@@ -50,13 +50,16 @@ function initNavbar() {
 }
 
 /**
- * Replace the L1 Domain link navigation with the all-workspace menu map.
+ * Bind the L2 domain identity/context trigger to the workspace map modal.
  */
 function bindWorkspaceMapTrigger() {
-    const link = document.getElementById('domainL1Link');
-    if (!link || link.dataset.workspaceMapBound === 'true') return;
-    link.dataset.workspaceMapBound = 'true';
-    link.addEventListener('click', openWorkspaceMap);
+    const triggerIds = ['domainContextTrigger', 'settingsDomainReturnLink'];
+    triggerIds.forEach((id) => {
+        const link = document.getElementById(id);
+        if (!link || link.dataset.workspaceMapBound === 'true') return;
+        link.dataset.workspaceMapBound = 'true';
+        link.addEventListener('click', openWorkspaceMap);
+    });
 }
 
 function openWorkspaceMap(event) {
@@ -140,13 +143,6 @@ function disableCurrentSubnavDropdown(toggle) {
     }
     if (menu) menu.remove();
 }
-
-/**
- * Align the first L2 subnav item (Ontology) with the Domain link in L1.
- * Measures the left edge of #domainL1Link and shifts the subnav list by
- * that same offset so the two items are visually column-aligned.
- * Re-runs on window resize in case the brand/registry widths change.
- */
 
 /**
  * Load the consolidated navbar state in a single round-trip and
@@ -318,6 +314,7 @@ async function hasLoadedDomain() {
 
 function applyDomainInfo(data) {
     const currentDomainNameEl = document.getElementById('currentDomainName');
+    const domainContextVersion = document.getElementById('domainContextVersion');
     const domainSectionName = document.getElementById('domainSectionName');
     const hasDomain = domainIsLoaded(data);
     // The navbar-state source of truth is domain.info.llm_endpoint.
@@ -335,18 +332,43 @@ function applyDomainInfo(data) {
 
     if (currentDomainNameEl) {
         if (hasDomain) {
-            currentDomainNameEl.textContent = `${domainName} V${version}`;
+            currentDomainNameEl.textContent = domainName;
             applyDomainStatusBadge(currentDomainNameEl, status);
         } else {
             currentDomainNameEl.textContent = 'Domain';
             applyDomainStatusBadge(currentDomainNameEl, null);
         }
     }
+    if (domainContextVersion) {
+        domainContextVersion.textContent = hasDomain ? String(version) : '';
+    }
 
     const mapLabel = document.getElementById('workspaceMapDomainLabel');
     if (mapLabel) {
         mapLabel.textContent = hasDomain ? `${domainName} V${version}` : 'Domain';
         applyDomainStatusBadge(mapLabel, hasDomain ? status : null);
+    }
+    const contextTrigger = document.getElementById('domainContextTrigger');
+    if (contextTrigger) {
+        if (hasDomain) {
+            contextTrigger.setAttribute(
+                'aria-label',
+                `Open workspace map for ${domainName}, version ${version}, ${statusLabel(status)}`
+            );
+        } else {
+            contextTrigger.setAttribute('aria-label', 'Open workspace map for Domain');
+        }
+    }
+    const settingsReturnLink = document.getElementById('settingsDomainReturnLink');
+    if (settingsReturnLink) {
+        if (hasDomain) {
+            const label = `Back to domain for ${domainName}, opens domain navigation via the workspace map`;
+            settingsReturnLink.setAttribute('aria-label', label);
+            settingsReturnLink.setAttribute('title', label);
+        } else {
+            settingsReturnLink.setAttribute('aria-label', 'Back to domain');
+            settingsReturnLink.setAttribute('title', 'Back to domain');
+        }
     }
 
     if (domainSectionName) {
@@ -509,44 +531,35 @@ function enableMenusAfterSave() {
 }
 
 /**
- * Update domain L1 entry + L2 subnav visibility based on domain state.
- * When nothing is loaded, hide the Domain navbar item entirely.
+ * Update L2 subnav visibility based on domain state.
  *
- * The L2 subnav is domain-contextual (Domain/Ontology/Mapping/KG tabs), so
- * it stays hidden on Settings pages even when a domain is open in session —
- * Settings is a cross-domain area with its own left sidebar navigation.
+ * The L2 slot shows the domain workspace rail outside Settings, and the
+ * Settings return control when Settings has a domain open in session.
  */
 function updateDomainMenuVisibility(hasDomain) {
     const isSettingsPage = document.body.dataset.page === 'settings';
+    const showSettingsReturn = isSettingsPage && hasDomain;
+    const showWorkspaceRail = !isSettingsPage && hasDomain;
 
     // Show/hide L2 subnav
     const subnav = document.getElementById('obSubnav');
     if (subnav) {
-        subnav.classList.toggle('d-none', !hasDomain || isSettingsPage);
+        subnav.classList.toggle('d-none', !showSettingsReturn && !showWorkspaceRail);
         if (typeof window.OBBreadcrumb !== 'undefined' && typeof window.OBBreadcrumb._updateChromeHeight === 'function') {
             window.OBBreadcrumb._updateChromeHeight();
         }
     }
-
-    const domainNav = document.getElementById('domainL1NavItem');
-    const domainSep = document.getElementById('domainL1PathSep');
-    if (domainNav) domainNav.classList.toggle('d-none', !hasDomain);
-    if (domainSep) domainSep.classList.toggle('d-none', !hasDomain);
-
-    const domainL1 = document.getElementById('domainL1Link');
-    if (domainL1) {
-        if (hasDomain) {
-            domainL1.classList.remove('ob-nav-disabled');
-            domainL1.removeAttribute('aria-disabled');
-            domainL1.removeAttribute('tabindex');
-            domainL1.classList.add('active');
-        } else {
-            domainL1.classList.add('ob-nav-disabled');
-            domainL1.setAttribute('aria-disabled', 'true');
-            domainL1.setAttribute('tabindex', '-1');
-            domainL1.classList.remove('active');
-        }
+    const domainWorkspaceSubnavNav = document.getElementById('domainWorkspaceSubnavNav');
+    if (domainWorkspaceSubnavNav) {
+        domainWorkspaceSubnavNav.classList.toggle('d-none', !showWorkspaceRail);
     }
+    const settingsDomainReturnNav = document.getElementById('settingsDomainReturnNav');
+    if (settingsDomainReturnNav) {
+        settingsDomainReturnNav.classList.toggle('d-none', !showSettingsReturn);
+    }
+    document.querySelectorAll('[data-subnav-domain-chrome]').forEach((el) => {
+        el.classList.toggle('d-none', !showWorkspaceRail);
+    });
 }
 
 

@@ -618,8 +618,7 @@ def test_sidebar_is_a_framed_card_like_the_split_panel_panes():
 
 
 def test_sidebar_layout_centralizes_the_shared_outer_gutter():
-    """The shell owns the 0.5rem viewport gutter and content starts flush with
-    the sidebar top while retaining its horizontal inset.
+    """The shell owns asymmetric vertical gutters and a 0.5rem horizontal inset.
 
     Exact-selector parsing so a ``:has()`` page override cannot satisfy the
     base-layout contract.
@@ -630,7 +629,7 @@ def test_sidebar_layout_centralizes_the_shared_outer_gutter():
     content = _rule_blocks_for_exact_selector(css, ".sidebar-content")
 
     assert _any_block_has_declaration(layout, r"gap", r"0\.5rem")
-    assert _any_block_has_declaration(layout, r"padding", r"0\.5rem")
+    assert _any_block_has_declaration(layout, r"padding", r"0\.25rem\s+0\.5rem\s+0\.5rem")
     assert _any_block_has_declaration(layout, r"box-sizing", r"border-box")
     assert _any_block_has_declaration(sidebar, r"margin", r"0")
     assert _any_block_has_declaration(sidebar, r"height", r"100%")
@@ -647,7 +646,7 @@ def test_level_two_rail_and_content_share_the_same_vertical_gutter():
     assert _any_block_has_declaration(
         subnav,
         r"padding",
-        r"0\.5rem\s+0\s+0",
+        r"0\.25rem\s+0\s+0",
     )
 
 

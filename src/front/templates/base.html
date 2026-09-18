@@ -80,9 +80,6 @@
                     <li class="nav-item ob-nav-dot-sep" aria-hidden="true">·</li>
                     {% for menu in menu_config.menus %}
                     {% if not menu.navbar_hidden|default(false) %}
-                    {% if menu.id == 'domain' %}
-                    <li class="nav-item ob-nav-path-sep d-none" id="domainL1PathSep" aria-hidden="true">›</li>
-                    {% endif %}
                     {% if menu.navbar_modal|default(false) and menu.id == 'registry' %}
                     <li class="nav-item">
                         <a class="nav-link" href="#" id="registryModalToggle"
@@ -90,14 +87,7 @@
                             <i class="bi {{ menu.icon }}"></i>
                         </a>
                     </li>
-                    {% elif menu.id == 'domain' %}
-                    <li class="nav-item d-none" id="domainL1NavItem">
-                        {# Domain shown as a plain link in L1 — navigation is in the L2 subnav #}
-                        <a class="nav-link" href="{{ menu.route }}" id="domainL1Link">
-                            <i class="bi {{ menu.icon }}"></i> <span id="currentDomainName">{{ menu.label }}</span>
-                        </a>
-                    </li>
-                    {% else %}
+                    {% elif menu.id != 'domain' %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle{% if menu.requires_domain_saved %} nav-requires-domain{% endif %}" href="#" id="{{ menu.id }}Dropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi {{ menu.icon }}"></i> <span>{{ menu.label }}</span>
@@ -265,7 +255,24 @@
     <nav id="obSubnav" class="ob-subnav d-none" aria-label="Section navigation">
         <div class="container-fluid">
             <ul class="ob-subnav-nav">
-                <li class="ob-subnav-workspaces">
+                {% if domain_m.v %}
+                <li class="ob-subnav-item ob-subnav-context" data-subnav-domain-chrome>
+                    <a class="ob-subnav-context-trigger"
+                       href="{{ domain_m.v.route }}"
+                       id="domainContextTrigger"
+                       title="Open workspace map"
+                       aria-label="Open workspace map for Domain">
+                        <i class="bi {{ domain_m.v.icon }}"></i>
+                        <span class="ob-subnav-context-copy">
+                            <span id="currentDomainName"
+                                  class="ob-subnav-context-name">{{ domain_m.v.label }}</span>
+                            <span id="domainContextVersion"
+                                  class="ob-subnav-context-version"></span>
+                        </span>
+                    </a>
+                </li>
+                {% endif %}
+                <li class="ob-subnav-workspaces" id="domainWorkspaceSubnavNav" data-subnav-domain-chrome>
                     <ul class="ob-subnav-workspace-list">
                 {% if domain_m.v %}
                 <li class="ob-subnav-item dropdown">
@@ -273,6 +280,7 @@
                        data-bs-toggle="dropdown" aria-expanded="false"
                        data-subnav-route="{{ domain_m.v.route }}"
                        title="Domain">
+                        <span class="ob-subnav-ordinal" aria-hidden="true">1</span>
                         <i class="bi {{ domain_m.v.icon }}"></i>
                         <span class="ob-subnav-label">Domain</span>
                     </a>
@@ -300,6 +308,7 @@
                        data-bs-toggle="dropdown" aria-expanded="false"
                        data-subnav-route="{{ ontology_m.v.route }}"
                        title="{{ ontology_m.v.label }}">
+                        <span class="ob-subnav-ordinal" aria-hidden="true">2</span>
                         <i class="bi {{ ontology_m.v.icon }}"></i>
                         <span class="ob-subnav-label">{{ ontology_m.v.label }}</span>
                     </a>
@@ -326,6 +335,7 @@
                        data-bs-toggle="dropdown" aria-expanded="false"
                        data-subnav-route="{{ mapping_m.v.route }}"
                        title="{{ mapping_m.v.label }}">
+                        <span class="ob-subnav-ordinal" aria-hidden="true">3</span>
                         <i class="bi {{ mapping_m.v.icon }}"></i>
                         <span class="ob-subnav-label">{{ mapping_m.v.label }}</span>
                     </a>
@@ -352,6 +362,7 @@
                        data-bs-toggle="dropdown" aria-expanded="false"
                        data-subnav-route="{{ kg_m.v.route }}"
                        title="{{ kg_m.v.label }}">
+                        <span class="ob-subnav-ordinal" aria-hidden="true">4</span>
                         <i class="bi {{ kg_m.v.icon }}"></i>
                         <span class="ob-subnav-label">{{ kg_m.v.label }}</span>
                     </a>
@@ -373,29 +384,20 @@
                     </ul>
                 </li>
                 <!-- Flex spacer — always pushes breadcrumb + Save button to the right -->
-                <li class="ob-subnav-flex-spacer" aria-hidden="true"></li>
+                <li class="ob-subnav-flex-spacer" aria-hidden="true" data-subnav-domain-chrome></li>
 
                 <!-- Breadcrumb — inline between tabs and Save button -->
-                <li class="ob-subnav-item ob-subnav-breadcrumb-wrap d-none" id="obBreadcrumbWrap">
+                <li class="ob-subnav-item ob-subnav-breadcrumb-wrap d-none" id="obBreadcrumbWrap" data-subnav-domain-chrome>
                     <nav id="obBreadcrumb" aria-label="breadcrumb">
                         <ol class="breadcrumb mb-0" id="obBreadcrumbList"></ol>
                     </nav>
                 </li>
 
-                <li class="ob-subnav-item">
+                <li class="ob-subnav-item" data-subnav-domain-chrome>
                     {% set save_action = namespace(v=none) %}
                     {% set switch_action = namespace(v=none) %}
                     {% set close_action = namespace(v=none) %}
                     {% if domain_m.v %}{% for a in domain_m.v.navbar_actions %}{% if a.action == 'domainSave' %}{% set save_action.v = a %}{% elif a.action == 'domainSwitch' %}{% set switch_action.v = a %}{% elif a.action == 'domainClose' %}{% set close_action.v = a %}{% endif %}{% endfor %}{% endif %}
-                    {% if save_action.v %}
-                    <a class="ob-subnav-save-btn btn-requires-domain" href="#"
-                       data-navbar-action="{{ save_action.v.action }}"
-                       {% if save_action.v.element_id %}id="{{ save_action.v.element_id }}"{% endif %}
-                       title="Save domain to Unity Catalog">
-                        <i class="bi {{ save_action.v.icon }}"></i>
-                        <span class="ob-subnav-label">{{ save_action.v.label }}</span>
-                    </a>
-                    {% endif %}
                     {% if switch_action.v %}
                     <a class="ob-subnav-switch-btn btn-requires-domain" href="#"
                        data-navbar-action="{{ switch_action.v.action }}"
@@ -414,6 +416,26 @@
                         <span class="ob-subnav-label">{{ close_action.v.label }}</span>
                     </a>
                     {% endif %}
+                    {% if save_action.v %}
+                    <a class="ob-subnav-save-btn btn-requires-domain" href="#"
+                       data-navbar-action="{{ save_action.v.action }}"
+                       {% if save_action.v.element_id %}id="{{ save_action.v.element_id }}"{% endif %}
+                       title="Save domain to Unity Catalog">
+                        <i class="bi {{ save_action.v.icon }}"></i>
+                        <span class="ob-subnav-label">{{ save_action.v.label }}</span>
+                    </a>
+                    {% endif %}
+                </li>
+                <li id="settingsDomainReturnNav" class="ob-subnav-item d-none">
+                    <a id="settingsDomainReturnLink"
+                       class="ob-subnav-settings-return-link ob-settings-domain-return-link"
+                       href="/domain/"
+                       title="Back to domain"
+                       aria-label="Back to domain">
+                        <i class="bi bi-arrow-left" aria-hidden="true"></i>
+                        <i class="bi bi-box" aria-hidden="true"></i>
+                        <span>Back to domain</span>
+                    </a>
                 </li>
             </ul>
         </div>

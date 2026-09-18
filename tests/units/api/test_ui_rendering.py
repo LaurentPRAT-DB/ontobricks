@@ -133,7 +133,7 @@ class TestBaseTemplate:
         assert any("review-modals.js" in src for src in _script_srcs(html))
         assert "review-modals.css" in html
 
-    def test_navbar_has_domain_l1_link(self, client):
+    def test_navbar_uses_l2_domain_context_trigger(self, client):
         """Domain L1 item is replaced by the level-2 context trigger contract."""
         html = _html(client, "/")
         tags = _tags(html)
@@ -176,6 +176,18 @@ class TestBaseTemplate:
         kg_toggles = [t for t in tags if t[0] == "a" and t[1].get("data-subnav-route") == "/dtwin/"]
         assert len(kg_toggles) > 0
         assert _find(tags, id_="subnavKgDropdown") is not None
+
+    def test_subnav_has_mutually_exclusive_workspace_and_settings_slots(self, client):
+        html = _html(client, "/")
+        tags = _tags(html)
+        assert _find(tags, tag="nav", id_="obSubnav") is not None
+        assert _find(tags, id_="domainWorkspaceSubnavNav") is not None
+        assert _find(tags, id_="settingsDomainReturnNav") is not None
+        settings_return_link = _find(tags, tag="a", id_="settingsDomainReturnLink")
+        assert settings_return_link is not None
+        assert settings_return_link.get("href") == "/domain/"
+        assert settings_return_link.get("title") == "Back to domain"
+        assert settings_return_link.get("aria-label") == "Back to domain"
 
     def test_subnav_has_ontology_and_mapping_dropdowns(self, client):
         """Ontology and Mapping are dropdowns in the L2 subnav."""
@@ -361,6 +373,32 @@ class TestSettingsPage:
         PUBLISHED domain is loaded (issue #78)."""
         html = _html(client, "/settings")
         assert 'data-page="settings"' in html
+
+    def test_settings_subnav_has_only_return_link_markup(self, client):
+        html = _html(client, "/settings")
+        tags = _tags(html)
+        settings_nav = _find(tags, id_="settingsDomainReturnNav")
+        assert settings_nav is not None
+        workspace_nav = _find(tags, id_="domainWorkspaceSubnavNav")
+        assert workspace_nav is not None
+        settings_link = _find(tags, tag="a", id_="settingsDomainReturnLink")
+        assert settings_link is not None
+        assert settings_link.get("href") == "/domain/"
+        assert settings_link.get("title") == "Back to domain"
+        assert settings_link.get("aria-label") == "Back to domain"
+        settings_inner = re.search(
+            r'<a\b[^>]*id="settingsDomainReturnLink"[^>]*>(.*?)</a>',
+            html,
+            flags=re.DOTALL,
+        )
+        assert settings_inner is not None
+        assert "Back to domain" in settings_inner.group(1)
+        assert "Back to domain management" not in settings_inner.group(1)
+        assert re.search(
+            r'<a\b[^>]*id="settingsDomainReturnLink"[^>]*>.*\bbi-arrow-left\b.*</a>',
+            html,
+            flags=re.DOTALL,
+        )
 
 
 # =====================================================

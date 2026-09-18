@@ -107,10 +107,18 @@ def test_navbar_opens_workspace_map_from_domain_badge():
     assert "function bindWorkspaceMapTrigger(" in js
     assert "bindWorkspaceMapTrigger();" in js
     open_block = js[js.index("function openWorkspaceMap(") :][:800]
-    bind_block = js[js.index("function bindWorkspaceMapTrigger(") :][:600]
+    bind_block = js[js.index("function bindWorkspaceMapTrigger(") :][:900]
     assert "event.preventDefault()" in open_block
     assert "Modal.getOrCreateInstance" in open_block
     assert "domainContextTrigger" in bind_block
+    assert "settingsDomainReturnLink" in bind_block
+
+
+def test_settings_return_link_reuses_workspace_map_modal_handler():
+    js = _read(NAVBAR_JS)
+    assert "const triggerIds = ['domainContextTrigger', 'settingsDomainReturnLink'];" in js
+    assert "link.addEventListener('click', openWorkspaceMap);" in js
+    assert "opens domain navigation via the workspace map" in js
 
 
 def test_navbar_highlights_current_workspace_map_item():

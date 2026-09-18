@@ -117,3 +117,133 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
 
 Tests: uv run --frozen pytest -q -m "not scenario" → 6270 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.93s
+
+## Redesign the domain navbar context rail
+
+Context: Task 4 required aligning the canonical navbar contract and public
+documentation with the shipped L1/L2 context-rail implementation, then running
+the full automated verification workflow without claiming manual browser checks.
+
+Changes:
+
+1. .cursor/11-frontend-design.mdc
+   Updated the canonical L1/L2 navbar contract to document the L2 domain context
+   launcher, remove obsolete `#domainL1Link` references, and align action order
+   with the current Versions → Close → Save rendering (`bi-123`).
+2. docs/architecture.md
+   Added the architecture-level navbar context rail contract (identity launcher,
+   workspace-map behavior, active/inactive workspace semantics, and mobile icon
+   state).
+3. docs/user-guide.md
+   Updated end-user navigation guidance for the L2 identity target, workspace
+   map launch behavior, active workspace static segment behavior, and responsive
+   icon-only rail state, including the Versions (`bi-123`) action wording.
+4. src/front/static/global/css/components.css
+   Corrected the workspace-map documentation comment to reference
+   `#domainContextTrigger`.
+5. src/front/templates/partials/layout/_workspace_map_modal.html
+   Corrected the workspace-map template comment to reference
+   `#domainContextTrigger`.
+6. src/front/static/global/css/main.css
+   Finalized context-rail styling: removed stale L1-only dead CSS, preserved
+   segmented workspace styling and active ordinal behavior, and documented
+   constrained/mobile behavior (breadcrumb collapse, icon-only actions/targets
+   below breakpoints, no horizontal overflow, dropdown escape preserved).
+7. tests/units/front/test_settings_subnav_hidden.py
+   Replaced the stale L1 Domain expectation with a contract asserting
+   `updateDomainMenuVisibility` no longer references legacy L1 selectors
+   (`domainNav`, `domainL1NavItem`, `domainL1Link`).
+8. src/front/templates/base.html
+   Confirmed the L2 context trigger + segmented rail structure and preserved
+   action ordering with the Versions action before Close and Save.
+9. src/front/static/global/js/navbar.js
+   Updated workspace-map binding and L2 visibility comments to match the
+   shipped L2 domain identity/context trigger contract.
+10. tests/units/front/test_segmented_subnav_contract.py
+    Kept the segmented subnav contract aligned with L2 context trigger
+    structure, workspace ordering, and constrained/mobile behavior gates.
+11. tests/units/front/test_workspace_map_modal.py
+    Kept workspace-map trigger/open/highlight contracts aligned with
+    `#domainContextTrigger` and modal launch behavior.
+12. tests/units/api/test_ui_rendering.py
+    Renamed the navbar contract test to reflect the L2 context trigger
+    contract while preserving assertions.
+13. docs/superpowers/specs/2026-09-18-navbar-context-focus-rail-design.md
+    Corrected feature wording to the shipped Versions label and `bi-123` icon.
+14. docs/superpowers/plans/2026-09-18-navbar-context-focus-rail.md
+    Corrected plan wording to the shipped Versions label and right-side action
+    order.
+15. Follow-up refinement (L2 context badge)
+    Locked the L2 context trigger to `200px`, matched its fixed rail height
+    with `.ob-subnav-workspace-list`, moved the context copy to a two-row grid
+    (status row + ellipsized name row) with a right-side raw numeric version
+    column spanning both rows, scoped the local status badge `ms-2` removal in
+    `.ob-subnav-context-copy`, aligned the whole trigger to selected-state
+    styling (`--db-primary-light` surface with primary-darker text/border),
+    emphasized that version cell with
+    `--db-primary-darker` + `--db-on-primary` and larger bold numerals, added a
+    small explicit row gap between status and name without increasing shared
+    rail height, set the shared context/workspace control height to `3.5rem`,
+    tightened shell vertical rhythm to 4px above/below the L2 rail
+    (`.ob-subnav-nav` top padding `0.25rem`; desktop `.sidebar-layout` padding
+    `0.25rem 0.5rem 0.5rem`), and fixed mobile icon-only context behavior by
+    resetting the icon to normal flow and using explicit icon-control trigger
+    sizing.
+16. Settings-page return-to-domain behavior
+    Added a mutually exclusive Settings presentation in the single `#obSubnav`
+    slot: with a loaded domain, show only `#settingsDomainReturnLink` ("Back to
+    domain") and hide the regular domain rail (`#domainWorkspaceSubnavNav`),
+    breadcrumb, and actions; with no loaded domain, keep L2 hidden. The return
+    link reuses `openWorkspaceMap()` and falls back to `/domain/` without JS.
+17. Geometry follow-up hardening and contract cleanup
+    Consolidated `.ob-subnav-context-trigger` selected-state styling to a
+    single declaration source while preserving the shared
+    `.ob-subnav-context-trigger, .ob-subnav-workspace-list` height/box geometry
+    source; removed redundant mobile physical padding declarations in favor of
+    `padding-inline`; updated contracts to assert non-redundant logical mobile
+    padding and shared-rule intent; aligned L2 action-order comments to
+    Versions → Close → Save; and synchronized mobile spec wording to icon-only
+    selected-color context behavior with hidden status/name/version details.
+18. Settings return-link width parity refinement
+    Locked `#settingsDomainReturnLink` / `.ob-settings-domain-return-link` to an
+    exact desktop/tablet `200px` outer width (`width/min-width/max-width`) to
+    match the expanded sidebar and shared left gutter alignment, centered its
+    icon+label composition within that width, and added a mobile width reset
+    (`width: auto`, `min-width: 0`, `max-width: none`) to prevent viewport
+    overflow.
+19. Settings first-paint and compact rail refinement
+    Prevented `breadcrumb.js` from revealing the shared breadcrumb on Settings
+    before asynchronous navbar state resolves, and reduced the shared domain
+    context/workspace rail height from `3.5rem` to `3rem` while preserving the
+    4px gaps above and below the L2 controls.
+20. Near-full-height workspace target surfaces
+    Stretched direct `.ob-subnav-workspace-list > .ob-subnav-item` and their
+    `.ob-subnav-link` targets with `height: 100%` so hover and selected
+    backgrounds fill the available inner rail height (~40px) while preserving
+    the outer `3rem` rail and `0.2rem` inset. Added a static contract test and
+    synchronized the canonical frontend design rule. Browser verification
+    measured all four desktop/mobile targets at `39.625px` inside the `48px`
+    rail with equal insets, healthy dropdown/focus behavior, and no overflow.
+
+Modified files:
+- .cursor/11-frontend-design.mdc
+- docs/architecture.md
+- docs/user-guide.md
+- docs/superpowers/specs/2026-09-18-navbar-context-focus-rail-design.md
+- docs/superpowers/plans/2026-09-18-navbar-context-focus-rail.md
+- docs/superpowers/plans/2026-09-18-taller-workspace-state-surfaces.md
+- src/front/templates/base.html
+- src/front/static/global/js/navbar.js
+- src/front/static/global/js/breadcrumb.js
+- src/front/static/global/css/components.css
+- src/front/static/global/css/main.css
+- src/front/static/global/css/sidebar-layout.css
+- src/front/templates/partials/layout/_workspace_map_modal.html
+- tests/units/front/test_clarity_design_contract.py
+- tests/units/front/test_settings_subnav_hidden.py
+- tests/units/front/test_segmented_subnav_contract.py
+- tests/units/front/test_workspace_map_modal.py
+- tests/units/api/test_ui_rendering.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6280 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.78s

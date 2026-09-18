@@ -574,6 +574,29 @@ The UI uses a consistent **sidebar layout** across all main pages:
 | **Core JS** | `ontology-core.js`, `mapping-core.js` | Shared state and functions |
 | **OntoViz** | `ontoviz.js`, `ontoviz.css` | Visual ontology designer |
 
+### Navbar context + focus rail
+
+- **L1 (global utilities):** icon-only Registry launcher plus warehouse status,
+  task tracker, notification center, help, and user menu.
+- **L2 (domain context rail):** domain identity target
+  (`#domainContextTrigger`), the four-workspace segmented rail (Domain,
+  Ontology, Mapping, Knowledge Graph), inline breadcrumb, and
+  Versions -> Close -> Save actions.
+- **Settings override in same L2 slot:** when `body[data-page="settings"]`
+  and a domain is loaded, `#obSubnav` swaps to a single return control
+  (`#settingsDomainReturnLink`) under `#settingsDomainReturnNav`; the regular
+  rail (`#domainWorkspaceSubnavNav`), domain identity, breadcrumb, and actions
+  are hidden.
+- **Workspace map:** clicking `#domainContextTrigger` opens
+  `#workspaceMapModal` (menu-driven four-column map). The same handler is
+  bound to `#settingsDomainReturnLink`; its fallback `href` is `/domain/` when
+  JavaScript is unavailable.
+- **Active workspace:** `navbar.js` marks the current workspace as a static
+  `aria-current="page"` segment and removes its dropdown wiring; inactive
+  segments keep their Bootstrap dropdown menus.
+- **Responsive behavior:** below `768px`, labels are visually hidden and the
+  rail uses titled icon targets while preserving DOM labels for accessibility.
+
 ### Page Structure
 
 Each main page (Ontology, Mapping, Knowledge Graph) follows this pattern:

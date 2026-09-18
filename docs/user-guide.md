@@ -71,6 +71,22 @@ OntoBricks follows a 3-step workflow:
 1. Design Ontology → 2. Assign Data Sources → 3. Knowledge Graph (Sync & Explore)
 ```
 
+### Settings page navigation behavior
+
+The level-two bar below the top navbar (`#obSubnav`) uses one shared slot with
+mutually exclusive behavior:
+
+- On **Settings** with a loaded domain, it shows only **Back to domain**
+  (`#settingsDomainReturnLink`).
+- On **Settings** with no loaded domain, the full level-two bar remains hidden.
+- On non-Settings pages with a loaded domain, it shows the normal domain
+  context + four-workspace rail.
+- On non-Settings pages with no loaded domain, it remains hidden.
+
+Clicking **Back to domain** opens the same Workspace Map modal used by the
+domain context target. If JavaScript is unavailable, it safely falls back to
+`/domain/`.
+
 ---
 
 ## Step 1: Design Ontology
@@ -1208,13 +1224,13 @@ To keep two people from silently overwriting each other, a **DRAFT** version can
   Switching to another **version of the same domain** releases the old version's lock
   **after** the new version loads.
 
-**Closing a domain** — the top sub-navigation shows three buttons: **Save** (persist the
-domain to the registry), **Switch**, and **Close**. Clicking **Close** asks whether to *save
+**Closing a domain** — the top sub-navigation shows three buttons: **Versions** (switch or reload),
+**Close**, and **Save** (persist the domain to the registry). Clicking **Close** asks whether to *save
 before closing* (**Save & Close** / **Close without saving** / **Cancel**), then releases the
 edit lock and returns you to the Home page. Once you close, the next person can open the
 domain in edit mode.
 
-**Switching version** — the **Versions** button (between **Save** and **Close**) opens a popup
+**Switching version** — the **Versions** button (left of **Close** and **Save**, icon `bi-123`) opens a popup
 listing every version of the currently open domain, with the current one flagged. Pick the
 current version to **reload** it from the Registry (discarding in-session edits) or another
 version to **switch** to it. On a **DRAFT** version, a *"Save my changes before switching"*
@@ -1745,7 +1761,11 @@ results across all sizes.
 ### Navigation
 
 - **Deep-linked sections**: Sidebar section changes update the URL (`?section=<id>`), so you can bookmark or share a specific section. Browser Back/Forward navigates between previously visited sections.
-- **Breadcrumb bar**: A breadcrumb trail below the navbar shows your current position (e.g. Registry > Domain > Ontology > Entities) and updates as you switch sidebar sections.
+- **Domain identity target**: The contextual identity launcher (`Domain` name + version badge) lives in the L2 rail. Clicking it opens the workspace map.
+- **Workspace map launcher**: `Open workspace map` opens a four-column menu directory for Domain, Ontology, Mapping, and Knowledge Graph actions. It launches sections/routes without forcing a jump to `/domain/`.
+- **Workspace active state**: The current workspace becomes a static highlighted segment (`aria-current="page"`); only inactive workspace targets keep dropdown menus.
+- **Inline breadcrumb**: The breadcrumb trail is rendered inside the L2 rail (between workspace targets and actions) and appears only when there is more than one crumb.
+- **Mobile icon state**: On narrow screens, workspace and action labels are visually hidden and controls remain as titled icons with keyboard focus support.
 
 ---
 
