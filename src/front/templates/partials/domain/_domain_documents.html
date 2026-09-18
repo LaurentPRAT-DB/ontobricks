@@ -35,6 +35,10 @@
             Upload files to the domain volume's documents directory.
             The domain must be saved to Unity Catalog first.
         </p>
+        <div class="alert alert-info d-flex align-items-start py-2" role="note">
+            <i class="bi bi-info-circle me-2" aria-hidden="true"></i>
+            <span class="small">Files are parsed once after upload. Generate and Mapping use the same ready document text.</span>
+        </div>
 
         <!-- Drop Zone -->
         <div id="docDropZone" class="doc-drop-zone">
@@ -72,7 +76,7 @@
         </button>
     </div>
     <div class="card-body">
-        <div id="docFileList">
+        <div id="docFileList" aria-live="polite">
             <div class="text-muted small fst-italic">
                 <i class="bi bi-info-circle"></i> Save the domain to Unity Catalog to enable document management.
             </div>

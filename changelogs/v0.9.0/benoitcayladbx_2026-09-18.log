@@ -490,3 +490,33 @@ Modified files:
 Tests:
 - `uv run --frozen pytest -q tests/units/agents -m "not scenario"` → 180 passed, 1 warning in 1.76s.
 - `uv run --frozen pytest -q tests/units/mapping -m "not scenario"` → 179 passed, 1 warning in 1.21s.
+
+## Show the document parse lifecycle in the UI
+
+Context: Users could not tell whether an uploaded document was ready for
+Generate and Mapping, and failed parses had no recovery action.
+
+Changes:
+
+1. src/front/static/domain/js/domain-documents.js
+   Render accessible status badges, poll pending files with one timer, expose
+   retry for failed binaries, and support keyboard preview activation.
+2. src/front/templates/partials/domain/_domain_documents.html
+   Explain parse-once sharing and mark status updates as a polite live region.
+3. src/front/static/ontology/js/ontology-wizard.js
+   Select only ready documents, disable pending/failed evidence, and disclose
+   unavailable selected files before generation.
+4. tests/units/front/test_domain_documents_ui.py
+   Lock status, polling, retry, accessibility, and Generate filtering contracts.
+
+Modified files:
+- src/front/static/domain/js/domain-documents.js
+- src/front/templates/partials/domain/_domain_documents.html
+- src/front/static/ontology/js/ontology-wizard.js
+- tests/units/front/test_domain_documents_ui.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests:
+- `uv run --frozen pytest -q tests/units/front/test_domain_documents_ui.py` → 7 passed, 1 warning in 0.12s.
+- `uv run --frozen pytest -q tests/units/front -m "not scenario"` → 1175 passed, 1 warning in 8.72s.
+- Browser checks at 1440×900 and 375×667 → badges, retry, 2-second single polling, stop-on-ready, keyboard preview, and no document-page horizontal overflow verified.

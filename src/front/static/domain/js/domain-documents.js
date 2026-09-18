@@ -4,6 +4,7 @@
 
 const DocManager = {
     queuedFiles: [],
+    parsePollTimer: null,
 
     init() {
         const dropZone = document.getElementById('docDropZone');
@@ -121,7 +122,13 @@ const DocManager = {
             const result = await resp.json();
 
             if (result.success) {
-                showNotification(result.message, 'success');
+                const hasPending = (result.results || []).some(
+                    file => file.parse_status === 'pending'
+                );
+                showNotification(
+                    hasPending ? 'Upload complete; document parsing started' : result.message,
+                    'success'
+                );
                 this.clearQueue();
                 this.refreshList();
             } else {
@@ -149,6 +156,7 @@ const DocManager = {
             }
 
             const files = (result.files || []).filter(f => !f.is_directory);
+            this.scheduleParseRefresh(files);
 
             if (files.length === 0) {
                 container.innerHTML = '<div class="text-muted small fst-italic"><i class="bi bi-folder2-open"></i> No documents uploaded yet.</div>';
@@ -157,30 +165,75 @@ const DocManager = {
 
             container.innerHTML = `
                 <div class="list-group list-group-flush">
-                    ${files.map(f => `
+                    ${files.map(f => {
+                        const encodedName = encodeURIComponent(f.name);
+                        const safeName = escapeDocHtml(f.name);
+                        const retryButton = f.parse_status === 'failed' && f.parser !== 'unsupported'
+                            ? `<button class="btn btn-sm btn-outline-secondary py-0 px-2"
+                                      onclick="DocManager.retryParse(decodeURIComponent('${encodedName}'))"
+                                      title="Retry parsing">
+                                   <i class="bi bi-arrow-repeat me-1"></i>Retry
+                               </button>`
+                            : '';
+                        return `
                         <div class="list-group-item d-flex align-items-center justify-content-between px-2 py-2">
                             <span class="small text-truncate me-2 doc-preview-link" role="button"
-                                  title="Click to preview ${f.name}"
-                                  onclick="DocumentPreview.open('${f.name.replace(/'/g, "\\'")}')">
-                                <i class="bi ${fileIcon(f.name)} me-1"></i>${f.name}
+                                  tabindex="0"
+                                  title="Click to preview ${safeName}"
+                                  onclick="DocumentPreview.open(decodeURIComponent('${encodedName}'))"
+                                  onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); DocumentPreview.open(decodeURIComponent('${encodedName}')); }">
+                                <i class="bi ${fileIcon(f.name)} me-1"></i>${safeName}
                                 ${f.size != null ? `<span class="text-muted">(${formatSize(f.size)})</span>` : ''}
                             </span>
-                            <div class="d-flex gap-1">
+                            <div class="d-flex align-items-center gap-1">
+                                ${parseStatusBadge(f)}
+                                ${retryButton}
                                 <button class="btn btn-sm btn-outline-primary py-0 px-1"
-                                        onclick="DocumentPreview.open('${f.name.replace(/'/g, "\\'")}')" title="Preview">
+                                        onclick="DocumentPreview.open(decodeURIComponent('${encodedName}'))" title="Preview">
                                     <i class="bi bi-eye"></i>
                                 </button>
                                 <button class="btn btn-sm btn-outline-secondary py-0 px-1"
-                                        onclick="DocManager.deleteFile('${f.name}')" title="Delete">
+                                        onclick="DocManager.deleteFile(decodeURIComponent('${encodedName}'))" title="Delete">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </div>
                         </div>
-                    `).join('')}
+                    `;}).join('')}
                 </div>
             `;
         } catch (err) {
+            this.scheduleParseRefresh([]);
             container.innerHTML = `<div class="text-muted small"><i class="bi bi-exclamation-triangle text-warning"></i> ${err.message}</div>`;
+        }
+    },
+
+    scheduleParseRefresh(files) {
+        if (this.parsePollTimer) {
+            clearTimeout(this.parsePollTimer);
+            this.parsePollTimer = null;
+        }
+        if (files.some(file => file.parse_status === 'pending')) {
+            this.parsePollTimer = setTimeout(() => this.refreshList(), 2000);
+        }
+    },
+
+    async retryParse(filename) {
+        if (window.isActiveVersion === false) return;
+        try {
+            const resp = await fetch('/domain/documents/retry-parse', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename }),
+                credentials: 'same-origin',
+            });
+            const result = await resp.json();
+            if (!resp.ok || !result.success) {
+                throw new Error(result.message || result.detail || 'Retry failed');
+            }
+            showNotification(result.message || 'Document parsing restarted', 'success');
+            this.refreshList();
+        } catch (err) {
+            showNotification('Retry failed: ' + err.message, 'error');
         }
     },
 
@@ -209,6 +262,28 @@ const DocManager = {
         }
     },
 };
+
+function escapeDocHtml(value) {
+    return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+}
+
+function parseStatusBadge(file) {
+    const states = {
+        pending: ['text-bg-warning', 'bi-hourglass-split', 'Parsing'],
+        ready: ['text-bg-success', 'bi-check-circle', 'Ready'],
+        failed: ['text-bg-danger', 'bi-exclamation-triangle', 'Parse failed'],
+    };
+    const [badgeClass, icon, label] = states[file.parse_status] || states.failed;
+    const detail = file.parse_error ? ` title="${escapeDocHtml(file.parse_error)}"` : '';
+    return `<span class="badge ${badgeClass}"${detail}>
+        <i class="bi ${icon} me-1"></i>${label}
+    </span>`;
+}
 
 function fileIcon(name) {
     const ext = (name.split('.').pop() || '').toLowerCase();

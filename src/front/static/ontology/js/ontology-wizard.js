@@ -638,14 +638,28 @@ function loadWizardTemplate(templateName) {
 async function generateOntologyFromWizard() {
     const selectedMetadata = getSelectedMetadata();
     const guidelines = document.getElementById('wizardGuidelines').value.trim();
-    const documents = getSelectedDocumentNames();
+    const selectedDocumentFiles = getSelectedDocumentFiles();
+    const unavailableDocuments = selectedDocumentFiles.filter(
+        file => file.parse_status !== 'ready'
+    );
+    const documents = selectedDocumentFiles
+        .filter(file => file.parse_status === 'ready')
+        .map(file => file.name);
 
     const hasMetadata = selectedMetadata && selectedMetadata.tables && selectedMetadata.tables.length > 0;
     const hasGuidelines = guidelines.length > 0;
     const hasDocs = documents.length > 0;
 
+    if (unavailableDocuments.length > 0) {
+        const names = unavailableDocuments.map(file => file.name).join(', ');
+        showNotification(`Document parsing is not ready for: ${names}`, 'warning');
+    }
+
     if (!hasMetadata && !hasGuidelines && !hasDocs) {
-        showNotification('Please provide at least data sources, documents, or guidelines', 'warning');
+        const message = unavailableDocuments.length > 0
+            ? 'Document parsing is not ready. Wait for a ready document or provide another input.'
+            : 'Please provide at least data sources, documents, or guidelines';
+        showNotification(message, 'warning');
         return;
     }
 
@@ -848,13 +862,18 @@ async function loadWizardDocuments() {
         if (result.success && result.files && result.files.length > 0) {
             wizardDocsCache = result.files;
             wizardSelectedDocs.clear();
-            // Select all by default
-            wizardDocsCache.forEach(f => wizardSelectedDocs.add(f.name));
+            // Select ready documents by default; unavailable files cannot be evidence.
+            wizardDocsCache
+                .filter(file => file.parse_status === 'ready')
+                .forEach(file => wizardSelectedDocs.add(file.name));
+            const readyCount = wizardDocsCache.filter(
+                file => file.parse_status === 'ready'
+            ).length;
 
             statusEl.innerHTML = `
                 <div class="d-flex align-items-center">
                     <i class="bi bi-check-circle-fill text-success me-2 fs-5"></i>
-                    <div><strong>${wizardDocsCache.length} document${wizardDocsCache.length > 1 ? 's' : ''}</strong> available</div>
+                    <div><strong>${readyCount} of ${wizardDocsCache.length} documents</strong> ready</div>
                 </div>`;
             renderWizardDocsList();
             previewEl.style.display = '';
@@ -893,17 +912,27 @@ function renderWizardDocsList() {
         const ext = (file.name.split('.').pop() || '').toLowerCase();
         const iconCls = iconMap[ext] || 'bi-file-earmark text-muted';
         const checked = wizardSelectedDocs.has(file.name) ? 'checked' : '';
+        const isReady = file.parse_status === 'ready';
+        const disabled = isReady ? '' : 'disabled';
+        const unavailableIcon = file.parse_status === 'pending' ? 'bi-hourglass-split' : 'bi-exclamation-triangle';
+        const statusLabel = isReady
+            ? '<span class="badge text-bg-success ms-2"><i class="bi bi-check-circle me-1"></i>Ready</span>'
+            : `<span class="badge ${file.parse_status === 'pending' ? 'text-bg-warning' : 'text-bg-danger'} ms-2">
+                   <i class="bi ${unavailableIcon} me-1"></i>${file.parse_status === 'pending' ? 'Parsing' : 'Parse failed'}
+               </span>`;
         const size = file.size != null ? formatDocSize(file.size) : '';
         const docNameAttr = encodeURIComponent(file.name);
         html += `
             <div class="list-group-item list-group-item-action d-flex align-items-center py-2">
                 <input type="checkbox" class="form-check-input me-3 wizard-doc-checkbox"
-                       value="${file.name}" ${checked}>
+                       value="${file.name}" ${checked} ${disabled}>
                 <i class="bi ${iconCls} me-2"></i>
                 <span class="text-truncate flex-grow-1">${file.name}</span>
                 ${size ? `<span class="small text-muted ms-2">${size}</span>` : ''}
+                ${statusLabel}
                 <button class="btn btn-sm btn-outline-primary py-0 px-1 ms-2" type="button"
-                        data-action="wizard-doc-preview" data-doc-name="${docNameAttr}" title="Preview">
+                        data-action="wizard-doc-preview" data-doc-name="${docNameAttr}" title="Preview"
+                        ${disabled}>
                     <i class="bi bi-eye"></i>
                 </button>
             </div>`;
@@ -925,10 +954,12 @@ function updateWizardDocSelection(checkbox) {
 function selectAllWizardDocs(selectAll) {
     wizardSelectedDocs.clear();
     if (selectAll) {
-        wizardDocsCache.forEach(f => wizardSelectedDocs.add(f.name));
+        wizardDocsCache
+            .filter(file => file.parse_status === 'ready')
+            .forEach(file => wizardSelectedDocs.add(file.name));
     }
     document.querySelectorAll('.wizard-doc-checkbox').forEach(cb => {
-        cb.checked = selectAll;
+        cb.checked = selectAll && !cb.disabled;
     });
     updateWizardDocsCount();
 }
@@ -942,7 +973,13 @@ function updateWizardDocsCount() {
 }
 
 function getSelectedDocumentNames() {
-    return Array.from(wizardSelectedDocs);
+    return getSelectedDocumentFiles()
+        .filter(file => file.parse_status === 'ready')
+        .map(file => file.name);
+}
+
+function getSelectedDocumentFiles() {
+    return wizardDocsCache.filter(file => wizardSelectedDocs.has(file.name));
 }
 
 function formatDocSize(bytes) {
