@@ -31,3 +31,22 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
 
 Tests: uv run --frozen pytest -q -m "not scenario" → 6268 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.63s
+
+## Keep Superpowers drafts local
+
+Context: `docs/superpowers/` holds agent brainstorming specs and implementation
+plans. Those are working drafts, not product documentation, and should not ship
+on GitHub.
+
+Changes:
+
+1. .gitignore
+   Ignore `/docs/superpowers/` like other local Superpowers session files.
+2. docs/superpowers/
+   Stop tracking the folder; files remain on disk for local agent workflows.
+
+Modified files:
+- .gitignore
+- docs/superpowers/ (removed from git index)
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6268 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.93s

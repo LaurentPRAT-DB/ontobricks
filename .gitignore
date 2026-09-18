@@ -104,6 +104,9 @@ syncs/
 
 # Superpowers brainstorming visual-companion session files
 .superpowers/
+
+# Superpowers agent plans/specs — local working drafts, not product docs
+/docs/superpowers/
 .worktrees/
 
 # .planning/ tracks SPECs, eval datasets, and ROADMAP (AI-feature PR gate).
