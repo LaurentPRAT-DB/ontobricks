@@ -318,11 +318,19 @@ class DocumentParseService:
             return manifest
 
         try:
-            parsed = (
-                self._extractor.extract(source_path)
-                if self._extractor is not None
-                else None
-            )
+            try:
+                parsed = (
+                    self._extractor.extract(source_path)
+                    if self._extractor is not None
+                    else None
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Document extraction raised %s for %s",
+                    type(exc).__name__,
+                    filename,
+                )
+                parsed = None
             if not parsed:
                 failed = self._manifest(
                     filename=filename,

@@ -13,7 +13,12 @@ from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from shared.config.settings import get_settings, Settings
-from back.core.databricks import is_databricks_app
+from back.core.databricks import (
+    DocumentExtractor,
+    DocumentParseService,
+    ParseStatus,
+    is_databricks_app,
+)
 from back.core.errors import (
     InfrastructureError,
     NotFoundError,
@@ -26,6 +31,7 @@ from back.core.helpers import (
     resolve_warehouse_id,
 )
 from back.core.logging import get_logger
+from back.core.task_manager import get_task_manager
 from back.objects.session import (
     SessionManager,
     get_domain,
@@ -906,6 +912,68 @@ async def update_metadata(
 # ===========================================
 
 
+def _make_document_parse_service(
+    domain: Any,
+    settings: Settings,
+    volume_service: Any = None,
+) -> DocumentParseService:
+    """Build the parsed-corpus service for one request or worker."""
+    volume = volume_service or make_volume_file_service(domain, settings)
+    client = get_databricks_client(domain, settings)
+    extractor = (
+        DocumentExtractor(client=client) if client is not None else DocumentExtractor()
+    )
+    return DocumentParseService(volume, extractor)
+
+
+def _run_document_parse_task(
+    task: Any,
+    service: DocumentParseService,
+    base_path: str,
+    filename: str,
+) -> None:
+    """Background worker that keeps TaskManager and the manifest aligned."""
+    manager = get_task_manager()
+    manager.start_task(task.id, message=f"Parsing {filename}")
+    try:
+        manifest = service.parse_pending(base_path, filename)
+        if manifest.status is ParseStatus.READY:
+            manager.complete_task(
+                task.id,
+                result=manifest.to_dict(),
+                message=f"Parsed {filename}",
+            )
+        else:
+            manager.fail_task(
+                task.id, manifest.error or "Document parsing failed"
+            )
+    except Exception as exc:
+        logger.exception("Document parse worker failed for %s: %s", filename, exc)
+        manager.fail_task(task.id, "Document parsing failed")
+
+
+def _schedule_document_parse(
+    service: DocumentParseService,
+    base_path: str,
+    filename: str,
+) -> str:
+    task = get_task_manager().run_background_task(
+        name=f"Parse {filename}",
+        task_type="document_parse",
+        target=_run_document_parse_task,
+        service=service,
+        base_path=base_path,
+        filename=filename,
+        steps=[
+            {
+                "name": "Parse document",
+                "description": f"Extracting text from {filename}",
+            }
+        ],
+    )
+    return task.id
+
+
 @router.get("/documents/list")
 async def list_documents(
     session_mgr: SessionManager = Depends(get_session_manager),
@@ -919,6 +987,9 @@ async def list_documents(
             raise ValidationError("Domain not saved to Unity Catalog")
 
         uc = make_volume_file_service(domain, settings)
+        parse_service = _make_document_parse_service(
+            domain, settings, volume_service=uc
+        )
 
         success, items, message = uc.list_directory(base_path)
 
@@ -929,7 +1000,37 @@ async def list_documents(
             logger.warning("List documents failed for %s: %s", base_path, message)
             raise InfrastructureError("Failed to list documents", detail=message)
 
-        return {"success": True, "files": items, "message": f"{len(items)} file(s)"}
+        files = []
+        for item in items:
+            if item.get("is_directory"):
+                continue
+            filename = item.get("name", "")
+            if not filename:
+                continue
+            manifest = parse_service.status(base_path, filename)
+            enriched = dict(item)
+            if manifest is not None:
+                enriched["parse_status"] = manifest.status.value
+                enriched["parser"] = manifest.parser
+                if manifest.error:
+                    enriched["parse_error"] = manifest.error
+            else:
+                extension = DocumentExtractor.file_extension(filename)
+                if extension in DocumentParseService.TEXT_EXTENSIONS:
+                    enriched["parse_status"] = ParseStatus.READY.value
+                    enriched["parser"] = "plaintext"
+                else:
+                    enriched["parse_status"] = ParseStatus.FAILED.value
+                    enriched["parse_error"] = (
+                        "Document has not been parsed; retry parsing"
+                    )
+            files.append(enriched)
+
+        return {
+            "success": True,
+            "files": files,
+            "message": f"{len(files)} file(s)",
+        }
     except (ValidationError, InfrastructureError, NotFoundError):
         raise
     except Exception as e:
@@ -956,6 +1057,9 @@ async def upload_documents(
         uc = make_volume_file_service(domain, settings)
         if not uc.is_configured():
             raise ValidationError("Databricks authentication not configured")
+        parse_service = _make_document_parse_service(
+            domain, settings, volume_service=uc
+        )
 
         form = await request.form()
         uploaded_files = form.getlist("files")
@@ -986,17 +1090,29 @@ async def upload_documents(
                 continue
 
             content = await upload.read()
-            file_path = f"{base_path}/{filename}"
-
             try:
-                ok, wmsg = uc.write_binary_file(file_path, content, overwrite=True)
-                results.append(
-                    {
-                        "filename": filename,
-                        "success": ok,
-                        "message": "Uploaded" if ok else wmsg,
-                    }
+                submission = parse_service.prepare_upload(
+                    base_path, filename, content
                 )
+                item = {
+                    "filename": filename,
+                    "success": True,
+                    "uploaded": submission.uploaded,
+                    "no_op": submission.no_op,
+                    "parse_status": submission.parse_status.value,
+                }
+                if submission.should_parse:
+                    item["task_id"] = _schedule_document_parse(
+                        parse_service, base_path, filename
+                    )
+                    item["message"] = "Uploaded; parsing started"
+                elif submission.no_op:
+                    item["message"] = "Already uploaded and parsed"
+                elif submission.parse_status is ParseStatus.READY:
+                    item["message"] = "Uploaded and ready"
+                else:
+                    item["message"] = "Uploaded; document parsing failed"
+                results.append(item)
             except Exception as exc:
                 results.append(
                     {
@@ -1026,6 +1142,57 @@ async def upload_documents(
         raise InfrastructureError("Upload documents failed", detail=str(e))
 
 
+@router.post("/documents/retry-parse")
+async def retry_document_parse(
+    request: Request,
+    session_mgr: SessionManager = Depends(get_session_manager),
+    settings: Settings = Depends(get_settings),
+):
+    """Retry parsing an existing failed or stale binary document."""
+    try:
+        data = await request.json()
+        raw_filename = str(data.get("filename", "")).strip()
+        filename = os.path.basename(raw_filename.replace("\\", "/"))
+        if not filename or filename in (".", "..") or filename != raw_filename:
+            raise ValidationError("Filename is required")
+
+        domain = get_domain(session_mgr)
+        base_path = Domain(domain).get_documents_volume_path()
+        if not base_path:
+            raise ValidationError("Domain not saved to Unity Catalog")
+        uc = make_volume_file_service(domain, settings)
+        parse_service = _make_document_parse_service(
+            domain, settings, volume_service=uc
+        )
+        try:
+            submission = parse_service.retry(base_path, filename)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+        result = {
+            "success": True,
+            "filename": filename,
+            "parse_status": submission.parse_status.value,
+            "message": (
+                "Parsing already in progress"
+                if submission.no_op
+                else "Document parsing restarted"
+            ),
+        }
+        if submission.should_parse:
+            result["task_id"] = _schedule_document_parse(
+                parse_service, base_path, filename
+            )
+        return result
+    except (ValidationError, InfrastructureError, NotFoundError):
+        raise
+    except Exception as e:
+        logger.exception("Retry document parse failed: %s", e)
+        raise InfrastructureError(
+            "Retry document parse failed", detail=str(e)
+        ) from e
+
+
 @router.post("/documents/delete")
 async def delete_document(
     request: Request,
@@ -1045,9 +1212,20 @@ async def delete_document(
             raise ValidationError("Domain not saved to Unity Catalog")
 
         uc = make_volume_file_service(domain, settings)
+        parse_service = _make_document_parse_service(
+            domain, settings, volume_service=uc
+        )
 
         file_path = f"{base_path}/{filename}"
         success, message = uc.delete_file(file_path)
+        if success:
+            sidecar_errors = parse_service.delete_artifacts(base_path, filename)
+            if sidecar_errors:
+                logger.warning(
+                    "Document sidecar cleanup failed for %s: %s",
+                    filename,
+                    sidecar_errors,
+                )
         return {"success": success, "message": message}
 
     except (ValidationError, InfrastructureError, NotFoundError):

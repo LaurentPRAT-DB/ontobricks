@@ -398,3 +398,35 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
 
 Tests: `uv run --frozen pytest -q tests/units/core/test_document_parse_service.py tests/units/core/test_document_extractor.py` → 34 passed, 1 warning in 0.25s.
+
+## Parse documents after upload and expose durable status
+
+Context: Successful uploads previously returned before any durable parsed
+corpus existed, and the document APIs had no pending, ready, failed, or retry
+contract.
+
+Changes:
+
+1. src/api/routers/internal/domain.py
+   Route uploads through the parsed-corpus service, schedule binary extraction
+   with TaskManager, expose parse status in document lists, add manual retry,
+   and remove sidecars when deleting a source.
+2. src/back/core/databricks/DocumentParseService.py
+   Convert unexpected extractor exceptions into safe failed manifests.
+3. tests/units/api/test_document_routes.py
+   Cover pending task responses, ready no-op uploads, internal-directory
+   filtering, retry scheduling, and sidecar cleanup.
+4. tests/units/core/test_document_parse_service.py
+   Verify extractor exceptions cannot leak query details or leave pending
+   status.
+
+Modified files:
+- src/api/routers/internal/domain.py
+- src/back/core/databricks/DocumentParseService.py
+- tests/units/api/test_document_routes.py
+- tests/units/core/test_document_parse_service.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests:
+- `uv run --frozen pytest -q tests/units/core/test_document_parse_service.py tests/units/core/test_document_extractor.py` → 35 passed, 1 warning in 0.17s.
+- `uv run --frozen pytest -q tests/units/api/test_document_routes.py tests/units/auth/test_permission_middleware.py` → 292 passed, 1 warning in 1.55s.

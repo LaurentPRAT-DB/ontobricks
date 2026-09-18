@@ -151,6 +151,20 @@ def test_failed_parse_keeps_source_and_records_safe_error(
     assert f"{DOCS}/_parsed/spec.pdf.md" not in volume.text
 
 
+def test_extractor_exception_records_failed_manifest(service, volume, extractor):
+    def _raise(_path):
+        raise RuntimeError("SELECT secret FROM source")
+
+    extractor.extract = _raise
+    service.prepare_upload(DOCS, "spec.pdf", b"%PDF")
+
+    manifest = service.parse_pending(DOCS, "spec.pdf")
+
+    assert manifest.status is ParseStatus.FAILED
+    assert manifest.error == "Document parsing failed"
+    assert "SELECT" not in _manifest(volume, "spec.pdf")["error"]
+
+
 def test_retry_failed_binary_moves_back_to_pending(service, extractor):
     extractor.result = None
     service.prepare_upload(DOCS, "spec.pdf", b"%PDF")
