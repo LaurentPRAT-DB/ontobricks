@@ -2332,4 +2332,4 @@ class Domain:
                 "count_documents_in_volume: list failed for %s: %s", base_path, message
             )
             return None
-        return len(items)
+        return sum(1 for item in items if not item.get("is_directory"))

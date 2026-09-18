@@ -430,3 +430,30 @@ Modified files:
 Tests:
 - `uv run --frozen pytest -q tests/units/core/test_document_parse_service.py tests/units/core/test_document_extractor.py` → 35 passed, 1 warning in 0.17s.
 - `uv run --frozen pytest -q tests/units/api/test_document_routes.py tests/units/auth/test_permission_middleware.py` → 292 passed, 1 warning in 1.55s.
+
+## Preserve the parsed corpus across domain versions
+
+Context: Parsed sidecars are part of a domain version, but version creation
+previously skipped all document subdirectories and document counts included
+the internal parsed directory.
+
+Changes:
+
+1. src/back/objects/registry/RegistryService.py
+   Copy `_parsed` markdown and manifests after copying source documents while
+   keeping the public copied count source-only.
+2. src/back/objects/domain/Domain.py
+   Exclude directories from document counts.
+3. tests/units/registry/test_registry_document_copy.py
+   Cover sidecar copies and legacy versions without `_parsed`.
+4. tests/units/domain/test_domain_document_count.py
+   Verify internal directories do not affect source document counts.
+
+Modified files:
+- src/back/objects/registry/RegistryService.py
+- src/back/objects/domain/Domain.py
+- tests/units/registry/test_registry_document_copy.py
+- tests/units/domain/test_domain_document_count.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests: `uv run --frozen pytest -q tests/units/registry/test_registry_document_copy.py tests/units/domain/test_domain_document_count.py tests/units/registry/test_version_lifecycle.py tests/units/front/test_create_version_ungated.py` → 33 passed, 1 warning in 0.84s.

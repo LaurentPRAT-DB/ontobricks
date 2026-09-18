@@ -1266,6 +1266,33 @@ class RegistryService:
                 errors.append(f"Write {name}: {w_msg}")
                 continue
             copied += 1
+
+        src_parsed = f"{src_docs}/_parsed"
+        dst_parsed = f"{dst_docs}/_parsed"
+        parsed_ok, parsed_items, parsed_msg = self._uc.list_directory(src_parsed)
+        if not parsed_ok:
+            if "not found" not in parsed_msg.lower():
+                errors.append(f"List _parsed: {parsed_msg}")
+            return copied, errors
+
+        dir_ok, dir_msg = self._uc.create_directory(dst_parsed)
+        if not dir_ok:
+            errors.append(f"Create _parsed: {dir_msg}")
+            return copied, errors
+
+        for item in parsed_items:
+            if item.get("is_directory"):
+                continue
+            name = item["name"]
+            src_file = f"{src_parsed}/{name}"
+            dst_file = f"{dst_parsed}/{name}"
+            r_ok, content, r_msg = self._uc.read_binary_file(src_file)
+            if not r_ok:
+                errors.append(f"Read _parsed/{name}: {r_msg}")
+                continue
+            w_ok, w_msg = self._uc.write_binary_file(dst_file, content)
+            if not w_ok:
+                errors.append(f"Write _parsed/{name}: {w_msg}")
         return copied, errors
 
     # -- bridge aggregation ---------------------------------------------
