@@ -2097,7 +2097,7 @@ async def ontology_assistant_chat(
         raise ValidationError("No message provided")
 
     domain = get_domain(session_mgr)
-    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+    host, token, llm_endpoint, llm_endpoint_kind = require_domain_llm(
         domain, settings
     )
 

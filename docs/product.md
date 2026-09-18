@@ -183,7 +183,7 @@ flowchart LR
 | REST API (Knowledge Graph) | Stateless endpoints for triple store status, entity search, ontology/R2RML/SQL retrieval, and build triggers |
 | GraphQL API | Auto-generated typed schema per domain with configurable depth, GraphiQL playground |
 | MCP Server | Model Context Protocol server for Databricks Playground and LLM clients (Cursor, Claude Desktop) |
-| Ontology Assistant | Conversational agent for natural-language ontology editing (add entities, clean orphans, etc.) |
+| Ontology Assistant | Conversational agent for natural-language ontology editing; uses the domain-saved AI Gateway or Model Serving target |
 
 
 ---
@@ -359,7 +359,7 @@ OntoBricks provides an end-to-end, web-based solution that runs directly on Data
 - **Knowledge Graph REST API**: Stateless endpoints for triple store status, ontology/R2RML/SQL retrieval, entity search, and build triggers (`/api/v1/digitaltwin/`).
 - **GraphQL API**: Auto-generated typed schema per domain with configurable relationship depth and GraphiQL playground.
 - **MCP Server**: Model Context Protocol server deployable as a Databricks App (`mcp-ontobricks`) for Databricks Playground integration and LLM client access (Cursor, Claude Desktop).
-- **Ontology Assistant**: Conversational LLM agent for natural-language ontology editing.
+- **Ontology Assistant**: Conversational LLM agent for natural-language ontology editing, routed through the domain-saved AI Gateway or Model Serving target.
 
 ---
 

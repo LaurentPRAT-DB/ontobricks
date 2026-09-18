@@ -440,6 +440,16 @@ WIZARD_TEMPLATES = {
 
 The button will appear automatically in the Wizard UI — no HTML changes needed.
 
+### AI Assistant (Designer)
+
+The floating assistant on **Ontology → Designer** uses the same saved domain
+LLM as the Wizard. Open it, type a request (for example “Show me all
+relationships”), and the agent reads or edits the in-session ontology.
+
+It does **not** pick a model of its own. Select and save an AI Gateway model
+service or Model Serving endpoint in **Domain Information → AI** first. With
+**No LLM**, the assistant stays visible but unavailable.
+
 ### Option D: Import Industry-Standard Ontologies
 
 Click **Import** in the sidebar to load ontologies from files or industry standards:
@@ -1002,7 +1012,8 @@ Click **Browse** to search models available to the signed-in Databricks identity
 1. **AI Gateway** first — Unity Catalog model services you can execute, including
    `system.ai.*` and custom three-part names such as
    `main.ai.monclaudesonnetamoi`. Refresh reloads the catalog. The identity needs
-   Unity Catalog `EXECUTE` on a Gateway service.
+   Unity Catalog `EXECUTE`, or an effective `ALL_PRIVILEGES` grant inherited by
+   the application service principal, on a Gateway service.
 2. **Model Serving (Legacy)** — existing Serving endpoints.
 
 Save the selection on the domain. Ontology generation, Assistant, Auto Icons,
@@ -1848,8 +1859,8 @@ Navigate to **Domain** in the top navbar, then open the **Information** sidebar 
 1. Enter a **Domain Name** (e.g., `CustomerAnalytics`).
 2. Set the **Base URI** for your ontology (e.g., `https://ontobricks.com/ontology/`). This is the namespace for all generated RDF resources.
 3. Open the **LLM** tab, click **Browse**, search the AI Gateway and legacy
-   Model Serving groups, and select the model used for ontology generation and
-   auto-mapping.
+   Model Serving groups, and select the model used for ontology generation,
+   the Designer assistant, auto-mapping, and the other in-app agents.
 4. Configure the **Triple Store Table**: select a catalog, schema, and table name where triples will be stored (e.g., `my_catalog.my_schema.triples`). The table will be created automatically during sync.
 
 ---

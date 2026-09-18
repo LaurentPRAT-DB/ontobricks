@@ -211,6 +211,37 @@ class TestOntologyRoutes:
         assert response.status_code == 200
 
     @pytest.mark.asyncio
+    async def test_assistant_chat_passes_saved_endpoint_kind(self):
+        from api.routers.internal import ontology
+
+        request = MagicMock()
+        request.json = AsyncMock(return_value={"message": "Show all relationships"})
+        domain = MagicMock()
+        domain.ontology = {}
+        domain.get_classes.return_value = []
+        domain.get_properties.return_value = []
+        agent_result = SimpleNamespace(
+            success=True,
+            reply="No relationships found.",
+            ontology_changed=False,
+        )
+
+        with patch.object(ontology, "get_domain", return_value=domain), patch.object(
+            ontology,
+            "require_domain_llm",
+            return_value=("https://h", "t", "main.ai.saved", "ai_gateway"),
+        ), patch(
+            "agents.agent_ontology_assistant.run_agent",
+            return_value=agent_result,
+        ) as run_assistant:
+            result = await ontology.ontology_assistant_chat(
+                request, MagicMock(), MagicMock()
+            )
+
+        assert result["success"] is True
+        assert run_assistant.call_args.kwargs["endpoint_kind"] == "ai_gateway"
+
+    @pytest.mark.asyncio
     async def test_assistant_invoke_uses_saved_credentials_and_endpoint(self):
         from api.routers.internal import ontology
 

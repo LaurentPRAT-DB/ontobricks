@@ -1395,7 +1395,7 @@ OntoBricks integrates [MLflow](https://mlflow.org/) for agent observability, eva
       ┌────────────────┼────────────────┐
       ▼                ▼                ▼
  @trace_agent     @trace_llm      @trace_tool
- (run_agent)      (_call_llm)     (_execute_tool)
+ (run_agent)      (call_serving_endpoint) (_execute_tool)
       │                │                │
       └────────────────┼────────────────┘
                        ▼
@@ -1713,7 +1713,14 @@ The following sections were previously separate documents.
 
 OntoBricks uses **LLM-powered agents** to automate complex, multi-step tasks that would otherwise require significant manual effort. Each agent follows an MCP-style (Model Context Protocol) pattern: an autonomous loop where the LLM reasons about the task, calls tools to gather context or perform actions, and iterates until the goal is achieved.
 
-All agents run against the **Databricks Foundation Model API** (or any OpenAI-compatible chat/completions endpoint) and are designed to degrade gracefully if the endpoint does not support function calling.
+All in-app agents use the **LLM saved on the domain** (`Domain Information → AI`):
+an executable Unity Catalog **AI Gateway** model service
+(`kind: "ai_gateway"`, `POST /ai-gateway/mlflow/v1/chat/completions` with
+`model` set to the three-part name) or a legacy **Model Serving** endpoint
+(`kind: "serving"`, `POST /serving-endpoints/{name}/invocations`). They do not
+pick a model independently. An empty target (**No LLM**) is rejected before any
+LLM request. Agents degrade gracefully if the selected endpoint does not support
+function calling.
 
 In addition to the UI-driven agents, OntoBricks provides an **MCP server** (`mcp-ontobricks`) that exposes knowledge-graph tools to LLM clients (Databricks Playground, Cursor, Claude Desktop) via the Model Context Protocol. The MCP server is a separate Databricks App that calls the main app's REST and GraphQL APIs. See [MCP Server](mcp.md) for details.
 
@@ -1842,7 +1849,10 @@ In addition to the UI-driven agents, OntoBricks provides an **MCP server** (`mcp
 
 **Tools used**: `get_ontology`, plus ontology mutation functions built into the engine
 
-**Invoked by**: `POST /ontology/assistant/invoke` (synchronous, wrapped in `asyncio.to_thread`)
+**Invoked by**: `POST /ontology/assistant/chat` (Designer UI) and
+`POST /ontology/assistant/invoke` (ResponsesAgent). Both routes inject the
+saved domain `endpoint_name` and `endpoint_kind` via `require_domain_llm`
+before the agent runs.
 
 **Databricks Agent Framework**: This agent has a `ResponsesAgent` wrapper (`responses_agent.py`) that implements the MLflow `ResponsesAgent` interface, enabling AI Playground testing, Agent Evaluation, Model Serving deployment, and MLflow model logging (see the MLflow section in [Architecture](architecture.md)).
 
@@ -1924,7 +1934,7 @@ All three agents share the same engine structure (defined independently in each 
 | Function | Description |
 |----------|-------------|
 | `run_agent(...)` | Public entry point — sets up context, runs the loop, returns `AgentResult` |
-| `_call_llm(...)` | HTTP POST to Databricks Foundation Model API |
+| `call_serving_endpoint(...)` | Shared transport in `agents.engine_base`; `build_llm_request` routes AI Gateway vs Model Serving from the saved `endpoint_kind` |
 | `_execute_tool(...)` | Dispatches a tool call to the appropriate handler |
 | `_extract_content(...)` | Extracts text from LLM response (handles different response formats) |
 
@@ -2062,7 +2072,10 @@ Content-Type: application/json
 }
 ```
 
-The route automatically fills `custom_inputs` (host, token, endpoint, ontology) from the active session. If the ontology is modified, the domain is saved.
+The route overwrites `custom_inputs` with the saved domain LLM target
+(`host`, `token`, `endpoint_name`, `endpoint_kind`) and fills ontology context
+from the active session. Caller-supplied credentials or endpoint names are
+ignored. If the ontology is modified, the domain is saved.
 
 ##### Usage — Log to MLflow
 
@@ -2079,13 +2092,16 @@ This creates an MLflow run with the agent model, which can then be registered in
 | `custom_inputs.host` | in | Databricks workspace URL |
 | `custom_inputs.token` | in | Databricks access token |
 | `custom_inputs.endpoint_name` | in | AI Gateway FQN or Model Serving endpoint name |
+| `custom_inputs.endpoint_kind` | in | `ai_gateway` or `serving` (authoritative; do not infer from the name) |
 | `custom_inputs.classes` | in | Current ontology classes (list of dicts) |
 | `custom_inputs.properties` | in | Current ontology properties (list of dicts) |
 | `custom_inputs.base_uri` | in | Ontology base URI |
 | `custom_outputs.success` | out | Whether the agent completed successfully |
 | `custom_outputs.ontology_changed` | out | Whether any mutations were applied |
 | `custom_outputs.classes` | out | Mutated classes (when changed) |
-| `custom_outputs.properties` | out | Mutated properties (when changed) |## OntoViz - Visual Ontology Editor
+| `custom_outputs.properties` | out | Mutated properties (when changed) |
+
+## OntoViz - Visual Ontology Editor
 
 OntoViz is a custom JavaScript library for visual entity-relationship diagram editing, integrated into OntoBricks for ontology design. It is **reusable** and can be integrated into other projects.
 

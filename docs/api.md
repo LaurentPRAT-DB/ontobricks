@@ -1513,6 +1513,48 @@ POST /ontology/save-to-uc
 }
 ```
 
+#### Ontology Assistant Chat
+
+```http
+POST /ontology/assistant/chat
+```
+
+Conversational ontology editing used by **Ontology → Designer**. The request
+does not include an LLM target; the route uses the LLM saved on the domain
+(`llm_endpoint` + `llm_endpoint_kind`, AI Gateway or Model Serving). An empty
+target (**No LLM**) returns HTTP 400.
+
+**Request Body:**
+```json
+{
+  "message": "Show me all relationships",
+  "history": []
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "reply": "...",
+  "ontology_changed": false
+}
+```
+
+When the agent mutates the ontology, `ontology_changed` is `true` and `config`
+contains the updated classes and properties.
+
+#### Ontology Assistant Invoke
+
+```http
+POST /ontology/assistant/invoke
+```
+
+OpenAI Responses-compatible wrapper around the same agent. The route injects
+the saved domain LLM target into `custom_inputs` (`endpoint_name`,
+`endpoint_kind`, credentials). Request-supplied host, token, or endpoint
+fields are ignored.
+
 ---
 
 ### SWRL Rules Endpoints
@@ -2761,8 +2803,11 @@ GET /mapping/wizard/llm-endpoints
 ```
 
 Returns executable Unity AI Gateway model services first (`kind: "ai_gateway"`),
-then legacy Model Serving endpoints (`kind: "serving"`). Gateway rows require
-Unity Catalog `EXECUTE` for the signed-in identity.
+then legacy Model Serving endpoints (`kind: "serving"`). Domain Information →
+**Browse** and New Domain use this same list. Gateway rows require Unity Catalog
+`EXECUTE` or an effective `ALL_PRIVILEGES` grant for the application service
+principal. Saving a row on the domain is what Ontology Assistant, Wizard,
+Auto-Map, and the other in-app agents actually call.
 
 #### Get Schema Context
 

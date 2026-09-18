@@ -247,3 +247,84 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
 
 Tests: uv run --frozen pytest -q -m "not scenario" → 6280 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.78s
+
+## Honor inherited privileges for AI Gateway discovery
+
+Context: The deployed app omitted a custom AI Gateway model service even
+though its service principal inherited `ALL_PRIVILEGES` from the containing
+catalog. Discovery recognized only a literal `EXECUTE` privilege.
+
+Changes:
+
+1. src/back/core/databricks/ModelServiceCatalog.py
+   Treat effective `ALL_PRIVILEGES` as executable alongside `EXECUTE`.
+2. tests/units/core/test_model_service_catalog.py
+   Add regression coverage for an inherited catalog-level grant.
+3. docs/api.md
+   Document both effective privilege forms accepted by Gateway discovery.
+4. docs/user-guide.md
+   Clarify custom Gateway visibility for application service principals.
+
+Modified files:
+- src/back/core/databricks/ModelServiceCatalog.py
+- tests/units/core/test_model_service_catalog.py
+- docs/api.md
+- docs/user-guide.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6281 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 52.54s
+
+## Restore Ontology Assistant endpoint routing
+
+Context: Ontology Designer assistant requests returned HTTP 502 before invoking
+the agent because the saved endpoint kind was unpacked under a different local
+name than the one passed to the assistant.
+
+Changes:
+
+1. src/api/routers/internal/ontology.py
+   Pass the saved domain LLM endpoint kind through the defined local variable.
+2. tests/units/api/test_routes.py
+   Add regression coverage proving assistant chat forwards the AI Gateway kind.
+
+Modified files:
+- src/api/routers/internal/ontology.py
+- tests/units/api/test_routes.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6282 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.29s
+
+## Document domain-saved AI Gateway routing
+
+Context: User-facing and architecture docs still described in-app agents as
+Foundation Model / Model Serving only. Ontology Assistant, the Designer UI, and
+deployed Apps now use the domain-saved AI Gateway or Serving target, including
+the persisted endpoint kind.
+
+Changes:
+
+1. docs/architecture.md
+   Document domain LLM routing, assistant chat/invoke, `endpoint_kind`, and the
+   shared `call_serving_endpoint` transport.
+2. docs/api.md
+   Document Ontology Assistant endpoints and that Browse/agents share the
+   Gateway-first llm-endpoints list.
+3. docs/user-guide.md
+   Describe the Designer assistant as using Domain Information → AI.
+4. docs/features.md, docs/product.md, docs/data-access.md
+   Align Assistant and Wizard wording with the saved AI Gateway target.
+5. docs/deployment.md
+   Replace Serving-only diagrams, add Gateway EXECUTE grants, and update
+   credential troubleshooting.
+
+Modified files:
+- docs/architecture.md
+- docs/api.md
+- docs/user-guide.md
+- docs/features.md
+- docs/product.md
+- docs/data-access.md
+- docs/deployment.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6282 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 51.12s

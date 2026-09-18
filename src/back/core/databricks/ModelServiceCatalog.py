@@ -48,7 +48,8 @@ class ModelServiceCatalog:
         response.raise_for_status()
         for assignment in response.json().get("privilege_assignments", []):
             for privilege in assignment.get("privileges", []):
-                if str(privilege.get("privilege", "")).upper() == "EXECUTE":
+                privilege_name = str(privilege.get("privilege", "")).upper()
+                if privilege_name in {"EXECUTE", "ALL_PRIVILEGES"}:
                     return True
         return False
 

@@ -172,6 +172,28 @@ def test_excludes_read_metadata_only_service(mock_get):
 
 
 @patch("back.core.databricks.ModelServiceCatalog.requests.get")
+def test_all_privileges_implies_execute(mock_get):
+    client = _client()
+    mock_get.return_value = _response(
+        {
+            "privilege_assignments": [
+                {
+                    "principal": "me@example.com",
+                    "privileges": [
+                        {
+                            "privilege": "ALL_PRIVILEGES",
+                            "inherited_from_type": "CATALOG",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert ModelServiceCatalog(client)._has_execute("main.ai.gateway", "me@example.com")
+
+
+@patch("back.core.databricks.ModelServiceCatalog.requests.get")
 def test_forbidden_global_listing_returns_empty(mock_get):
     client = _client()
     mock_get.return_value = _response({}, status=403)

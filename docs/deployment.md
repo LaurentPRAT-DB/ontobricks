@@ -64,7 +64,7 @@ This section provides detailed diagrams covering the OntoBricks component topolo
                     │  │   │  (Jinja2 + JS)    │  │   /api/v1/*      │  │   /graphql      │ │    │
                     │  │   └──────────────────┘  └──────────────────┘  └─────────────────┘ │    │
                     │  │                                                                     │    │
-                    │  │   LLM Agents  (Databricks Model Serving / Foundation Models):      │    │
+                    │  │   LLM Agents  (domain-saved AI Gateway or Model Serving):          │    │
                     │  │   OWL Generator · Auto-Assignment · Ontology Assistant             │    │
                     │  │   Digital-Twin Chat · Cohort Generator · Auto-Icon Assign          │    │
                     │  └────────────────────────┬────────────────────────────────────────── ┘    │
@@ -87,9 +87,9 @@ This section provides detailed diagrams covering the OntoBricks component topolo
                     │  └──────────────────┘  └─────────────────────────┘  │   tables        │  │
                     │                                                       │ · Graph triple  │  │
                     │  ┌────────────────────────┐  ┌──────────────────┐   │   store         │  │
-                    │  │  Model Serving / FMs    │  │ MLflow Tracking  │   └─────────────────┘  │
-                    │  │  (LLM endpoints, SQL    │  │ /Shared/onto…    │                        │
-                    │  │   Wizard)               │  │ (agent traces)   │                        │
+                    │  │  AI Gateway / Serving   │  │ MLflow Tracking  │   └─────────────────┘  │
+                    │  │  (domain LLM targets)   │  │ /Shared/onto…    │                        │
+                    │  │                         │  │ (agent traces)   │                        │
                     │  └────────────────────────┘  └──────────────────┘                        │
                     └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -187,7 +187,7 @@ OntoBricks uses Lakebase Postgres (Autoscaling) as **both** its registry store (
 │  mcp-ontobricks       $DATABRICKS_APP_PORT   https://<ws>/apps/…       Databricks SSO        │
 │  Lakebase Postgres    5432 (TLS)             PGHOST injected by Apps   OAuth JWT (no passwd)  │
 │  SQL Warehouse         443 (HTTPS)           internal via SDK           OAuth (SP token)      │
-│  Model Serving / FMs   443 (HTTPS)           internal via SDK           OAuth (SP token)      │
+│  AI Gateway / Serving  443 (HTTPS)           internal via SDK           OAuth (SP token)      │
 │  MLflow Tracking        443 (HTTPS)           internal via SDK           OAuth (SP token)      │
 └────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -224,6 +224,8 @@ All four layers must be satisfied before the application is fully functional. Th
 ║  CATALOG  <source_catalog>            USE CATALOG                      Data Source picker ║
 ║  SCHEMA   <src_cat>.<src_sch>         USE SCHEMA                       R2RML builds       ║
 ║  TABLE    <src_cat>.<src_sch>.<tbl>   SELECT                           per mapping entry  ║
+║  MODEL SERVICE  <cat>.<sch>.<svc>     EXECUTE (or inherited            Domain Information  ║
+║                                       ALL_PRIVILEGES)                  → AI Gateway picker ║
 ║                                                                                         ║
 ║  ► Grant once as UC admin (see §3 for full SQL snippets)                                ║
 ╚═════════════════════════════════════════════════════════════════════════════════════════╝
@@ -886,6 +888,7 @@ The main app's service principal performs the following operations at runtime. E
 | 6 | File I/O under `/Volumes/<registry_catalog>/<registry_schema>/<registry_volume>/` (projects, domains, history log, registry artefacts) | Registry volume | `READ VOLUME` + `WRITE VOLUME`. |
 | 7 | `POST /api/2.1/unity-catalog/volumes` — only triggered from **Settings → Registry → Initialize** when the volume does not yet exist | Registry schema | Schema `CREATE VOLUME` (skip if you create the volume manually up front). |
 | 8 | `CREATE SCHEMA IF NOT EXISTS`, `CREATE TABLE`, `INSERT … COPY FROM STDIN`, `SELECT`, `DELETE` on the App-bound Lakebase Postgres database (Graph DB engine + optionally registry hybrid backend) | Lakebase database | Lakebase user role with privileges on the configured schema (default `ontobricks_graph`). Authentication uses the App-injected OAuth token. |
+| 9 | List and invoke Unity AI Gateway model services selected in Domain Information → AI (Ontology Assistant, Wizard, Auto-Map, Graph Chat, …) | Each Gateway model service (and its catalog/schema) | `USE CATALOG` + `USE SCHEMA` + `EXECUTE`. An inherited effective `ALL_PRIVILEGES` grant also counts as executable. Legacy Model Serving endpoints use Serving permissions, not this UC chain. |
 
 All the above run through the **SQL Warehouse** bound to the app (`sql-warehouse` resource) on behalf of the app SP. The `CAN_USE` grant on the warehouse covers compute access; data access is controlled by UC.
 
@@ -952,6 +955,19 @@ GRANT SELECT      ON TABLE   `<source_catalog>`.`<source_schema>`.`<table>`   TO
 ```
 
 If any mapping `sql_query` joins tables from multiple schemas or catalogs, repeat the `USE CATALOG` / `USE SCHEMA` / `SELECT` chain for each. The VIEW creation in step 3 will fail with `TABLE_OR_VIEW_NOT_FOUND` or `PERMISSION_DENIED` if one is missing.
+
+### 3.3.1 — AI Gateway model services
+
+Custom Unity AI Gateway services selected in **Domain Information → AI** must
+be executable by the app service principal. Discovery lists a service only when
+effective privileges include `EXECUTE` or inherited `ALL_PRIVILEGES`
+(`GET /api/2.1/unity-catalog/effective-permissions/model_service/{name}`).
+
+Grant `USE CATALOG` and `USE SCHEMA` on the catalog and schema that host the
+service, plus `EXECUTE` on the model service (or inherit `ALL_PRIVILEGES` from
+the catalog). `system.ai.*` Foundation Model Gateway services follow the same
+chain when they appear in the picker. Legacy Model Serving endpoints are listed
+separately and do not use this UC grant.
 
 ### 3.4 — What you do **not** need to grant
 
@@ -1431,9 +1447,9 @@ OntoBricks agents are instrumented with MLflow tracing. When deployed to Databri
 
 ```
 AGENT (run_agent)
-├── LLM (_call_llm)        — endpoint, tokens, latency
+├── LLM (call_serving_endpoint) — AI Gateway or Serving target, tokens, latency
 ├── TOOL (tool:get_metadata) — arguments, result
-├── LLM (_call_llm)        — next iteration
+├── LLM (call_serving_endpoint) — next iteration
 ├── TOOL (tool:execute_sql)  — SQL query, result
 └── ...
 ```
@@ -1633,7 +1649,9 @@ databricks apps list-deployments ontobricks-XXX
 
 ### "Databricks credentials not configured"
 
-The agents need OAuth credentials to call the Foundation Model API. In a Databricks App, these are resolved automatically via the service principal. If you see this error:
+The agents need OAuth credentials to call the domain LLM (AI Gateway or Model
+Serving). In a Databricks App, these are resolved automatically via the service
+principal. If you see this error:
 
 1. Verify the app is running as a Databricks App (not locally)
 2. Check that an LLM is saved in Domain Information → AI (or choose **No LLM** if AI is intentionally disabled)

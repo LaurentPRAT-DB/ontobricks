@@ -112,7 +112,8 @@ and the engine that ultimately runs (column **Engine**).
 | Visual ontology editor (`Model`, `Entities`, `Relationships`, `Groups`, `Business Views`) | `ontology-design.js`, `ontology-shared-panels.js`, `ontology-groups.js` | Internal REST `/ontology/...` | REST | Python ontology object model |
 | OWL viewer / generator | `ontology-owl.js`, agent `OWLGenerator` | `/ontology/owl/...`, `/agents/owl-generator/run` | REST | `OntologyParser`, `OntologyGenerator` (rdflib) |
 | Import (OWL, FIBO, CDISC, IOF) | `ontology-import.js` | `/ontology/import/*` | REST | rdflib parsers |
-| Generate (Wizard) | `ontology-wizard.js` | Domain LLM via `agent_owl_generator` | REST → LLM | Databricks AI Gateway or Foundation Model API + tool-calling |
+| Generate (Wizard) | `ontology-wizard.js` | Domain LLM via `agent_owl_generator` | REST → LLM | Saved domain LLM: Databricks AI Gateway or Model Serving + tool-calling |
+| AI Assistant | Designer floating chat, `agent_ontology_assistant` | `POST /ontology/assistant/chat`, `POST /ontology/assistant/invoke` | REST → LLM | Saved domain LLM (`llm_endpoint` + `llm_endpoint_kind`): AI Gateway chat completions or Model Serving invocations |
 | **Data Quality** rules editor | `ontology-dataquality.js` | `/ontology/dataquality/...` | REST | SHACL (`SHACLService`) on the in-memory ontology |
 | **Business Rules (SWRL)** editor | `ontology-business-rules.js` | `/ontology/swrl/...` | REST | `SWRLParser`, validated against ontology |
 | Expressions & Axioms | `ontology-axioms.js` | `/ontology/axioms/...` | REST | OWL axiom storage |

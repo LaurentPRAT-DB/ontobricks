@@ -1,7 +1,7 @@
 # OntoBricks Features
 
 ## Ontology Design
-- **Ontology Designer (menu)**: Primary visual ontology workspace under **Ontology → Designer** — OntoViz canvas, toolbar, and floating AI Assistant (the sidebar label is *Designer*, not “Model”).
+- **Ontology Designer (menu)**: Primary visual ontology workspace under **Ontology → Designer** — OntoViz canvas, toolbar, and floating AI Assistant (the sidebar label is *Designer*, not “Model”). The assistant uses the LLM saved in **Domain Information → AI** (Unity AI Gateway or Model Serving); it is unavailable when **No LLM** is selected.
 - **Visual Ontology Editor (OntoViz)**: Drag-and-drop canvas to create entities, relationships, and inheritance hierarchies with icons and attributes.
 - **Class Hierarchies**: Define rdfs:subClassOf relationships with automatic property inheritance from parent to child entities.
 - **SWRL Rules**: Create inference rules using a **graphical D3-based editor** — fullscreen modal with IF/THEN atom builders, ontology-aware context menu, live SWRL preview, and raw-edit mode for advanced users. A header **SWRL** button opens a modal (mirroring Data Quality’s SHACL) to view, export, and append-import OntoBricks SWRL text.
