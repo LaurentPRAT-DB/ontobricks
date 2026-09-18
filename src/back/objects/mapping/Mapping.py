@@ -18,7 +18,7 @@ from shared.config.constants import (
     DEFAULT_BASE_URI,
     HTTP_USER_AGENT,
 )
-from back.core.databricks import VolumeFileService
+from back.core.databricks import DocumentParseService, VolumeFileService
 from back.core.logging import get_logger
 from back.core.w3c.rdf_utils import uri_local_name
 from back.core.errors import InfrastructureError, ValidationError
@@ -1107,41 +1107,46 @@ class Mapping:
             )
             return []
         base_path = f"{base_path}/documents"
-        host_url = host.rstrip("/")
-        if not host_url.startswith("http"):
-            host_url = f"https://{host_url}"
-        headers = {"Authorization": f"Bearer {token}", "User-Agent": HTTP_USER_AGENT}
-        try:
-            resp = requests.get(
-                f"{host_url}/api/2.0/fs/directories{base_path}",
-                headers=headers,
-                timeout=30,
-            )
-            if resp.status_code == 404:
-                logger.info("fetch_documents_for_agent: documents dir not found")
-                return []
-            resp.raise_for_status()
-            entries = resp.json().get("contents", [])
-            files = [e for e in entries if not e.get("is_directory", False)]
-        except Exception as e:
-            logger.warning("fetch_documents_for_agent: list failed — %s", e)
-            return []
         uc_service = VolumeFileService(host=host, token=token)
+        success, entries, message = uc_service.list_directory(base_path)
+        if not success:
+            if "not found" in message.lower():
+                logger.info("fetch_documents_for_agent: documents dir not found")
+            else:
+                logger.warning(
+                    "fetch_documents_for_agent: list failed — %s", message
+                )
+            return []
+        parse_service = DocumentParseService(uc_service)
         result: List[Dict[str, Any]] = []
-        for f in files[:20]:
-            name = f.get("name", "").rstrip("/")
+        for entry in entries[:20]:
+            if entry.get("is_directory"):
+                continue
+            name = entry.get("name", "").rstrip("/")
             if not name:
                 continue
-            file_path = f"{base_path}/{name}"
-            ok, content, _ = uc_service.read_file(file_path)
-            if not ok or not content or not isinstance(content, str):
-                continue
-            if len(content) > _MAX_DOC_CHARS:
-                content = (
-                    content[:_MAX_DOC_CHARS]
-                    + f"\n\n[…truncated, {len(content)} total chars]"
+            payload = parse_service.read_document(
+                base_path, name, max_chars=_MAX_DOC_CHARS
+            )
+            status = payload.get("parse_status", "failed")
+            if status == "ready":
+                result.append(
+                    {
+                        "name": name,
+                        "content": payload.get("content", ""),
+                        "parse_status": "ready",
+                    }
                 )
-            result.append({"name": name, "content": content})
+            else:
+                result.append(
+                    {
+                        "name": name,
+                        "content": "",
+                        "parse_status": status,
+                        "error": payload.get("error")
+                        or "Document parsing is not ready",
+                    }
+                )
         logger.info("fetch_documents_for_agent: loaded %d document(s)", len(result))
         return result
 

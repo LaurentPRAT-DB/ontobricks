@@ -10,7 +10,7 @@ from typing import Callable, Dict, List, Optional
 import requests
 
 from back.core.logging import get_logger
-from back.core.databricks import DocumentExtractor
+from back.core.databricks import DocumentParseService, VolumeFileService
 from agents.tools.context import ToolContext
 from shared.config.constants import HTTP_USER_AGENT
 
@@ -18,10 +18,6 @@ logger = get_logger(__name__)
 
 _TOOL_TIMEOUT = 30
 _MAX_DOC_CHARS = 80_000  # Increased to allow more context for mapping decisions
-
-# Per-run cache of extracted binary-document text, stored on the ToolContext.
-_DOC_PARSE_CACHE_ATTR = "_doc_parse_cache"
-
 
 def _headers(ctx: ToolContext) -> dict:
     return {"Authorization": f"Bearer {ctx.token}", "User-Agent": HTTP_USER_AGENT}
@@ -48,28 +44,9 @@ def _volume_docs_path(ctx: ToolContext) -> Optional[str]:
     return path
 
 
-def _extract_binary_document(ctx: ToolContext, file_path: str) -> Optional[str]:
-    """Convert a binary document to text via the core ``DocumentExtractor``.
-
-    Returns ``None`` when no SQL warehouse is configured or parsing fails, so
-    the caller falls back. Parsed text is cached on the context per agent run.
-    """
-    if not getattr(ctx, "warehouse_id", ""):
-        logger.info("read_document: no SQL warehouse configured — skipping binary parse")
-        return None
-
-    cache = getattr(ctx, _DOC_PARSE_CACHE_ATTR, None)
-    if cache is None:
-        cache = {}
-        try:
-            setattr(ctx, _DOC_PARSE_CACHE_ATTR, cache)
-        except Exception:
-            cache = None
-
-    extractor = DocumentExtractor.from_credentials(
-        ctx.host, ctx.token, ctx.warehouse_id
-    )
-    return extractor.extract(file_path, cache=cache)
+def _parse_service(ctx: ToolContext) -> DocumentParseService:
+    """Build the read-only parsed-corpus service for an agent context."""
+    return DocumentParseService(VolumeFileService(host=ctx.host, token=ctx.token))
 
 
 # =====================================================
@@ -101,14 +78,32 @@ def tool_list_documents(ctx: ToolContext, **_kwargs) -> str:
         resp.raise_for_status()
         entries = resp.json().get("contents", [])
         logger.debug("tool_list_documents: raw entries count=%d", len(entries))
-        files = [
-            {
-                "name": e.get("name", e.get("path", "").split("/")[-1]),
-                "size": e.get("file_size"),
-            }
-            for e in entries
-            if not e.get("is_directory", False)
-        ]
+        service = _parse_service(ctx)
+        files = []
+        for entry in entries:
+            if entry.get("is_directory", False):
+                continue
+            name = entry.get("name", entry.get("path", "").split("/")[-1])
+            if not name:
+                continue
+            item = {"name": name, "size": entry.get("file_size")}
+            manifest = service.status(base_path, name)
+            if manifest is not None:
+                item["parse_status"] = manifest.status.value
+                item["parser"] = manifest.parser
+                if manifest.error:
+                    item["parse_error"] = manifest.error
+            else:
+                extension = name.rpartition(".")[2].lower()
+                if extension in DocumentParseService.TEXT_EXTENSIONS:
+                    item["parse_status"] = "ready"
+                    item["parser"] = "plaintext"
+                else:
+                    item["parse_status"] = "failed"
+                    item["parse_error"] = (
+                        "Document has not been parsed; retry parsing"
+                    )
+            files.append(item)
         logger.info("tool_list_documents: found %d file(s)", len(files))
         logger.debug("tool_list_documents: files=%s", [f["name"] for f in files])
         return json.dumps({"files": files, "count": len(files)})
@@ -117,44 +112,8 @@ def tool_list_documents(ctx: ToolContext, **_kwargs) -> str:
         return json.dumps({"error": str(exc)})
 
 
-def _doc_payload(filename: str, content: str, parsed_with: Optional[str] = None) -> str:
-    """Build the JSON tool result, truncating to ``_MAX_DOC_CHARS``."""
-    original_len = len(content)
-    truncated = original_len > _MAX_DOC_CHARS
-    if truncated:
-        logger.info(
-            "tool_read_document: '%s' truncated %d → %d chars (limit=%d)",
-            filename,
-            original_len,
-            _MAX_DOC_CHARS,
-            _MAX_DOC_CHARS,
-        )
-        content = content[:_MAX_DOC_CHARS] + f"\n\n[…truncated, {original_len} total chars]"
-    logger.info(
-        "tool_read_document: '%s' read OK — %d chars, truncated=%s%s",
-        filename,
-        original_len,
-        truncated,
-        f", parsed_with={parsed_with}" if parsed_with else "",
-    )
-    payload = {
-        "filename": filename,
-        "content": content,
-        "size": original_len,
-        "truncated": truncated,
-    }
-    if parsed_with:
-        payload["parsed_with"] = parsed_with
-    return json.dumps(payload)
-
-
 def tool_read_document(ctx: ToolContext, *, filename: str = "", **_kwargs) -> str:
-    """Read the text content of a document from the domain volume.
-
-    Plain-text files are decoded as UTF-8. Binary documents (PDF, images,
-    Office) are converted to markdown via ``ai_parse_document`` when a SQL
-    warehouse is configured.
-    """
+    """Read one ready document from the durable parsed corpus."""
     logger.info("tool_read_document: reading '%s'", filename)
     if not filename:
         logger.warning("tool_read_document: called without filename parameter")
@@ -165,83 +124,16 @@ def tool_read_document(ctx: ToolContext, *, filename: str = "", **_kwargs) -> st
         logger.info("tool_read_document: no UC location configured — returning error")
         return json.dumps({"error": "Domain not saved to Unity Catalog"})
 
-    file_path = f"{base_path}/{filename}"
-
-    # Binary formats (PDF/Office/images): parse to markdown via the extractor.
-    if DocumentExtractor.supports(DocumentExtractor.file_extension(filename)):
-        parsed_text = _extract_binary_document(ctx, file_path)
-        if parsed_text is not None:
-            return _doc_payload(filename, parsed_text, parsed_with="ai_parse_document")
-        logger.info(
-            "tool_read_document: '%s' is a binary document but could not be parsed",
-            filename,
-        )
-        return json.dumps(
-            {
-                "filename": filename,
-                "error": (
-                    "Binary document could not be parsed. A SQL warehouse with "
-                    "ai_parse_document access is required to read PDF, Office, or "
-                    "image files. See docs/pr47-neo4j-demo/"
-                    "ai-parse-document-prereq.md for setup. Falling back to "
-                    "filename-only inference for ontology generation."
-                ),
-                "remediation": (
-                    "1) Grant USE CATALOG + ALL ON SCHEMA on system.ai to the "
-                    "app service principal, OR pick a SQL warehouse with "
-                    "ai_parse_document enabled in the workspace. "
-                    "2) Re-deploy or re-bind the sql-warehouse Apps resource."
-                ),
-            }
-        )
-
-    url = f"{ctx.host}/api/2.0/fs/files{file_path}"
-    logger.info("tool_read_document: GET %s", file_path)
-    logger.debug("tool_read_document: full url=%s", url)
     try:
-        resp = requests.get(url, headers=_headers(ctx), timeout=60)
-        logger.debug(
-            "tool_read_document: response status=%d, content_type=%s, size=%d bytes",
-            resp.status_code,
-            resp.headers.get("content-type", "?"),
-            len(resp.content),
-        )
-        resp.raise_for_status()
-        try:
-            content = resp.content.decode("utf-8")
-        except UnicodeDecodeError:
-            # Unknown-extension binary: try the document extractor as a fallback.
-            parsed_text = _extract_binary_document(ctx, file_path)
-            if parsed_text is not None:
-                return _doc_payload(
-                    filename, parsed_text, parsed_with="ai_parse_document"
-                )
-            logger.warning(
-                "tool_read_document: '%s' is binary (decode failed) — %d bytes",
-                filename,
-                len(resp.content),
-            )
-            return json.dumps(
-                {"filename": filename, "error": "Binary file – cannot read as text"}
-            )
-
-        logger.debug(
-            "tool_read_document: '%s' content preview (300 chars): %.300s",
+        payload = _parse_service(ctx).read_document(
+            base_path,
             filename,
-            content,
+            max_chars=_MAX_DOC_CHARS,
         )
-        return _doc_payload(filename, content)
-    except requests.exceptions.HTTPError as exc:
-        logger.error(
-            "tool_read_document: HTTP error for '%s': status=%s, body=%.300s",
-            filename,
-            exc.response.status_code if exc.response is not None else "?",
-            exc.response.text[:300] if exc.response is not None else "N/A",
-        )
-        return json.dumps({"error": str(exc)})
+        return json.dumps(payload)
     except Exception as exc:
         logger.error("tool_read_document: unexpected error for '%s': %s", filename, exc)
-        return json.dumps({"error": str(exc)})
+        return json.dumps({"filename": filename, "error": str(exc)})
 
 
 _MAX_DOCS_IN_CONTEXT = 10
@@ -264,8 +156,19 @@ def tool_get_documents_context(ctx: ToolContext, **_kwargs) -> str:
             }
         )
     result = []
+    unavailable = []
     total_chars = 0
     for d in ctx.documents[:_MAX_DOCS_IN_CONTEXT]:
+        status = d.get("parse_status", "ready")
+        if status != "ready":
+            unavailable.append(
+                {
+                    "name": d.get("name", "?"),
+                    "parse_status": status,
+                    "error": d.get("error") or "Document parsing is not ready",
+                }
+            )
+            continue
         content = d.get("content", "")
         if total_chars + len(content) > _MAX_TOTAL_DOC_CHARS:
             remaining = _MAX_TOTAL_DOC_CHARS - total_chars
@@ -291,6 +194,8 @@ def tool_get_documents_context(ctx: ToolContext, **_kwargs) -> str:
         len(d.get("content", "")) for d in ctx.documents
     )
     out = {"documents": result, "count": len(result), "total_chars": total_chars}
+    if unavailable:
+        out["unavailable_documents"] = unavailable
     if truncated:
         out["_message"] = (
             f"Showing first {len(result)} document(s), {total_chars} chars total (limit to avoid context overflow)."
@@ -338,11 +243,9 @@ DOCUMENT_TOOL_DEFINITIONS: List[dict] = [
         "function": {
             "name": "read_document",
             "description": (
-                "Read the text content of a document from the domain volume. "
-                "Plain-text formats (.txt, .csv, .json, .md, .xml) are read directly. "
-                "Binary documents (.pdf, .docx, .pptx, images) are automatically "
-                "converted to markdown via ai_parse_document when a SQL warehouse is "
-                "configured."
+                "Read a ready document from the domain's durable parsed corpus. "
+                "Returns parse_status=pending or failed when text is unavailable. "
+                "This tool never starts document parsing."
             ),
             "parameters": {
                 "type": "object",

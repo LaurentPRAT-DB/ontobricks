@@ -457,3 +457,36 @@ Modified files:
 - changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
 
 Tests: `uv run --frozen pytest -q tests/units/registry/test_registry_document_copy.py tests/units/domain/test_domain_document_count.py tests/units/registry/test_version_lifecycle.py tests/units/front/test_create_version_ungated.py` → 33 passed, 1 warning in 0.84s.
+
+## Share ready document sidecars across Generate and Mapping
+
+Context: Generate parsed binary files inside its tool loop while Mapping read
+source files as plaintext and silently skipped binaries.
+
+Changes:
+
+1. src/agents/tools/documents.py
+   Remove extractor and per-run cache paths, read only durable ready corpus
+   content, expose structured unavailable states, and hide internal sidecars.
+2. src/agents/tools/context.py
+   Clarify that the compatibility warehouse field no longer starts document
+   parsing.
+3. src/back/objects/mapping/Mapping.py
+   Preload ready sidecars through DocumentParseService and preserve unavailable
+   document status for the Mapping planner and critic.
+4. tests/units/agents/test_documents_tool.py
+   Cover ready, pending, failed, list-status, and context-separation behavior.
+5. tests/units/mapping/test_parsed_document_preload.py
+   Verify Mapping consumes parsed PDF text and reports pending sources.
+
+Modified files:
+- src/agents/tools/documents.py
+- src/agents/tools/context.py
+- src/back/objects/mapping/Mapping.py
+- tests/units/agents/test_documents_tool.py
+- tests/units/mapping/test_parsed_document_preload.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests:
+- `uv run --frozen pytest -q tests/units/agents -m "not scenario"` → 180 passed, 1 warning in 1.76s.
+- `uv run --frozen pytest -q tests/units/mapping -m "not scenario"` → 179 passed, 1 warning in 1.21s.
