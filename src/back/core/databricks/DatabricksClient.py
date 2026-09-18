@@ -106,6 +106,12 @@ class DatabricksClient:
     def get_schemas(self, catalog):
         return self.catalog.get_schemas(catalog)
 
+    def get_ai_gateway_model_services(self):
+        """Return AI Gateway model services executable by this principal."""
+        from .ModelServiceCatalog import ModelServiceCatalog
+
+        return ModelServiceCatalog(self).list_executable()
+
     def get_tables(self, catalog, schema):
         return self.catalog.get_tables(catalog, schema)
 

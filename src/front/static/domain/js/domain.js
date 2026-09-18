@@ -273,6 +273,7 @@ async function saveDomainInfo() {
     const versionEl = document.getElementById('domainVersionSelect');
     const baseUriEl = document.getElementById('domainBaseUri');
     const llmEndpointEl = document.getElementById('domainLlmEndpoint');
+    const llmEndpointKindEl = document.getElementById('domainLlmEndpointKind');
     const graphBackendEl = document.getElementById('domainGraphBackend');
     const neo4jDbEl = document.getElementById('domainNeo4jDatabase');
     const materializationEl = document.getElementById('domainLakehouseMaterialization');
@@ -308,6 +309,7 @@ async function saveDomainInfo() {
             base_uri: baseUriEl ? baseUriEl.value.trim() : '',
             base_uri_auto: _baseUriAutoMode,
             llm_endpoint: llmEndpointEl ? llmEndpointEl.value : '',
+            llm_endpoint_kind: llmEndpointKindEl ? llmEndpointKindEl.value : '',
             review_quorum: quorumEl ? Math.max(1, parseInt(quorumEl.value, 10) || 1) : 1,
             graph_backend: graphBackendEl ? graphBackendEl.value : 'lakebase',
             neo4j_connection: (graphBackendEl && graphBackendEl.value === 'neo4j' && neo4jDbEl)

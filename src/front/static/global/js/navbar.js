@@ -577,6 +577,9 @@ async function domainNew() {
         const payload = { name: input.name };
         if (input.description) payload.description = input.description;
         if (input.llm_endpoint) payload.llm_endpoint = input.llm_endpoint;
+        if (input.llm_endpoint_kind) {
+            payload.llm_endpoint_kind = input.llm_endpoint_kind;
+        }
         if (input.graph_backend) payload.graph_backend = input.graph_backend;
         await fetch('/domain/info', {
             method: 'POST',
@@ -606,6 +609,14 @@ async function domainNew() {
             if (descEl) descEl.value = input.description || '';
             const llmEl = document.getElementById('domainLlmEndpoint');
             if (llmEl && input.llm_endpoint) llmEl.value = input.llm_endpoint;
+            const llmKindEl = document.getElementById('domainLlmEndpointKind');
+            if (llmKindEl && input.llm_endpoint_kind) {
+                llmKindEl.value = input.llm_endpoint_kind;
+            }
+            const llmDisplayEl = document.getElementById('domainLlmEndpointDisplay');
+            if (llmDisplayEl && input.llm_endpoint) {
+                llmDisplayEl.value = input.llm_endpoint;
+            }
             const backendEl = document.getElementById('domainGraphBackend');
             if (backendEl && input.graph_backend) {
                 backendEl.value = input.graph_backend;
@@ -715,6 +726,7 @@ function buildDomainInfoPayload() {
     const quorumEl = document.getElementById('domainReviewQuorum');
     const baseUriEl = document.getElementById('domainBaseUri');
     const llmEndpointEl = document.getElementById('domainLlmEndpoint');
+    const llmEndpointKindEl = document.getElementById('domainLlmEndpointKind');
     const graphBackendEl = document.getElementById('domainGraphBackend');
     const neo4jConnEl = document.getElementById('domainNeo4jDatabase');
     const materializationEl = document.getElementById('domainLakehouseMaterialization');
@@ -727,6 +739,7 @@ function buildDomainInfoPayload() {
         base_uri: baseUriEl ? baseUriEl.value.trim() : undefined,
         base_uri_auto: (typeof _baseUriAutoMode !== 'undefined') ? _baseUriAutoMode : undefined,
         llm_endpoint: llmEndpointEl ? llmEndpointEl.value : undefined,
+        llm_endpoint_kind: llmEndpointKindEl ? llmEndpointKindEl.value : undefined,
         review_quorum: quorumEl ? Math.max(1, parseInt(quorumEl.value, 10) || 1) : undefined,
         graph_backend: graphBackendEl ? graphBackendEl.value : undefined,
         // Only meaningful for Neo4j; cleared for other backends so a stale

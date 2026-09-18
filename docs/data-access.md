@@ -112,7 +112,7 @@ and the engine that ultimately runs (column **Engine**).
 | Visual ontology editor (`Model`, `Entities`, `Relationships`, `Groups`, `Business Views`) | `ontology-design.js`, `ontology-shared-panels.js`, `ontology-groups.js` | Internal REST `/ontology/...` | REST | Python ontology object model |
 | OWL viewer / generator | `ontology-owl.js`, agent `OWLGenerator` | `/ontology/owl/...`, `/agents/owl-generator/run` | REST | `OntologyParser`, `OntologyGenerator` (rdflib) |
 | Import (OWL, FIBO, CDISC, IOF) | `ontology-import.js` | `/ontology/import/*` | REST | rdflib parsers |
-| Generate (Wizard) | `ontology-wizard.js` | LLM endpoint via `agent_owl_generator` | REST → LLM | Databricks Foundation Model API + tool-calling |
+| Generate (Wizard) | `ontology-wizard.js` | Domain LLM via `agent_owl_generator` | REST → LLM | Databricks AI Gateway or Foundation Model API + tool-calling |
 | **Data Quality** rules editor | `ontology-dataquality.js` | `/ontology/dataquality/...` | REST | SHACL (`SHACLService`) on the in-memory ontology |
 | **Business Rules (SWRL)** editor | `ontology-business-rules.js` | `/ontology/swrl/...` | REST | `SWRLParser`, validated against ontology |
 | Expressions & Axioms | `ontology-axioms.js` | `/ontology/axioms/...` | REST | OWL axiom storage |
@@ -122,7 +122,7 @@ and the engine that ultimately runs (column **Engine**).
 | UI Feature | JS file | Endpoint(s) | Wrapper | Engine |
 |---|---|---|---|---|
 | Mapping designer / manual mapping | `mapping-design.js`, `mapping-manual.js` | `/mapping/...` | REST | `R2RMLGenerator` |
-| Auto-Map (LLM) | `mapping-autoassign.js`, agent `AutoAssignment` | `/agents/auto-assignment/run` | REST → LLM | Databricks FM API; agent samples UC tables via Spark SQL through `databricks-sql-connector` |
+| Auto-Map (LLM) | `mapping-autoassign.js`, agent `AutoAssignment` | `/mapping/auto-assign/...` | REST → LLM | Databricks AI Gateway or FM API; agent samples UC tables via Spark SQL through `databricks-sql-connector` |
 | Diagnostics | `mapping-diagnostics.js` | `/mapping/diagnostics/*` | REST | Python validator |
 | Source schema drift | `mapping-design.js`, `mapping-diagnostics.js` | `GET /mapping/schema-drift` | REST | One `DESCRIBE` per distinct source table via `UnityCatalog.get_table_columns` |
 | **R2RML** view | `mapping-r2rml.js` | `/mapping/r2rml/raw` | REST | rdflib serializer |

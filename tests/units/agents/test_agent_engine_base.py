@@ -93,6 +93,38 @@ class TestCallServingEndpoint:
         url = mock_retry.call_args[0][0]
         assert "//serving" not in url
 
+    @patch("agents.engine_base.call_llm_with_retry")
+    def test_gateway_uses_chat_completions_and_model(self, mock_retry):
+        mock_retry.return_value.json.return_value = {"choices": []}
+
+        call_serving_endpoint(
+            "https://host",
+            "tok",
+            "main.ai.mine",
+            [],
+            endpoint_kind="ai_gateway",
+        )
+
+        url, _, payload = mock_retry.call_args.args[:3]
+        assert url == "https://host/ai-gateway/mlflow/v1/chat/completions"
+        assert payload["model"] == "main.ai.mine"
+
+    @patch("agents.engine_base.call_llm_with_retry")
+    def test_explicit_serving_kind_allows_dotted_name(self, mock_retry):
+        mock_retry.return_value.json.return_value = {}
+
+        call_serving_endpoint(
+            "https://host",
+            "tok",
+            "legacy.with.dots",
+            [],
+            endpoint_kind="serving",
+        )
+
+        assert "/serving-endpoints/legacy.with.dots/invocations" in (
+            mock_retry.call_args.args[0]
+        )
+
 
 class TestDispatchTool:
     def test_known_tool(self):

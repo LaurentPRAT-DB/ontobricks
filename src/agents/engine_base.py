@@ -18,6 +18,7 @@ import requests
 from back.core.logging import get_logger
 from agents.llm_utils import call_llm_with_retry
 from agents.tracing import trace_llm
+from shared.llm_target import build_llm_request
 
 logger = get_logger(__name__)
 
@@ -72,6 +73,7 @@ def call_serving_endpoint(
     temperature: float = 0.1,
     timeout: int = 180,
     trace_name: str = "agent:llm",
+    endpoint_kind: str = "",
 ) -> dict:
     """Call a Databricks serving endpoint (OpenAI-compatible chat completions).
 
@@ -81,21 +83,23 @@ def call_serving_endpoint(
     Args:
         trace_name: Used for MLflow span naming via ``@trace_llm``.
     """
-    url = f"{host.rstrip('/')}/serving-endpoints/{endpoint_name}/invocations"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
     banned = _unsupported_params(endpoint_name)
-    payload: Dict[str, Any] = {
-        "messages": messages,
-        "max_tokens": max_tokens,
-    }
-    if "temperature" not in banned and temperature is not None:
-        payload["temperature"] = temperature
-    if tools:
-        payload["tools"] = tools
+    url, payload = build_llm_request(
+        host,
+        endpoint_name,
+        endpoint_kind,
+        messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        tools=tools,
+    )
+    for param in banned:
+        payload.pop(param, None)
 
     logger.info(
         "%s: POST %s — %d messages, %d tool defs, max_tokens=%d, temperature=%s",

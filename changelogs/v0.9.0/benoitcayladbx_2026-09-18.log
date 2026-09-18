@@ -1,0 +1,33 @@
+## Align docs with the AI Gateway picker and No LLM opt-out
+
+Context: User-facing documentation still described LLM automation as Model
+Serving only, and the Ontology Wizard still told users to pick a model on that
+page. The domain now saves one AI Gateway or Serving target (or No LLM) and
+every in-app LLM action uses that saved target.
+
+Changes:
+
+1. README.md
+   Mention AI Gateway or Model Serving among the Databricks services OntoBricks reuses.
+2. docs/user-guide.md
+   Describe the Browse picker, domain-saved target, Wizard/Auto-Map/Interpret
+   behavior, and No LLM as a valid pipeline choice.
+3. docs/features.md, docs/product.md, docs/INFO.md
+   Replace serving-only LLM wording and document the picker plus No LLM opt-out.
+4. docs/api.md, docs/data-access.md, docs/architecture.md, docs/deployment.md
+   Document the combined llm-endpoints list, domain-authoritative SQL
+   generation, No LLM HTTP 400, and AI Gateway FQNs on agent custom inputs.
+
+Modified files:
+- README.md
+- docs/user-guide.md
+- docs/features.md
+- docs/product.md
+- docs/INFO.md
+- docs/api.md
+- docs/data-access.md
+- docs/architecture.md
+- docs/deployment.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-18.log
+
+Tests: uv run --frozen pytest -q -m "not scenario" → 6268 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.63s

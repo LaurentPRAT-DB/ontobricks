@@ -145,55 +145,29 @@ async function _loadNeo4jConnectionOptions() {
     }
 }
 
-// Load available LLM endpoints
-async function loadLlmEndpoints() {
-    const select = document.getElementById('domainLlmEndpoint');
-    if (!select) return;
-    
-    const savedValue = select.dataset.savedValue || '';
-
-    try {
-        const response = await fetch('/mapping/wizard/llm-endpoints', { credentials: 'same-origin' });
-        const data = await response.json();
-        
-        select.innerHTML = '<option value="">-- Select an LLM endpoint --</option>';
-        
-        if (data.success && data.endpoints && data.endpoints.length > 0) {
-            data.endpoints.forEach(endpoint => {
-                const option = document.createElement('option');
-                option.value = endpoint.name;
-                option.textContent = endpoint.name;
-                select.appendChild(option);
-            });
-        } else {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = 'No endpoints available';
-            option.disabled = true;
-            select.appendChild(option);
-        }
-
-        if (savedValue) {
-            setSelectedLlmEndpoint(savedValue);
-        }
-    } catch (error) {
-        console.error('Error loading LLM endpoints:', error);
-    }
+function setSelectedLlmEndpoint(endpointName, endpointKind = '') {
+    const nameInput = document.getElementById('domainLlmEndpoint');
+    const kindInput = document.getElementById('domainLlmEndpointKind');
+    const display = document.getElementById('domainLlmEndpointDisplay');
+    if (!nameInput || !kindInput || !display) return;
+    nameInput.value = endpointName || '';
+    kindInput.value = endpointKind || '';
+    display.value = endpointName || '';
 }
 
-// Set the selected LLM endpoint
-function setSelectedLlmEndpoint(endpointName) {
-    const select = document.getElementById('domainLlmEndpoint');
-    if (!select || !endpointName) return;
-
-    select.value = endpointName;
-    if (select.value !== endpointName) {
-        const option = document.createElement('option');
-        option.value = endpointName;
-        option.textContent = endpointName;
-        select.appendChild(option);
-        select.value = endpointName;
-    }
+async function browseLlmEndpoints() {
+    const nameInput = document.getElementById('domainLlmEndpoint');
+    const kindInput = document.getElementById('domainLlmEndpointKind');
+    if (!nameInput || !kindInput || typeof openLlmEndpointPicker !== 'function') return;
+    const selected = await openLlmEndpointPicker({
+        name: nameInput.value,
+        kind: kindInput.value
+    });
+    if (!selected) return;
+    setSelectedLlmEndpoint(selected.name, selected.kind);
+    nameInput.dataset.userEdited = '1';
+    nameInput.dispatchEvent(new Event('change', { bubbles: true }));
+    kindInput.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
 // Rollback to the saved version (discard all local changes)
@@ -454,15 +428,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         const graphBackendEl = document.getElementById('domainGraphBackend');
         const neo4jDbElInit = document.getElementById('domainNeo4jDatabase');
-        // The template already renders the persisted Graph Backend / Neo4j
-        // Connection server-side (Jinja), so these two fields are correct the
-        // instant the page paints. The redundant `/domain/info` re-fetch below
-        // is gated behind the (often multi-second, real-workspace) LLM
-        // endpoints call in the same Promise.all — a fast user can pick a new
-        // value before it resolves, and it would otherwise silently revert
-        // the pick back to the stale one it fetched. Mark the field dirty on
-        // the first user interaction so that late resolution never clobbers
-        // an edit made in the meantime.
+        // The template already renders persisted values server-side. Mark
+        // controls dirty on first interaction so the `/domain/info` refresh
+        // below cannot overwrite a newer browser selection.
         if (graphBackendEl) {
             graphBackendEl.addEventListener('change', refreshDtNamesFromForm);
             graphBackendEl.addEventListener('change', syncNeo4jConnectionSection);
@@ -491,10 +459,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (refreshDbBtn) {
             refreshDbBtn.addEventListener('click', () => loadNeo4jDatabases(true));
         }
+        const llmBrowse = document.getElementById('domainLlmBrowse');
+        if (llmBrowse) {
+            llmBrowse.addEventListener('click', browseLlmEndpoints);
+        }
 
-        // Load LLM endpoints and version status in parallel
-        const [, statusData, infoData] = await Promise.all([
-            loadLlmEndpoints(),
+        const [statusData, infoData] = await Promise.all([
             fetchOnce('/domain/version-status').catch(() => null),
             fetchOnce('/domain/info').catch(() => null)
         ]);
@@ -517,8 +487,13 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (inf && !currentDomainFolder) {
                 currentDomainFolder = inf;
             }
-            if (infoData.info && infoData.info.llm_endpoint) {
-                setSelectedLlmEndpoint(infoData.info.llm_endpoint);
+            const llmNameInput = document.getElementById('domainLlmEndpoint');
+            if (llmNameInput && !llmNameInput.dataset.userEdited
+                    && infoData.info && infoData.info.llm_endpoint) {
+                setSelectedLlmEndpoint(
+                    infoData.info.llm_endpoint,
+                    infoData.info.llm_endpoint_kind || ''
+                );
             }
             const graphBackendEl = document.getElementById('domainGraphBackend');
             // Skip once the user has touched the field: this fetch reflects

@@ -414,8 +414,27 @@ async def get_llm_endpoints(
         if not client:
             raise ValidationError("Databricks not configured")
 
-        wizard = SQLWizardService(client)
-        endpoints = wizard.get_model_serving_endpoints()
+        gateway_endpoints = []
+        try:
+            gateway_endpoints = client.get_ai_gateway_model_services()
+        except Exception as exc:
+            logger.warning("Failed to list AI Gateway model services: %s", exc)
+
+        serving_endpoints = []
+        try:
+            wizard = SQLWizardService(client)
+            serving_endpoints = [
+                {**endpoint, "kind": "serving"}
+                for endpoint in wizard.get_model_serving_endpoints()
+            ]
+        except Exception as exc:
+            logger.warning("Failed to list Model Serving endpoints: %s", exc)
+
+        endpoints = sorted(
+            gateway_endpoints, key=lambda endpoint: endpoint.get("name", "").lower()
+        ) + sorted(
+            serving_endpoints, key=lambda endpoint: endpoint.get("name", "").lower()
+        )
         return {"success": True, "endpoints": endpoints}
 
     except OntoBricksError:

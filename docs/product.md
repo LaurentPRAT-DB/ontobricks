@@ -50,7 +50,7 @@ flowchart LR
     subgraph databricksPlatform ["Databricks Platform"]
         UC["Unity Catalog<br/>Tables, Volumes, Metadata"]
         WH["SQL Warehouse<br/>Query Execution"]
-        MS["Model Serving<br/>LLM Endpoints"]
+        MS["AI Gateway / Serving<br/>LLM targets"]
         TS["Delta Triple Store<br/>Subject-Predicate-Object"]
     end
 
@@ -79,7 +79,7 @@ flowchart LR
 | -------------- | -------------------------------------------------------------------------- |
 | Unity Catalog  | Storage for tables, domain files (Volumes), and metadata                  |
 | SQL Warehouse  | Executes all data queries -- no separate compute                           |
-| Model Serving  | Powers LLM-driven ontology generation and auto-mapping                  |
+| AI Gateway / Model Serving | Powers LLM-driven ontology generation and auto-mapping; **No LLM** opts out |
 | Delta Table    | Triple store -- triples live in your Lakehouse, not in a separate graph DB |
 | Databricks App | Deployment target -- `databricks apps deploy` and you are live             |
 | MCP Server     | Exposes knowledge-graph tools to the Databricks Playground and LLM clients |
@@ -93,7 +93,7 @@ flowchart LR
 
 #### From raw tables to a queryable graph viewer in minutes, not months.
 
-After a one-time setup (Databricks connection, LLM endpoint, triple store table), the entire pipeline is four actions:
+After a one-time setup (Databricks connection, LLM target, triple store table), the entire pipeline is four actions:
 
 ```mermaid
 flowchart LR
@@ -114,8 +114,8 @@ flowchart LR
 | Step  | Where in OntoBricks      | What happens                                                                        | Powered by        |
 | ----- | ------------------------ | ----------------------------------------------------------------------------------- | ----------------- |
 | **1** | Domain > Metadata       | Fetches table and column metadata from Unity Catalog                                | Unity Catalog API |
-| **2** | Ontology > Generate      | LLM designs entities, relationships, attributes, and inheritance from your metadata | Model Serving     |
-| **3** | Mapping > Auto-Map | LLM generates SQL queries and column mappings for every entity and relationship     | Model Serving     |
+| **2** | Ontology > Generate      | LLM designs entities, relationships, attributes, and inheritance from your metadata | AI Gateway / Model Serving |
+| **3** | Mapping > Auto-Map | LLM generates SQL queries and column mappings for every entity and relationship     | AI Gateway / Model Serving |
 | **4** | Knowledge Graph > Build     | Executes all mappings and populates the triple store table                          | SQL Warehouse     |
 
 
@@ -262,7 +262,7 @@ databricks apps deploy --app-name ontobricks
 | Resource      | Details                                                                  |
 | ------------- | ------------------------------------------------------------------------ |
 | SQL Warehouse | Serverless recommended; Classic also supported                           |
-| Model Serving | Optional -- required for LLM features (ontology generation, auto-mapping) |
+| AI Gateway or Model Serving | Optional — required for LLM features (ontology generation, auto-mapping). Leave unset (**No LLM**) to run without AI. |
 | Unity Catalog | For table access and domain storage (Volumes)                           |
 
 
@@ -300,7 +300,7 @@ OntoBricks is a **Graph Viewer Builder for Databricks** that brings **graph data
 
 Users can design ontologies visually or import industry standards (FIBO for finance, CDISC for clinical data, IOF for manufacturing), map ontology entities to Databricks tables, materialize the result into a Delta-backed triple store mirrored on Lakebase Postgres, run **formal reasoning** (OWL 2 RL deductive closure, SWRL rules, transitive/symmetric inference), and explore the graph viewer through interactive visualization. The entire pipeline — from raw tables to a reasoned, queryable graph viewer — can be completed in as few as four clicks thanks to LLM-driven ontology generation and automatic data mapping.
 
-OntoBricks runs as a **Databricks App**, making it natively integrated with the Databricks platform: Unity Catalog for storage and metadata, SQL Warehouses for query execution, and Model Serving endpoints for LLM features.
+OntoBricks runs as a **Databricks App**, making it natively integrated with the Databricks platform: Unity Catalog for storage and metadata, SQL Warehouses for query execution, and AI Gateway or Model Serving for LLM features.
 
 ---
 
@@ -388,7 +388,7 @@ OntoBricks provides an end-to-end, web-based solution that runs directly on Data
 A **production-ready, source-available Databricks App** under the [Databricks License](../LICENSE.txt) that:
 
 - Deploys in minutes via `databricks apps deploy`
-- Requires only a SQL Warehouse and (optionally) a Model Serving endpoint
+- Requires only a SQL Warehouse and (optionally) an AI Gateway model or Model Serving endpoint
 - Stores all domain data in Unity Catalog Volumes (no external dependencies)
 - Supports the full lifecycle: design → map → materialize → explore → validate
 
@@ -429,7 +429,7 @@ A **production-ready, source-available Databricks App** under the [Databricks Li
 | Graph Analysis | NetworkX 3.0+ (community detection: Louvain, Label Propagation, Greedy Modularity)    |
 | Frontend   | Bootstrap 5, Sigma.js, Graphology (+ communities-louvain), D3.js, OntoViz (custom), Vanilla JS |
 | Data       | Databricks SQL Connector, Unity Catalog, Delta Lake                                       |
-| AI         | Databricks Model Serving (LLM endpoints)                                                  |
+| AI         | Databricks AI Gateway model services and Model Serving endpoints                          |
 | MCP        | FastMCP, httpx, Databricks SDK (separate App)                                             |
 | Deployment | Databricks Apps (`app.yaml`)                                                              |
 
@@ -439,7 +439,7 @@ A **production-ready, source-available Databricks App** under the [Databricks Li
 - Fully functional application with all features implemented
 - Tested with CRM, IoT, energy, and healthcare ontologies
 - Industry-standard imports operational (FIBO, CDISC, IOF)
-- LLM-powered wizard and auto-map working with Databricks Model Serving endpoints
+- LLM-powered wizard and auto-map working with Unity AI Gateway model services and Model Serving endpoints
 - **Reasoning engine operational**: OWL 2 RL deductive closure, SWRL rule engine (SQL translator) with graphical D3 editor, graph reasoning (transitive closure, symmetric expansion), constraint validation, and SHACL data quality shapes (PySHACL + SQL compilation)
 - **Triple store + Graph DB layers**: Delta view (Unity Catalog) + Lakebase Postgres flat store, pluggable behind `GraphDBFactory`
 - MCP server deployed and operational for Databricks Playground
@@ -452,6 +452,6 @@ A **production-ready, source-available Databricks App** under the [Databricks Li
 #### Resources Needed
 
 - **Databricks workspace** with a SQL Warehouse (Serverless recommended) for demo and testing
-- **Model Serving endpoint** for LLM features (e.g., Meta Llama 3.3 70B or equivalent)
+- **AI Gateway model service or Model Serving endpoint** for LLM features (optional; **No LLM** disables in-app AI)
 - **Unity Catalog** with sample datasets for demonstration scenarios
 - Visibility and feedback from field engineering teams working on graph viewer, data governance, and semantic layer use cases

@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='global/css/emoji-picker.css') }}?v={{ asset_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='global/css/help-modal.css') }}?v={{ asset_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='global/css/registry-modal.css') }}?v={{ asset_version }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='global/css/llm-endpoint-picker.css') }}?v={{ asset_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='registry/css/registry.css') }}?v={{ asset_version }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='global/css/review-modals.css') }}?v={{ asset_version }}">
     <!-- permissions.css must load LAST so its !important gates win over
@@ -53,6 +54,7 @@
     <script defer src="{{ url_for('static', filename='global/js/help-docs.js') }}?v={{ asset_version }}"></script>
     <script defer src="{{ url_for('static', filename='registry/js/registry.js') }}?v={{ asset_version }}"></script>
     <script defer src="{{ url_for('static', filename='global/js/registry-modal.js') }}?v={{ asset_version }}"></script>
+    <script defer src="{{ url_for('static', filename='global/js/llm-endpoint-picker.js') }}?v={{ asset_version }}"></script>
     
     {% block extra_css %}{% endblock %}
 </head>
@@ -463,6 +465,9 @@
 
     <!-- Registry Modal (Browse + Bridges) -->
     {% include "partials/layout/registry_modal.html" %}
+
+    <!-- LLM endpoint picker -->
+    {% include "partials/layout/llm_endpoint_picker_modal.html" %}
 
     <!-- Workspace Map Modal (Domain + version badge) -->
     {% include "partials/layout/_workspace_map_modal.html" %}

@@ -838,8 +838,8 @@ function isValidDomainName(name) {
 }
 
 /**
- * Show a modal that collects a new domain name, description, and LLM endpoint.
- * Resolves with { name, description, llm_endpoint } or null if cancelled.
+ * Show a modal that collects a new domain name, description, and LLM target.
+ * Resolves with endpoint name and kind, or null if cancelled.
  */
 function showNewDomainDialog() {
     return new Promise((resolve) => {
@@ -881,18 +881,20 @@ function showNewDomainDialog() {
                                 </ul>
                             </div>
                             <div class="mb-1">
-                                <label for="${modalId}_llm" class="form-label fw-semibold">
+                                <label for="${modalId}_llm_display" class="form-label fw-semibold">
                                     <i class="bi bi-robot me-1"></i>LLM Endpoint <span class="text-muted fw-normal">(optional — for OntoBricks Agents)</span>
                                 </label>
                                 <div class="input-group">
-                                    <select class="form-select new-domain-field" id="${modalId}_llm">
-                                        <option value="">Loading endpoints…</option>
-                                    </select>
-                                    <button type="button" class="btn btn-outline-secondary" id="${modalId}_llm_refresh" title="Refresh endpoints">
-                                        <i class="bi bi-arrow-clockwise"></i>
+                                    <input type="hidden" id="${modalId}_llm" value="">
+                                    <input type="hidden" id="${modalId}_llm_kind" value="">
+                                    <input type="text" class="form-control new-domain-field"
+                                           id="${modalId}_llm_display" readonly placeholder="No LLM selected">
+                                    <button type="button" class="btn btn-outline-secondary"
+                                            id="${modalId}_llm_browse">
+                                        <i class="bi bi-search me-1"></i>Browse
                                     </button>
                                 </div>
-                                <small class="text-muted">Databricks Model Serving endpoint used by OntoBricks Agents.</small>
+                                <small class="text-muted">AI Gateway model service or legacy Model Serving endpoint.</small>
                             </div>
                         </div>
                         <div class="modal-footer">
@@ -908,36 +910,23 @@ function showNewDomainDialog() {
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         const modalEl   = document.getElementById(modalId);
         const nameInput = document.getElementById(`${modalId}_name`);
-        const llmSelect = document.getElementById(`${modalId}_llm`);
+        const llmInput = document.getElementById(`${modalId}_llm`);
+        const llmKindInput = document.getElementById(`${modalId}_llm_kind`);
+        const llmDisplay = document.getElementById(`${modalId}_llm_display`);
         const modal     = new bootstrap.Modal(modalEl);
         let resolved    = false;
 
-        async function loadLlmOptions() {
-            llmSelect.innerHTML = '<option value="">Loading…</option>';
-            try {
-                const resp = await fetch('/mapping/wizard/llm-endpoints', { credentials: 'same-origin' });
-                const data = await resp.json();
-                llmSelect.innerHTML = '<option value="">— None —</option>';
-                if (data.success && data.endpoints && data.endpoints.length > 0) {
-                    data.endpoints.forEach(ep => {
-                        const opt = document.createElement('option');
-                        opt.value = ep.name;
-                        opt.textContent = ep.name;
-                        llmSelect.appendChild(opt);
-                    });
-                } else {
-                    const opt = document.createElement('option');
-                    opt.value = '';
-                    opt.textContent = 'No endpoints available';
-                    opt.disabled = true;
-                    llmSelect.appendChild(opt);
-                }
-            } catch (_) {
-                llmSelect.innerHTML = '<option value="">Could not load endpoints</option>';
-            }
-        }
-
-        document.getElementById(`${modalId}_llm_refresh`).addEventListener('click', loadLlmOptions);
+        document.getElementById(`${modalId}_llm_browse`).addEventListener('click', async () => {
+            if (typeof openLlmEndpointPicker !== 'function') return;
+            const selected = await openLlmEndpointPicker({
+                name: llmInput.value,
+                kind: llmKindInput.value
+            });
+            if (!selected) return;
+            llmInput.value = selected.name;
+            llmKindInput.value = selected.kind;
+            llmDisplay.value = selected.name;
+        });
 
         document.getElementById(`${modalId}_confirm`).addEventListener('click', () => {
             const name = enforceDomainNameCamelCase(nameInput.value).trim();
@@ -948,10 +937,17 @@ function showNewDomainDialog() {
                 return;
             }
             const desc = (document.getElementById(`${modalId}_desc`).value || '').trim();
-            const llm  = llmSelect.value || '';
+            const llm = llmInput.value || '';
+            const llmKind = llmKindInput.value || '';
             resolved = true;
             modal.hide();
-            resolve({ name, description: desc, llm_endpoint: llm, graph_backend: 'databricks' });
+            resolve({
+                name,
+                description: desc,
+                llm_endpoint: llm,
+                llm_endpoint_kind: llmKind,
+                graph_backend: 'databricks'
+            });
         });
 
         nameInput.addEventListener('input', () => {
@@ -977,7 +973,6 @@ function showNewDomainDialog() {
 
         modal.show();
         setTimeout(() => nameInput.focus(), 300);
-        loadLlmOptions();
     });
 }
 

@@ -21,6 +21,10 @@ class TestGetEmptyDomain:
         data = get_empty_domain()
         assert data["domain"]["info"]["name"] == "NewDomain"
 
+    def test_default_llm_endpoint_kind_is_empty(self):
+        data = get_empty_domain()
+        assert data["domain"]["info"]["llm_endpoint_kind"] == ""
+
     def test_default_registry(self):
         data = get_empty_domain()
         reg = data["settings"]["registry"]

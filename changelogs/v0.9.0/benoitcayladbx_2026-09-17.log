@@ -269,6 +269,74 @@ Tests:
 - Focused: uv run --frozen pytest -q tests/units/front/test_domain_metadata_save.py → 2 passed, 1 warning in 0.13s
 - Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6207 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.80s
 
+## Add AI Gateway model services to the LLM picker
+
+Context: Domain configuration only exposed legacy Model Serving endpoints, so
+executable Unity Catalog AI Gateway services could not be selected or invoked.
+
+Changes:
+
+1. src/shared/llm_target.py and LLM transports
+   Add the shared target-kind contract and route Unity AI Gateway requests
+   through MLflow chat completions while preserving legacy Serving behavior.
+2. src/back/core/databricks/ModelServiceCatalog.py and mapping API
+   Paginate the global model-service catalog, filter by effective EXECUTE with
+   bounded concurrent probes and rate-limit retry, and merge Gateway-first
+   results with legacy endpoints.
+3. Domain persistence and Graph Chat discovery
+   Persist `llm_endpoint_kind`, infer legacy values, and prefer system, custom
+   Gateway, then READY Serving targets during automatic discovery.
+4. Shared frontend picker
+   Replace native LLM selects with a searchable, grouped modal reused by Domain
+   Information and New Domain, including refresh, clear, safe nested-modal
+   layering, stale-response protection, footer clearance, and a stacked mobile
+   search/refresh toolbar.
+5. Tests and documentation
+   Add contract, persistence, discovery, routing, API, and frontend regression
+   coverage; update the README, user guide, design, and implementation plan.
+
+Modified files:
+- README.md
+- docs/superpowers/plans/2026-09-17-ai-gateway-llm-picker.md
+- docs/superpowers/specs/2026-09-17-ai-gateway-llm-picker-design.md
+- docs/user-guide.md
+- src/agents/engine_base.py
+- src/api/routers/internal/dtwin.py
+- src/api/routers/internal/mapping.py
+- src/back/core/databricks/DatabricksClient.py
+- src/back/core/databricks/ModelServiceCatalog.py
+- src/back/core/sqlwizard/SQLWizardService.py
+- src/back/objects/domain/Domain.py
+- src/back/objects/session/DomainSession.py
+- src/front/static/domain/js/domain-information.js
+- src/front/static/domain/js/domain.js
+- src/front/static/global/css/llm-endpoint-picker.css
+- src/front/static/global/js/llm-endpoint-picker.js
+- src/front/static/global/js/navbar.js
+- src/front/static/global/js/utils.js
+- src/front/templates/base.html
+- src/front/templates/partials/domain/_domain_information.html
+- src/front/templates/partials/layout/llm_endpoint_picker_modal.html
+- src/shared/llm_target.py
+- tests/units/agents/test_agent_engine_base.py
+- tests/units/api/test_llm_endpoints.py
+- tests/units/core/test_model_service_catalog.py
+- tests/units/core/test_sql_wizard.py
+- tests/units/domain/test_domain_service.py
+- tests/units/domain/test_domain_session.py
+- tests/units/dtwin/test_llm_auto_discovery.py
+- tests/units/front/test_llm_endpoint_picker.py
+- tests/units/shared/test_llm_target.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-17.log
+
+Tests:
+- Focused Gateway/picker suite: 184 passed, 2 warnings.
+- Mandatory suite: uv run --frozen pytest -q -m "not scenario" → 6238 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 50.20s.
+- Ruff checks: passed for all new Python modules and tests.
+- JavaScript syntax checks: passed for all changed picker/domain scripts.
+- Live API: HTTP 200 in 13.70s; 48 AI Gateway and 60 Serving targets; `benoit_cayla.ontobricks-todrop.monclaudesonnetamoi` present.
+- Browser: Domain Information and New Domain picker flows passed, including search, refresh, selection, clear, cancel, Escape, nested modal layering, full footer clearance, and an unclipped 375 px toolbar.
+
 ## Gate ontology and mapping AI routes
 
 Context: Ontology and Mapping LLM entry points used serving-only or inline

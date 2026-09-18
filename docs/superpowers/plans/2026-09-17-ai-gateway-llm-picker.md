@@ -4,7 +4,7 @@
 
 **Goal:** Let each domain select any executable Unity AI Gateway model service through a searchable modal while preserving legacy Model Serving endpoints.
 
-**Architecture:** Add a small shared LLM-target utility that decides the request URL and payload from an endpoint name and persisted kind. Add a Databricks model-service catalog that enumerates schemas, paginates services, and filters to effective `EXECUTE`; merge those results with legacy Serving endpoints in the existing API. Persist `llm_endpoint_kind`, propagate it to every LLM transport, and replace native selects with one reusable Bootstrap picker.
+**Architecture:** Add a small shared LLM-target utility that decides the request URL and payload from an endpoint name and persisted kind. Add a Databricks model-service catalog that paginates the workspace-global service list and filters to effective `EXECUTE` with bounded parallel probes; merge those results with legacy Serving endpoints in the existing API. Persist `llm_endpoint_kind`, route every LLM transport by target shape/kind, and replace native selects with one reusable Bootstrap picker.
 
 **Tech Stack:** Python 3.11, FastAPI, `requests`, Databricks Unity Catalog REST API 2.1, Bootstrap 5, vanilla JavaScript, pytest.
 
@@ -251,8 +251,8 @@ Use a mocked auth object with `host`, `get_headers()`, and mocked `requests.get`
 
 ```python
 def test_lists_all_pages_and_strips_resource_prefix():
-    # Catalog/schema calls return main/ai. Model-service pages return
-    # model-services/main.ai.first then model-services/main.ai.second.
+    # Global model-service pages return model-services/main.ai.first then
+    # model-services/main.ai.second.
     # Effective permissions contain EXECUTE.
     assert catalog.list_executable() == [
         {"name": "main.ai.first", "kind": "ai_gateway", "comment": ""},
@@ -265,11 +265,10 @@ def test_excludes_read_metadata_only_service():
     assert catalog.list_executable() == []
 
 
-def test_skips_forbidden_schema_and_continues():
-    # main.hidden returns 403; system.ai returns one executable service.
-    assert [row["name"] for row in catalog.list_executable()] == [
-        "system.ai.claude-sonnet-4-5"
-    ]
+def test_uses_global_listing_without_schema_enumeration():
+    client.get_catalogs.side_effect = AssertionError("must not enumerate catalogs")
+    assert catalog.list_executable() == []
+    assert "parent" not in requests_get.call_args.kwargs["params"]
 ```
 
 The effective-permissions request must use:
@@ -284,22 +283,19 @@ Run: `uv run --frozen pytest -q tests/units/core/test_model_service_catalog.py`
 
 Expected: import fails because `ModelServiceCatalog` does not exist.
 
-- [ ] **Step 3: Implement schema traversal, pagination, and effective-EXECUTE filtering**
+- [ ] **Step 3: Implement global pagination and effective-EXECUTE filtering**
 
 The implementation must:
 
 ```python
-for catalog_name in self.client.get_catalogs():
-    for schema_name in self.client.get_schemas(catalog_name):
-        parent = f"schemas/{catalog_name}.{schema_name}"
-        page_token = ""
-        while True:
-            # GET model-services with parent, page_size=100, view=BASIC.
-            # Append owner rows or rows with effective EXECUTE.
-            # Break when next_page_token is empty.
+page_token = ""
+while True:
+    # GET global model-services with page_size=100 and view=BASIC.
+    # Check effective EXECUTE concurrently with a bounded worker pool.
+    # Append executable rows and follow next_page_token until empty.
 ```
 
-Catch 403/404 per catalog, schema, candidate permission check, log at debug/warning without tokens, and continue. Let an authentication failure at the top level yield `[]`.
+Catch candidate permission failures, log at debug without tokens, and exclude those candidates. A global authentication/listing failure yields the successfully collected pages or `[]`.
 
 - [ ] **Step 4: Write the failing merged-router tests**
 

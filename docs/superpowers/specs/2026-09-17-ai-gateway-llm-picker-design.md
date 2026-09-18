@@ -12,8 +12,8 @@ The Domain LLM control lists Databricks **Model Serving** endpoints only
 
 Unity **AI Gateway model services** (UI: AI Gateway → Create Model) live in
 Unity Catalog as `catalog.schema.service`. They are listed with
-`GET /api/2.1/unity-catalog/model-services?parent=schemas/{catalog}.{schema}`
-and invoked at `/ai-gateway/mlflow/v1/chat/completions` with
+`GET /api/2.1/unity-catalog/model-services` and invoked at
+`/ai-gateway/mlflow/v1/chat/completions` with
 `"model": "<fqn>"`. Custom services such as `….monclaudesonnetamoi` never
 appear in the Serving list.
 
@@ -81,16 +81,17 @@ Extend `GET /mapping/wizard/llm-endpoints` to return:
 
 Gateway:
 
-- Reuse `DatabricksClient.get_catalogs` / `get_schemas`.
-- For each schema, paginate
-  `GET /api/2.1/unity-catalog/model-services?parent=schemas/{catalog}.{schema}`
-  (`page_size` 100, follow `next_page_token`).
-- Skip catalogs/schemas that 403/404; log and continue.
+- Use the workspace-supported global
+  `GET /api/2.1/unity-catalog/model-services` listing (`page_size` 100,
+  follow `next_page_token`). This avoids slow SQL-warehouse traversal of
+  every catalog and schema.
 - The list API can also return services visible through `READ_METADATA` or
   `MANAGE` alone. Resolve the authenticated principal with the existing SCIM
   `/Me` helper, call Unity Catalog effective permissions for each candidate,
   and retain only owner services or services whose effective privileges
   include `EXECUTE`.
+- Run independent effective-permission probes with bounded concurrency.
+- Retry a rate-limited permission probe once using its bounded `Retry-After`.
 - If the effective-permissions check itself is forbidden, exclude that
   candidate rather than presenting a model that may fail when invoked.
 - `name` in the payload is the **three-part FQN** (`catalog.schema.service`),

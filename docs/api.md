@@ -2256,7 +2256,7 @@ The `last_modified` field is retrieved from the Unity Catalog Delta table metada
 
 #### Auto-Map Entity Icons (LLM)
 
-Use the domain's configured LLM serving endpoint to suggest emoji icons for entity names.
+Use the LLM saved in **Domain Information → AI** to suggest emoji icons for entity names.
 
 ```http
 POST /dtwin/auto-assign-icons
@@ -2282,7 +2282,7 @@ POST /dtwin/auto-assign-icons
 }
 ```
 
-> **Note**: Requires a valid LLM serving endpoint configured in Domain Settings (`llm_endpoint`).
+> **Note**: Requires a saved LLM on the domain (`llm_endpoint`). An empty target (**No LLM**) returns HTTP 400 with guidance to select a model in Domain Information → AI.
 
 ---
 
@@ -2750,7 +2750,19 @@ recent successful run) and a per-version breakdown.
 
 ### Mapping SQL Wizard Endpoints
 
-LLM-assisted SQL generation for mapping queries.
+LLM-assisted SQL generation for mapping queries. Generation uses the LLM saved
+on the current domain. Request `endpoint_name` / `endpoint_kind` fields are
+ignored. An empty domain target (**No LLM**) returns HTTP 400.
+
+#### List LLM Targets
+
+```http
+GET /mapping/wizard/llm-endpoints
+```
+
+Returns executable Unity AI Gateway model services first (`kind: "ai_gateway"`),
+then legacy Model Serving endpoints (`kind: "serving"`). Gateway rows require
+Unity Catalog `EXECUTE` for the signed-in identity.
 
 #### Get Schema Context
 

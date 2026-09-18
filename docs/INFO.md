@@ -95,7 +95,7 @@ Explore your graph viewer — search, filter, and navigate entities and relation
 - **📐 Entity-Relationship Diagram**: Interactive canvas with auto-layout, zoom, pan, and centering
 - **🔗 Inheritance Support**: Visual class hierarchies with property inheritance (rdfs:subClassOf)
 - **📋 Constraints & Rules**: Define cardinality, value constraints, property characteristics, and SWRL rules
-- **🧙 LLM-Powered Wizard**: Generate a complete ontology from table metadata using the configured LLM endpoint
+- **🧙 LLM-Powered Wizard**: Generate a complete ontology from table metadata using the LLM saved in Domain Information → AI
 - **📏 SHACL Data Quality**: Define data quality shapes (completeness, cardinality, uniqueness, consistency, conformance, structural) using W3C SHACL — generate Turtle, import from files, validate with PySHACL, and execute shapes as SQL against the triple store
 
 ### Data Mapping
@@ -235,7 +235,7 @@ OntoBricks can automatically build a complete graph viewer from your Databricks 
 | **3** | **Auto-Map** (Mapping > Auto-Map) | LLM generates SQL mappings for every entity and relationship |
 | **4** | **Synchronize** (Knowledge Graph > Status) | Executes mappings and populates the triple store table |
 
-After a one-time configuration (Databricks connection, LLM endpoint, triple store table), the entire process from raw tables to a queryable graph viewer is fully automated.
+After a one-time configuration (Databricks connection, LLM target, triple store table), the entire process from raw tables to a queryable graph viewer is fully automated.
 
 See the **[Automated triple-store pipeline](docs/user-guide.md#automated-triple-store-pipeline-merged)** section in the user guide for detailed steps, tips, and the REST API equivalent.
 

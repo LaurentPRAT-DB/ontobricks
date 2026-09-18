@@ -27,6 +27,7 @@ from shared.config.constants import (
     DEFAULT_LOG_LEVEL,
     DEFAULT_GRAPH_NAME,
 )
+from shared.llm_target import normalize_llm_endpoint_kind
 from back.core.databricks import (
     DatabricksClient,
     MetadataService,
@@ -235,6 +236,7 @@ class Domain:
         view_table = ".".join(p for p in parts if p)
         graph_name = f"{self._s.info.get('name', DEFAULT_GRAPH_NAME)}_V{_version}"
 
+        llm_endpoint = self._s.info.get("llm_endpoint", "")
         domain_info = {
             "name": self._s.info.get("name", "NewDomain"),
             "description": self._s.info.get("description", ""),
@@ -242,7 +244,15 @@ class Domain:
             "version": self._s.current_version,
             "base_uri": self._s.ontology.get("base_uri", ""),
             "base_uri_auto": self._s.ontology.get("base_uri_auto", None),
-            "llm_endpoint": self._s.info.get("llm_endpoint", ""),
+            "llm_endpoint": llm_endpoint,
+            "llm_endpoint_kind": (
+                normalize_llm_endpoint_kind(
+                    llm_endpoint,
+                    self._s.info.get("llm_endpoint_kind", ""),
+                )
+                if llm_endpoint
+                else ""
+            ),
             "mcp_enabled": self._s.info.get("mcp_enabled", False),
             "status": self._s.info.get("status", "DRAFT"),
             "review_quorum": self._s.info.get("review_quorum", 1),
@@ -364,6 +374,21 @@ class Domain:
         else:
             domain_name = self._s.info.get("name", "NewDomain")
 
+        llm_endpoint = data.get(
+            "llm_endpoint", self._s.info.get("llm_endpoint", "")
+        )
+        llm_endpoint_kind = (
+            normalize_llm_endpoint_kind(
+                llm_endpoint,
+                data.get(
+                    "llm_endpoint_kind",
+                    self._s.info.get("llm_endpoint_kind", ""),
+                ),
+            )
+            if llm_endpoint
+            else ""
+        )
+
         self._s.info.update(
             {
                 "name": domain_name,
@@ -371,9 +396,8 @@ class Domain:
                     "description", self._s.info.get("description", "")
                 ),
                 "author": data.get("author", self._s.info.get("author", "")),
-                "llm_endpoint": data.get(
-                    "llm_endpoint", self._s.info.get("llm_endpoint", "")
-                ),
+                "llm_endpoint": llm_endpoint,
+                "llm_endpoint_kind": llm_endpoint_kind,
                 "mcp_enabled": data.get(
                     "mcp_enabled", self._s.info.get("mcp_enabled", False)
                 ),
@@ -456,6 +480,7 @@ class Domain:
             "base_uri": self._s.ontology.get("base_uri", ""),
             "base_uri_auto": self._s.ontology.get("base_uri_auto", None),
             "llm_endpoint": self._s.info.get("llm_endpoint", ""),
+            "llm_endpoint_kind": self._s.info.get("llm_endpoint_kind", ""),
             "mcp_enabled": self._s.info.get("mcp_enabled", False),
             "review_quorum": self._s.info.get("review_quorum", 1),
             "mcp_policy": coerce_mcp_policy(self._s.info.get("mcp_policy")),
@@ -565,6 +590,7 @@ class Domain:
             "version": self._s.current_version,
             "author": self._s.info.get("author", ""),
             "llm_endpoint": self._s.info.get("llm_endpoint", ""),
+            "llm_endpoint_kind": self._s.info.get("llm_endpoint_kind", ""),
             "mcp_enabled": self._s.info.get("mcp_enabled", False),
             "review_quorum": self._s.info.get("review_quorum", 1),
             "mcp_policy": coerce_mcp_policy(self._s.info.get("mcp_policy")),

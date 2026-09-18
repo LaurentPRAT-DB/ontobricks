@@ -20,6 +20,7 @@ def _mock_domain(
         "description": "Desc",
         "author": "Author",
         "llm_endpoint": "",
+        "llm_endpoint_kind": "",
     }
     domain.triplestore = {"stats": {}}
     domain.current_version = "1"
@@ -88,6 +89,26 @@ class TestSaveDomainInfo:
         result = Domain(domain).save_domain_info({"name": "New Name"})
         assert result["name"] == "New Name"
         domain.save.assert_called_once()
+
+    def test_save_llm_endpoint_kind(self):
+        domain = _mock_domain()
+        result = Domain(domain).save_domain_info(
+            {
+                "llm_endpoint": "main.ai.monclaudesonnetamoi",
+                "llm_endpoint_kind": "ai_gateway",
+            }
+        )
+        assert domain.info["llm_endpoint_kind"] == "ai_gateway"
+        assert result["llm_endpoint_kind"] == "ai_gateway"
+
+    def test_legacy_llm_endpoint_kind_is_inferred(self):
+        domain = _mock_domain()
+        domain.info["llm_endpoint"] = "databricks-claude-sonnet-4-5"
+        domain.info.pop("llm_endpoint_kind")
+
+        result = Domain(domain).get_domain_info()
+
+        assert result["info"]["llm_endpoint_kind"] == "serving"
 
     def test_new_domain_rejects_spaces_and_special_chars(self):
         """Unregistered domains must use CamelCase alphanumeric names only."""

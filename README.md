@@ -44,7 +44,8 @@ months-long integration project.
   the whole pipeline — import metadata, generate the ontology, map the data,
   materialize the graph.
 - **Lives inside Databricks.** Deploys as a Databricks App and reuses what you
-  already have: Unity Catalog, SQL Warehouse, Model Serving, Lakebase. Your
+  already have: Unity Catalog, SQL Warehouse, AI Gateway or Model Serving,
+  and Lakebase. Your
   triples stay in your Lakehouse.
 - **Standards under the hood, simplicity on top.** OWL, R2RML and SPARQL power
   the engine; everything executes as Spark SQL. Your users never touch RDF.
@@ -59,8 +60,8 @@ months-long integration project.
 | Step | Action | What happens | Powered by |
 |------|--------|--------------|------------|
 | **1** | **Import Metadata** — Domain &gt; Metadata | Fetches table &amp; column metadata from Unity Catalog | Unity Catalog |
-| **2** | **Generate Ontology** — Ontology &gt; Wizard | The LLM designs entities, relationships &amp; attributes from your metadata | Model Serving |
-| **3** | **Auto-Map** — Mapping &gt; Auto-Map | The LLM generates SQL mappings for every entity and relationship | Model Serving |
+| **2** | **Generate Ontology** — Ontology &gt; Wizard | The LLM designs entities, relationships &amp; attributes from your metadata | AI Gateway / Model Serving |
+| **3** | **Auto-Map** — Mapping &gt; Auto-Map | The LLM generates SQL mappings for every entity and relationship | AI Gateway / Model Serving |
 | **4** | **Synchronize** — Knowledge Graph &gt; Status | Executes the mappings and populates the triple store | SQL Warehouse |
 
 Prefer full control? Every step is also available as a guided **manual
@@ -135,8 +136,8 @@ materialise Explorer indexes (`_adj_out` / `_adj_in`, `_entity_search`,
 
 OntoBricks is not a separate platform. It deploys as a **Databricks App** and
 uses the services you already run — Unity Catalog for storage and metadata, a
-SQL Warehouse for execution, Model Serving for LLM automation, and Lakebase for
-the registry and graph store. Your data and your triples never leave your
+SQL Warehouse for execution, AI Gateway or Model Serving for LLM automation, and
+Lakebase for the registry and graph store. Your data and your triples never leave your
 workspace. Architecture deep-dive: [architecture.md](docs/architecture.md).
 
 ## Get started

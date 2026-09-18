@@ -1636,7 +1636,7 @@ databricks apps list-deployments ontobricks-XXX
 The agents need OAuth credentials to call the Foundation Model API. In a Databricks App, these are resolved automatically via the service principal. If you see this error:
 
 1. Verify the app is running as a Databricks App (not locally)
-2. Check that the LLM endpoint is configured in the project settings
+2. Check that an LLM is saved in Domain Information → AI (or choose **No LLM** if AI is intentionally disabled)
 3. Review app logs for OAuth token resolution errors
 
 ### Connection Errors

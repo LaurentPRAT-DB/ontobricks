@@ -93,7 +93,7 @@ Click **Business Views** in the sidebar to use the visual drag-and-drop interfac
 
 Each entity supports:
 - **Icon**: Click the icon button (🎨) to select an emoji
-- **Auto-Map Icons**: In the **Model** view, click the smiley face button (😊) in the toolbar to automatically assign emoji icons to all entities that still have the default icon. This feature uses the domain's configured LLM serving endpoint to pick the most appropriate emoji for each entity name.
+- **Auto-Map Icons**: In the **Model** view, click the smiley face button (😊) in the toolbar to automatically assign emoji icons to all entities that still have the default icon. This uses the LLM saved in **Domain Information → AI**. With **No LLM** selected, the control stays visible but unavailable.
 - **Description**: Click the description button (📝) to add notes
 - **Attributes**: Add data properties directly on the entity
 
@@ -385,11 +385,14 @@ alone.
 
 Click **Generate** in the sidebar to generate an ontology automatically from your database schema using an LLM.
 
-1. Select the **LLM Endpoint** (a Databricks Model Serving endpoint)
-2. Choose which **catalog/schema** metadata to include
-3. (Optional) Select uploaded **Documents** to enrich the generation
-4. Write custom **Guidelines** or pick a **Quick Template**
-5. Click **Generate** to create the ontology
+1. Choose which **catalog/schema** metadata to include
+2. (Optional) Select uploaded **Documents** to enrich the generation
+3. Write custom **Guidelines** or pick a **Quick Template**
+4. Click **Generate** to create the ontology
+
+Generation uses the LLM saved in **Domain Information → AI** (an executable
+Unity AI Gateway model service or a legacy Model Serving endpoint). With
+**No LLM** selected, **Generate** stays visible but unavailable.
 
 #### Documents (PDF and other formats)
 
@@ -475,7 +478,7 @@ Click **Designer** in the sidebar to use the visual mapping interface. This view
 
 1. Click on any entity node in the graph to open the mapping panel
 2. The panel has three tabs:
-   - **Wizard**: AI-powered SQL generation using your LLM endpoint and table metadata
+   - **Wizard**: AI-powered SQL generation using the domain LLM from **Domain Information → AI** and table metadata
    - **SQL**: Direct SQL editing
     - **Mapping**: Interactive column-mapping grid with data preview
 3. For **already-assigned** entities, the preview query runs automatically on first access. Switching away and back reuses the preview while the entity SQL and row limit remain unchanged; use **Refresh** to run it again explicitly.
@@ -846,7 +849,7 @@ Use the **Top N** input at the top of the results section to control how many en
 
 After an analysis completes, an **Interpret** button (✦ icon) appears in the toolbar.
 
-1. Click **Interpret** — an AI agent (`agent_graph_interpreter`) calls the LLM serving endpoint configured for the domain. The agent may call `get_entity_details` one or more times to look up specific top-ranked entities before writing its insights.
+1. Click **Interpret** — an AI agent (`agent_graph_interpreter`) calls the LLM saved in **Domain Information → AI**. The agent may call `get_entity_details` one or more times to look up specific top-ranked entities before writing its insights.
 2. The **AI Insights** card renders three structured sections:
    - **Key Findings** — 2–4 sentences on the graph structure and standout patterns
    - **Notable Entities** — up to 5 entities with reasons they stand out; clicking an entity name navigates to the Graph Viewer
@@ -974,6 +977,21 @@ The **Global** tab in the Domain Information section contains the main domain se
 | **Description** | Free-text description of the domain. |
 | **Author** | Automatically pre-filled with the current Databricks user email. Editable. |
 | **API / MCP** | Toggle **Expose via API & MCP** to make this domain visible through the REST API (`/api/v1/domains`) and the MCP server. Disabled by default. Once exposed, the [MCP tab](#mcp-tab) narrows down which tools and ontology attachments the domain actually publishes. |
+
+#### LLM Tab
+
+Click **Browse** to search models available to the signed-in Databricks identity.
+**New Domain** uses the same picker. The list is grouped:
+
+1. **AI Gateway** first — Unity Catalog model services you can execute, including
+   `system.ai.*` and custom three-part names such as
+   `main.ai.monclaudesonnetamoi`. Refresh reloads the catalog. The identity needs
+   Unity Catalog `EXECUTE` on a Gateway service.
+2. **Model Serving (Legacy)** — existing Serving endpoints.
+
+Save the selection on the domain. Ontology generation, Assistant, Auto Icons,
+Business Rules, Mapping Auto-Map and SQL generation, Graph Chat, and Analytics
+Interpret all use that saved target; they do not pick a model independently.
 
 #### No LLM mode
 
@@ -1755,7 +1773,11 @@ Before you start, make sure you have:
 
 - A **Databricks workspace** with tables in Unity Catalog
 - A **SQL Warehouse** (Serverless or Classic)
-- A **Databricks Model Serving endpoint** (for LLM features — e.g., `databricks-meta-llama-3-3-70b-instruct`, or any chat/completions endpoint)
+- An executable **Unity AI Gateway model service** or a legacy **Databricks
+  Model Serving endpoint** for LLM features. You can instead save **No LLM**
+  and still import metadata, design the ontology, map SQL by hand, and build
+  the graph; Wizard, Auto-Map, Assistant, Graph Chat, and Interpret stay
+  unavailable until you select a model.
 - A **Personal Access Token** with permissions to read tables and execute queries
 
 ---
@@ -1767,7 +1789,7 @@ The automated pipeline follows these steps:
 ```
 Step 1: Configure connection
         │
-Step 2: Set up domain (LLM endpoint, triple store table)
+Step 2: Set up domain (LLM target, triple store table)
         │
 Step 3: Import table metadata from Unity Catalog
         │
@@ -1805,7 +1827,9 @@ Navigate to **Domain** in the top navbar, then open the **Information** sidebar 
 
 1. Enter a **Domain Name** (e.g., `CustomerAnalytics`).
 2. Set the **Base URI** for your ontology (e.g., `https://ontobricks.com/ontology/`). This is the namespace for all generated RDF resources.
-3. Select the **LLM Endpoint** from the dropdown. This is the Databricks Model Serving endpoint used for ontology generation and auto-mapping.
+3. Open the **LLM** tab, click **Browse**, search the AI Gateway and legacy
+   Model Serving groups, and select the model used for ontology generation and
+   auto-mapping.
 4. Configure the **Triple Store Table**: select a catalog, schema, and table name where triples will be stored (e.g., `my_catalog.my_schema.triples`). The table will be created automatically during sync.
 
 ---
@@ -1873,7 +1897,7 @@ longer knows about.
 
 Navigate to **Ontology** in the top navbar, then open **Generate** in the sidebar.
 
-The Wizard uses your LLM endpoint and the imported metadata to automatically design an ontology.
+The Wizard uses the LLM saved in **Domain Information → AI** and the imported metadata to automatically design an ontology.
 
 1. You'll see the list of tables loaded from metadata. **Check the tables** you want the LLM to consider.
 2. **(Optional)** Click a **Quick Template** button to pre-fill domain-specific guidelines:
@@ -2044,7 +2068,7 @@ Open **Explorer** in the sidebar to explore the graph viewer interactively:
 | Step | Where | Action | Automated? |
 |------|-------|--------|------------|
 | 1 | Settings | Configure Databricks connection | Manual (one-time) |
-| 2 | Domain > Information | Set LLM endpoint and triple store table | Manual (one-time) |
+| 2 | Domain > Information | Set LLM target and triple store table | Manual (one-time) |
 | 3 | Domain > Metadata | Import table metadata from Unity Catalog | One click |
 | 4 | Ontology > Generate | Generate ontology from metadata using LLM | One click |
 | 5 | Mapping > Auto-Map | Auto-map entities and relationships to SQL | One click |

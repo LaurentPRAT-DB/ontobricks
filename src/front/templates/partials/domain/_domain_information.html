@@ -166,25 +166,31 @@
                     <!-- ======== LLM Tab ======== -->
                     <div class="tab-pane fade" id="panel-llm" role="tabpanel" aria-labelledby="tab-llm">
                         <div class="mb-3">
-                            <label for="domainLlmEndpoint" class="form-label">
-                                <i class="bi bi-robot"></i> LLM Endpoint <small class="text-muted">(for OntoBricks Agents)</small>
+                            <label for="domainLlmEndpointDisplay" class="form-label">
+                                <i class="bi bi-robot"></i> LLM <small class="text-muted">(for OntoBricks Agents)</small>
                             </label>
                             <div class="input-group">
-                                <select class="form-select domain-editable" id="domainLlmEndpoint"
-                                        data-saved-value="{{ domain.llm_endpoint or '' }}">
-                                    <option value="">-- Loading endpoints... --</option>
-                                </select>
-                                <button type="button" class="btn btn-outline-secondary" onclick="loadLlmEndpoints()" title="Refresh endpoints">
-                                    <i class="bi bi-arrow-clockwise"></i>
+                                <input type="hidden" class="domain-editable" id="domainLlmEndpoint"
+                                       value="{{ domain.llm_endpoint or '' }}"
+                                       data-saved-value="{{ domain.llm_endpoint or '' }}">
+                                <input type="hidden" class="domain-editable" id="domainLlmEndpointKind"
+                                       value="{{ domain.llm_endpoint_kind or '' }}"
+                                       data-saved-value="{{ domain.llm_endpoint_kind or '' }}">
+                                <input type="text" class="form-control" id="domainLlmEndpointDisplay"
+                                       value="{{ domain.llm_endpoint or '' }}" readonly
+                                       placeholder="No LLM selected">
+                                <button type="button" class="btn btn-outline-secondary domain-editable"
+                                        id="domainLlmBrowse">
+                                    <i class="bi bi-search me-1"></i>Browse
                                 </button>
                             </div>
-                            <small class="text-muted">Select the Databricks Model Serving endpoint to use for the OntoBricks Agents</small>
+                            <small class="text-muted">Select an AI Gateway model service or legacy Model Serving endpoint.</small>
                         </div>
                         <div class="alert alert-light border small mt-4">
                             <i class="bi bi-info-circle me-1"></i>
                             OntoBricks agents (OWL generation, auto-mapping, icon mapping) use this endpoint
-                            to interact with a Foundation Model. The endpoint must be a Databricks Model Serving
-                            endpoint accessible from this workspace.
+                            to interact with a Foundation Model. AI Gateway services are listed first and
+                            require <code>USE CATALOG</code>, <code>USE SCHEMA</code>, and <code>EXECUTE</code>.
                         </div>
                     </div>
 

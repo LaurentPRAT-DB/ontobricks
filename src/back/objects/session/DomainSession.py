@@ -77,6 +77,7 @@ def get_empty_domain() -> Dict[str, Any]:
                 "description": "",
                 "author": "",
                 "llm_endpoint": "",
+                "llm_endpoint_kind": "",
                 "mcp_enabled": False,
                 "status": "DRAFT",
                 "review_quorum": 1,
@@ -1349,6 +1350,9 @@ class DomainSession:
             "description": self._data["domain"]["info"].get("description", ""),
             "author": self._data["domain"]["info"].get("author", ""),
             "llm_endpoint": self._data["domain"]["info"].get("llm_endpoint", ""),
+            "llm_endpoint_kind": self._data["domain"]["info"].get(
+                "llm_endpoint_kind", ""
+            ),
             "mcp_enabled": self._data["domain"]["info"].get("mcp_enabled", False),
             "status": self._data["domain"]["info"].get("status", "DRAFT"),
             "review_quorum": max(
@@ -1466,6 +1470,9 @@ class DomainSession:
             self._data["domain"]["info"]["description"] = info.get("description", "")
             self._data["domain"]["info"]["author"] = info.get("author", "")
             self._data["domain"]["info"]["llm_endpoint"] = info.get("llm_endpoint", "")
+            self._data["domain"]["info"]["llm_endpoint_kind"] = info.get(
+                "llm_endpoint_kind", ""
+            )
             self._data["domain"]["info"]["mcp_enabled"] = info.get("mcp_enabled", False)
             self._data["domain"]["info"]["status"] = info.get("status", "DRAFT")
             self._data["domain"]["info"]["review_quorum"] = max(
