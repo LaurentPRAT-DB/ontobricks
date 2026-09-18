@@ -134,12 +134,21 @@ class TestBaseTemplate:
         assert "review-modals.css" in html
 
     def test_navbar_has_domain_l1_link(self, client):
-        """Domain L1 link exists in the DOM (hidden until a domain is loaded)."""
+        """Domain L1 item is replaced by the level-2 context trigger contract."""
         html = _html(client, "/")
-        assert _find(_tags(html), id_="domainL1Link") is not None
-        assert _find(_tags(html), id_="domainL1NavItem") is not None
-        nav = _find(_tags(html), id_="domainL1NavItem")
-        assert "d-none" in (nav.get("class") or "")
+        tags = _tags(html)
+
+        assert _find(tags, id_="domainL1NavItem") is None
+        context_trigger = _find(tags, id_="domainContextTrigger")
+        assert context_trigger is not None
+        assert 'id="currentDomainName"' in html
+        assert html.index('id="domainContextTrigger"') < html.index('id="currentDomainName"')
+
+        registry_toggle = _find(tags, id_="registryModalToggle")
+        assert registry_toggle is not None
+        assert "bi-grid-3x3-gap" in html
+        assert '<span class="ob-visually-hidden">Registry</span>' in html
+        assert "<span>Registry</span>" not in html
 
     def test_subnav_has_domain_dropdown(self, client):
         """Domain dropdown is in the L2 subnav."""

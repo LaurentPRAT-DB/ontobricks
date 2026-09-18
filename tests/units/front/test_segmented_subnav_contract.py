@@ -37,6 +37,10 @@ def _mobile_block(css: str) -> str:
 def test_workspace_targets_are_grouped_before_context_and_actions():
     html = _read(BASE_HTML)
     assert 'id="obSubnav"' in html
+    assert html.index('class="ob-subnav-context"') < html.index(
+        'class="ob-subnav-workspaces"'
+    )
+    assert html.count('class="ob-subnav-ordinal"') == 4
     group_start = html.index('<li class="ob-subnav-workspaces">')
     group_end = html.index("<!-- Flex spacer", group_start)
     group = html[group_start:group_end]
@@ -53,6 +57,11 @@ def test_workspace_targets_are_grouped_before_context_and_actions():
     assert 'class="ob-subnav-workspace-list"' in group
     assert "obBreadcrumbWrap" not in group
     assert "menuSaveDomain" not in group
+    assert "currentDomainName" in html
+    assert "domainContextVersion" in html
+    assert "domain-status-badge" in html
+    assert html.index("menuSwitchDomain") < html.index("menuCloseDomain")
+    assert html.index("menuCloseDomain") < html.index("menuSaveDomain")
 
 
 def test_subnav_surface_is_transparent_and_borderless():

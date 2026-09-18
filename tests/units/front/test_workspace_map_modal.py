@@ -110,7 +110,7 @@ def test_navbar_opens_workspace_map_from_domain_badge():
     bind_block = js[js.index("function bindWorkspaceMapTrigger(") :][:600]
     assert "event.preventDefault()" in open_block
     assert "Modal.getOrCreateInstance" in open_block
-    assert "domainL1Link" in bind_block
+    assert "domainContextTrigger" in bind_block
 
 
 def test_navbar_highlights_current_workspace_map_item():
