@@ -118,7 +118,7 @@
                                     <div class="help-step-badge">1</div>
                                     <div>
                                         <h5><i class="bi bi-plus-circle me-2"></i>Create a Domain</h5>
-                                        <p>Open <strong>Registry</strong> &rarr; click <em>New Domain</em>. Give it a name (e.g. <code>sales_demo</code>), then open the <strong>Domain</strong> tab and click <em>Save Domain</em> (<kbd>Cmd/Ctrl+S</kbd>). The domain must be saved before ontology, mapping and digital-twin features unlock.</p>
+                                        <p>As an Admin (<code>CAN_MANAGE</code>), open <strong>Registry</strong> &rarr; click <em>New Domain</em>. Give it a name (e.g. <code>sales_demo</code>), then open the <strong>Domain</strong> tab and click <em>Save Domain</em> (<kbd>Cmd/Ctrl+S</kbd>). Editors and Builders open an assigned domain from Home or Registry Browse. The domain must be saved before ontology, mapping and digital-twin features unlock.</p>
                                     </div>
                                 </div>
                                 <div class="help-step-card">
@@ -181,7 +181,7 @@
                                             <p>The Registry is the central index of all domains (ontology + mapping + triple store) stored in your Unity Catalog Volume.</p>
                                             <ul>
                                                 <li><strong>Browse</strong> &mdash; list and open existing domains</li>
-                                                <li><strong>New Domain</strong> (navbar) &mdash; create a fresh domain</li>
+                                                <li><strong>New Domain</strong> (Admin only) &mdash; create a fresh domain</li>
                                                 <li><strong>Load Domain</strong> (navbar) &mdash; open an existing domain from UC</li>
                                                 <li><strong>Export / Import</strong> &mdash; move domains between environments as a portable <code>.obx</code> file (see the <a href="#help-docs/import-export" data-help-jump="docs" data-help-doc="import-export">Import / Export</a> guide)</li>
                                                 <li><strong>Bridges</strong> &mdash; cross-domain links that allow navigating from one graph viewer to another</li>
@@ -448,7 +448,7 @@
                             </div>
                             <div class="help-trouble">
                                 <h5><i class="bi bi-exclamation-circle text-warning me-2"></i>&ldquo;I see &lsquo;requires domain saved&rsquo; tooltips everywhere.&rdquo;</h5>
-                                <p>You must first create and save a domain. Registry &rarr; <em>New Domain</em> &rarr; then on the Domain page press <kbd>Cmd/Ctrl+S</kbd>.</p>
+                                <p>An Admin (<code>CAN_MANAGE</code>) must first create and save a domain: Registry &rarr; <em>New Domain</em> &rarr; then on the Domain page press <kbd>Cmd/Ctrl+S</kbd>. Editors and Builders can then open assigned domains from Home or Registry Browse.</p>
                             </div>
                         </section>
 

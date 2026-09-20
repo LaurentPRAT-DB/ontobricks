@@ -39,7 +39,10 @@ from back.objects.session import (
     sanitize_domain_folder,
 )
 from back.objects.domain import Domain, SettingsService
-from api.routers.internal._permissions import filter_visible_domains
+from api.routers.internal._permissions import (
+    assert_admin_can_create_domain,
+    filter_visible_domains,
+)
 
 logger = get_logger(__name__)
 
@@ -469,6 +472,7 @@ async def save_domain_to_uc(
 ):
     """Save domain into the registry Volume under /domains/<name>/v{ver}.json."""
     domain = get_domain(session_mgr)
+    assert_admin_can_create_domain(request, domain)
     p = Domain(domain, settings)
     actor_email = getattr(request.state, "user_email", "") or request.headers.get(
         "x-forwarded-email", ""

@@ -10,8 +10,19 @@ from typing import Any, List
 from fastapi import Request
 
 from shared.config.settings import Settings
+from back.core.errors import AuthorizationError
 from back.objects.session import SessionManager, get_domain
 from back.objects.registry import RegistryCfg, ROLE_ADMIN, permission_service
+
+
+def assert_admin_can_create_domain(request: Request, domain: Any) -> None:
+    """Allow new registry domains only for Databricks App administrators."""
+    if getattr(domain, "domain_folder", None):
+        return
+    user_role = getattr(request.state, "user_role", "") or ""
+    if user_role == ROLE_ADMIN:
+        return
+    raise AuthorizationError("Only administrators can create a domain")
 
 
 def filter_visible_domains(
