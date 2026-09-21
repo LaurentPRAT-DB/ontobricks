@@ -609,12 +609,13 @@ async def save_ui_branding(
     request: Request,
     app_title: str = Form(""),
     primary_color: str = Form(""),
+    aurora_color: str = Form(""),
     reset_logo: bool = Form(False),
     logo_file: UploadFile | None = File(None),
     session_mgr: SessionManager = Depends(get_session_manager),
     settings: Settings = Depends(get_settings),
 ):
-    """Save title/color/logo atomically from multipart form data (admin only)."""
+    """Save title/color/Aurora/logo atomically from multipart form data (admin only)."""
     logo_content = None
     logo_mime = None
     if logo_file is not None:
@@ -630,6 +631,7 @@ async def save_ui_branding(
     return config_service.save_ui_branding_result(
         app_title=app_title,
         primary_color=primary_color,
+        aurora_color=aurora_color,
         logo_content=logo_content,
         logo_mime=logo_mime,
         reset_logo=reset_logo,

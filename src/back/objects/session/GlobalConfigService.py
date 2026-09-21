@@ -381,6 +381,7 @@ class GlobalConfigService:
         merged["version"] = int(merged.get("version") or normalized.version or 1)
         merged["app_title"] = normalized.app_title
         merged["primary_color"] = normalized.primary_color
+        merged["aurora_color"] = normalized.aurora_color
         merged["logo_data_url"] = normalized.logo_data_url
 
         updates = {

@@ -35,6 +35,7 @@ from back.core.helpers import (
     resolve_use_cloud_fetch,
     resolve_warehouse_id,
     run_blocking,
+    validate_optional_hex_color,
 )
 from back.core.logging import get_logger
 from back.objects.registry import (
@@ -1411,6 +1412,7 @@ class SettingsService:
     def save_ui_branding_result(
         app_title: str,
         primary_color: str,
+        aurora_color: str,
         logo_content: Optional[bytes],
         logo_mime: Optional[str],
         reset_logo: bool,
@@ -1419,11 +1421,16 @@ class SettingsService:
         session_mgr: SessionManager,
         settings: Settings,
     ) -> Dict[str, Any]:
-        """Validate and persist title/color/logo atomically (admin only)."""
+        """Validate and persist title/color/Aurora/logo atomically (admin only)."""
         SettingsService.require_admin_error(email, user_token, session_mgr, settings)
 
         if logo_content is not None and reset_logo:
             raise ValidationError("reset_logo cannot be true when logo_file is provided")
+
+        try:
+            validated_aurora = validate_optional_hex_color(aurora_color, "aurora color")
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
 
         host, token, registry_cfg = resolve_app_registry_context(settings)
         current = global_config_service.get_ui_branding(host, token, registry_cfg)
@@ -1442,6 +1449,7 @@ class SettingsService:
                     "version": current.get("version", 1),
                     "app_title": app_title,
                     "primary_color": primary_color,
+                    "aurora_color": validated_aurora,
                     "logo_data_url": logo_data_url,
                 }
             )
@@ -1456,6 +1464,7 @@ class SettingsService:
                 "version": normalized.version,
                 "app_title": normalized.app_title,
                 "primary_color": normalized.primary_color,
+                "aurora_color": normalized.aurora_color,
                 "logo_data_url": normalized.logo_data_url,
             },
         )

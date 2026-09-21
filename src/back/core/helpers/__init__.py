@@ -16,10 +16,12 @@ from back.core.helpers.UIBranding import (  # noqa: F401
     BrandPalette,
     UIBranding,
     DEFAULT_APP_TITLE,
+    DEFAULT_AURORA_COLOR,
     DEFAULT_PRIMARY_COLOR,
     DEFAULT_LOGO_PATH,
     derive_brand_palette,
     normalize_ui_branding,
+    validate_optional_hex_color,
 )
 
 # SQL / URI helpers must be bound before importing databricks: transitive
@@ -108,8 +110,10 @@ __all__ = [
     "BrandPalette",
     "UIBranding",
     "DEFAULT_APP_TITLE",
+    "DEFAULT_AURORA_COLOR",
     "DEFAULT_PRIMARY_COLOR",
     "DEFAULT_LOGO_PATH",
     "derive_brand_palette",
     "normalize_ui_branding",
+    "validate_optional_hex_color",
 ]
