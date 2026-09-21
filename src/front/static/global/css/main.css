@@ -17,9 +17,22 @@
     --db-primary-selected-text: #3730A3;
     --db-hover: rgba(79, 70, 229, 0.06);
     --db-focus: rgba(79, 70, 229, 0.18);
-    
+
+    /* Aurora accent + derived cinematic tokens (Aurora Pro).
+       Server-rendered #uiBrandingTokens overrides the hex/rgb values below
+       per request; the linear-gradient()/radial-gradient() compositions
+       stay static here and simply re-read whichever hex is currently in
+       scope via var(). */
+    --db-aurora: #22A7C8;
+    --db-aurora-rgb: 34, 167, 200;
+    --db-aurora-dark: #1D8EAA;
+    --db-gradient-end: #3A79E2;
+    --db-gradient-primary: linear-gradient(120deg, var(--db-primary), var(--db-gradient-end));
+    --db-gradient-rail: linear-gradient(180deg, var(--db-primary), var(--db-aurora));
+    --db-halo: radial-gradient(circle at 30% 20%, rgba(var(--db-aurora-rgb), 0.35), transparent 60%);
+
     /* Warm neutral surfaces */
-    --db-canvas-warm: #FAFAF9;
+    --db-canvas-warm: #F6F6FE; /* derived: Primary at 5% alpha on white (Aurora Pro) */
     --db-surface-warm: #FFFFFF;
     --db-line-soft: #F4F2EF;
     --db-hover-warm: #F3F2F0;
@@ -91,7 +104,7 @@
     --db-shadow-sm: 0 8px 24px rgba(15, 23, 42, 0.12);
     --db-shadow-md: 0 12px 34px rgba(15, 23, 42, 0.16);
     --db-shadow-lg: 0 18px 44px rgba(15, 23, 42, 0.2);
-    --db-shadow-primary: 0 0 0 3px rgba(var(--db-primary-rgb), 0.18);
+    --db-shadow-primary: 0 8px 20px rgba(var(--db-primary-rgb), 0.35);
     
     /* Transitions */
     --db-transition: all 0.2s ease;
@@ -619,16 +632,16 @@ body {
 }
 
 .ob-subnav-link.active {
-    color: var(--db-primary-darker);
+    color: var(--db-on-primary);
     font-weight: 700;
-    background: var(--db-primary-light);
+    background: var(--db-gradient-primary);
     border-radius: calc(var(--db-radius-control) - 2px);
 }
 
 .ob-subnav-link.active .ob-subnav-ordinal {
-    border-color: var(--db-primary);
-    background: var(--db-primary);
-    color: var(--db-on-primary);
+    border-color: var(--db-on-primary);
+    background: var(--db-on-primary);
+    color: var(--db-primary);
 }
 
 .ob-subnav-link.nav-disabled {
@@ -790,16 +803,17 @@ body {
     padding: 0.25rem 0.7rem;
     font-size: 0.8rem;
     color: var(--db-on-primary);
-    background-color: var(--db-primary);
+    background: var(--db-gradient-primary);
     border: 1px solid var(--db-primary);
     border-radius: var(--db-radius-control);
+    box-shadow: var(--db-shadow-primary);
     text-decoration: none;
     white-space: nowrap;
     transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .ob-subnav-save-btn:hover {
-    background-color: var(--db-primary-dark);
+    background: var(--db-primary-dark);
     border-color: var(--db-primary-dark);
     color: var(--db-on-primary);
     text-decoration: none;
@@ -944,7 +958,7 @@ body {
 .card {
     border: 1px solid var(--db-border);
     border-radius: var(--db-radius-card);
-    box-shadow: none;
+    box-shadow: var(--db-shadow-sm);
     background: var(--db-surface-warm);
 }
 

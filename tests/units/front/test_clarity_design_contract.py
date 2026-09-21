@@ -488,7 +488,7 @@ def test_main_css_l2_segment_and_nav_tabs_use_indigo_soft_selection():
     css = _read(MAIN_CSS)
     assert re.search(
         r"\.ob-subnav-link\.active\s*\{"
-        r"[^}]*background\s*:\s*var\(--db-primary-light\)\s*;"
+        r"[^}]*background\s*:\s*var\(--db-gradient-primary\)\s*;"
         r"[^}]*border-radius\s*:\s*calc\(var\(--db-radius-control\)\s*-\s*2px\)\s*;",
         css,
         flags=re.DOTALL,
@@ -498,6 +498,36 @@ def test_main_css_l2_segment_and_nav_tabs_use_indigo_soft_selection():
         css,
         flags=re.DOTALL,
     )
+
+
+def test_main_css_declares_aurora_gradient_tokens():
+    css = _read(MAIN_CSS)
+    for token in (
+        "--db-aurora:",
+        "--db-aurora-rgb:",
+        "--db-aurora-dark:",
+        "--db-gradient-end:",
+        "--db-gradient-primary:",
+        "--db-gradient-rail:",
+        "--db-halo:",
+    ):
+        assert token in css
+    assert re.search(
+        r"--db-gradient-primary\s*:\s*linear-gradient\(\s*120deg\s*,\s*"
+        r"var\(--db-primary\)\s*,\s*var\(--db-gradient-end\)\s*\)\s*;",
+        css,
+    )
+    assert re.search(
+        r"--db-gradient-rail\s*:\s*linear-gradient\(\s*180deg\s*,\s*"
+        r"var\(--db-primary\)\s*,\s*var\(--db-aurora\)\s*\)\s*;",
+        css,
+    )
+
+
+def test_resting_cards_now_carry_the_soft_shadow():
+    css = _read(MAIN_CSS)
+    card_blocks = _rule_blocks_for_exact_class(css, ".card")
+    assert _any_block_has_declaration(card_blocks, r"box-shadow", r"var\(--db-shadow-sm\)")
 
 
 def test_nav_hover_indigo_token_is_lighter_than_active_fill():

@@ -189,10 +189,10 @@ def test_workspace_group_uses_shared_segmented_control_tokens():
     assert "box-shadow: var(--db-focus-ring)" in context_focus
     assert "border: 1px solid var(--db-border)" in ordinal
     assert "color: var(--db-text-muted)" in ordinal
-    assert "background: var(--db-primary-light)" in active
-    assert "color: var(--db-primary-darker)" in active
-    assert "background: var(--db-primary)" in active_ordinal
-    assert "color: var(--db-on-primary)" in active_ordinal
+    assert "background: var(--db-gradient-primary)" in active
+    assert "color: var(--db-on-primary)" in active
+    assert "background: var(--db-on-primary)" in active_ordinal
+    assert "color: var(--db-primary)" in active_ordinal
     assert "outline: 2px solid transparent" in focus
     assert "box-shadow: var(--db-focus-ring)" in focus
     assert "--ob-subnav-rail-height: 3rem" in css
@@ -260,7 +260,8 @@ def test_save_is_the_only_primary_filled_domain_action():
     switch_hover = _rule(css, ".ob-subnav-switch-btn:hover")
     close = _rule(css, ".ob-subnav-close-btn")
 
-    assert "background-color: var(--db-primary)" in save
+    assert "background: var(--db-gradient-primary)" in save
+    assert "box-shadow: var(--db-shadow-primary)" in save
     assert "background-color: var(--db-surface-warm)" in switch
     assert "background-color: var(--db-hover-indigo)" in switch_hover
     assert "background-color: var(--db-surface-warm)" in close
