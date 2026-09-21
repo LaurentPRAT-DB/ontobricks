@@ -16,6 +16,7 @@ if str(ROOT / "tests" / "eval") not in sys.path:
     sys.path.insert(0, str(ROOT / "tests" / "eval"))
 
 from document_corpus_contract import run_contract  # noqa: E402
+from staged_contract import score_staged_examples  # noqa: E402
 
 DATASET = ROOT / "tests/eval/datasets/agent_owl_generator/baseline.jsonl"
 THRESHOLDS = ROOT / "tests/eval/thresholds.yaml"
@@ -200,9 +201,15 @@ def main() -> None:
     staged_count = _validate_staged_examples(DATASET)
     print(
         f"[STAGED] validated {staged_count} staged contract examples "
-        "(schema-only; scored once the staged entry points land — see "
-        "SPEC.md §3a/§6a)"
+        "(structure); scoring them behaviourally against the staged entry "
+        "points (SPEC.md §3a/§6a)…"
     )
+    # Behavioural, deterministic scoring of the staged contract now that
+    # detect_entities / infer_relations / infer_attributes / infer_axioms
+    # exist at runtime (Task 3). No live LLM required — staged LLM calls are
+    # scripted, so the deterministic contract (parsing, closure, ordering,
+    # staleness, reject-only, staged-only surface) is what gets scored.
+    score_staged_examples(DATASET, THRESHOLDS)
 
     live = None
     if args.live:

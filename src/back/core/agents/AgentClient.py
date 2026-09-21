@@ -63,7 +63,10 @@ class AgentClient:
             Exception: Propagates any failure raised by ``run_agent`` (network,
                 auth, or model errors).
         """
-        from agents.agent_owl_generator import run_agent
+        # Legacy one-shot bridge (deprecated). Imported from the engine
+        # submodule explicitly — the package root exposes only the staged
+        # entry points now.
+        from agents.agent_owl_generator.engine import run_agent
 
         return run_agent(
             host=host,

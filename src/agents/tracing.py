@@ -64,8 +64,14 @@ def is_tracing_ready() -> bool:
     return _TRACING_READY
 
 
-def trace_agent(name: Optional[str] = None):
-    """Decorator: wrap an agent ``run_agent`` function with an AGENT span."""
+def trace_agent(name: Optional[str] = None, *, stage: Optional[str] = None):
+    """Decorator: wrap an agent entry point with an AGENT span.
+
+    ``stage`` and the caller-supplied ``draft_id`` / ``draft_revision`` kwargs
+    are attached to the span as attributes/tags so a staged, resumable run's
+    traces correlate across the checkpointed substages and an eval harness can
+    assert stage identity directly from the trace (SPEC §8).
+    """
 
     def decorator(fn):
         @functools.wraps(fn)
@@ -79,6 +85,15 @@ def trace_agent(name: Optional[str] = None):
                 name=name or fn.__name__, span_type=SpanType.AGENT
             ) as span:
                 span.set_inputs(_safe_inputs(kwargs))
+                tags = {}
+                if stage:
+                    tags["stage"] = stage
+                for key in ("draft_id", "draft_revision"):
+                    value = kwargs.get(key)
+                    if value is not None:
+                        tags[key] = str(value)
+                if tags:
+                    span.set_attributes(tags)
                 result = fn(*args, **kwargs)
                 span.set_outputs(_safe_result(result))
                 return result

@@ -89,7 +89,11 @@ class Ontology:
 
         Typical use: call from a background thread; poll task status from HTTP.
         """
-        from agents.agent_owl_generator import run_agent
+        # Legacy one-shot bridge (deprecated; replaced by the staged
+        # detect/review/complete flow in Task 4 of staged-ontology-generate).
+        # Imported from the engine submodule explicitly — the package root now
+        # exposes only the staged entry points as the public surface.
+        from agents.agent_owl_generator.engine import run_agent
 
         s = self._domain
         ont = s.ontology

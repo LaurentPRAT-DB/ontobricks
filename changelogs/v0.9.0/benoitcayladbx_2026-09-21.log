@@ -344,3 +344,208 @@ Tests:
 - GREEN: same command → 143 passed.
 - Regression (ontology/domain/agents): `uv run --frozen pytest -q tests/units/ontology/ tests/units/domain/ tests/units/agents/` → 1150 passed.
 - Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6433 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.04s.
+
+## Add a browser console pass to the code-review checklist
+
+Context: Code review previously ended at pytest + docs and could miss runtime
+JavaScript console errors and warnings on HTML pages. The review contract now
+requires opening every user-facing page (and in-page sections that load
+distinct JS) and collecting a clean DevTools console.
+
+Changes:
+
+1. .cursorrules
+   Insert a "Browser console pass" step in the code-review checklist, before
+   documentation updates, pointing at the procedure in `.cursor/08`.
+2. .cursor/08-testing-and-deployment.mdc
+   Add §Code-review browser console pass: running app, enumerate routes and
+   `menu_config.json` sections, fail on any JS error or warning, do not claim
+   a clean console if browser tools were unavailable.
+3. .claude/skills/code-review/SKILL.md
+   Sequence the new step, extend the review summary, and require the console
+   pass (or an explicit skip reason) before "all good".
+
+Modified files:
+- .cursorrules
+- .cursor/08-testing-and-deployment.mdc
+- .claude/skills/code-review/SKILL.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6482 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 51.18s.
+
+## Staged owl-generator orchestration (task 3 of staged ontology generate)
+
+Context: Task 3 of the `staged-ontology-generate` plan
+(`/Users/benoit.cayla/.cursor/plans/staged-ontology-generate_6fc7e158.plan.md`,
+not edited). Refactors `agent_owl_generator` into a staged orchestrator
+exposing four explicit public entry points — `detect_entities`,
+`infer_relations`, `infer_attributes`, `infer_axioms` — on top of the
+Task 2 `GenerateDraft`/`GenerateEntity` contract layer. The deprecated
+one-shot `run_agent` bridge (`engine.py`) is preserved only so the existing
+`Ontology.generate_with_agent()` / `/wizard/generate-async` API path stays
+green until Task 4 replaces it; it is no longer re-exported from the
+package root and the staged module never imports or falls back to it.
+Followed strict TDD: the new test modules were run against a temporarily
+removed `staged.py`/`prompts.py`/`schemas.py` to observe RED
+(`ModuleNotFoundError`), then restored to GREEN.
+
+Changes:
+
+1. src/agents/agent_owl_generator/schemas.py (new)
+   Reject-only structured-answer parsing/validation boundary.
+   `parse_detection_payload()` parses Stage-1 candidates (fence-tolerant
+   JSON), defaults every candidate to `included=true`/`origin=detected`,
+   mints a detection-time id via `GenerateEntity.new_candidate()`, and
+   deduplicates against locked anchors (and against earlier candidates in
+   the same answer) by normalized canonical label **and** every alternate
+   label — synonyms are never emitted as separate candidates.
+   `parse_relations_payload()` / `parse_attributes_payload()` /
+   `parse_axioms_payload()` parse the Stage-3 completion shapes and their
+   `*_referenced_ids()` companions extract the ids each output touches
+   (domain/range, domain, subject/object) for the entity-closure check. A
+   malformed/out-of-schema answer raises `SchemaValidationError` (a
+   `DraftValidationError` subclass) — the caller reports it, never re-feeds
+   it to another LLM call.
+2. src/agents/agent_owl_generator/prompts.py (new)
+   Prompt-first stage prompts (design §Prompt-First Pitfall Handling,
+   SPEC §6a): naming rules, entity-closure instructions, and structured-
+   JSON-only output constraints are stated in the system prompt itself,
+   not corrected after the fact. `build_detection_system_prompt()` lists
+   locked anchors (canonical + alternate labels) so the model dedups
+   against them up front. `build_relations/attributes/axioms_system_prompt()`
+   state the closed-entity-set rule and per-stage modelling rules (naming,
+   at-most-one-relation-per-pair, xsd datatypes, disjointness sanity).
+   `build_*_user_prompt()` render the closed entity catalog (id + canonical
+   label + alternate labels + description; excluded candidates omitted)
+   and, for attributes/axioms, a summary of already-checkpointed prior
+   substage results.
+3. src/agents/agent_owl_generator/staged.py (new)
+   The four public entry points, each `@trace_agent`-wrapped with a
+   stage-specific trace name (`owl_generator.detect` /`.relations` /
+   `.attributes` /`.axioms`) and `stage` tag:
+   - `detect_entities()` — tool-calling loop (bounded, `_MAX_DETECTION_
+     ITERATIONS=8`) over the existing no-reparse `list_documents`/
+     `read_document`/`get_metadata`/`get_table_detail` tools, degrading to
+     a single-shot call if the endpoint rejects `tools`. A truncated
+     (`finish_reason == "length"`) answer gets one bounded "re-emit
+     concisely" retry (a completeness retry, not a validation rewrite); a
+     malformed final answer is rejected via `schemas.SchemaValidationError`
+     with zero retries. Returns `DetectionResult(candidate_entities=...)`.
+   - `infer_relations()` / `infer_attributes()` / `infer_axioms()` — share
+     `_run_completion()`: a strict-ordering gate
+     (`_ordering_error()`/`GenerateDraft`'s `_SUBSTAGE_ORDER`) fails fast
+     *before any LLM call* if the predecessor substage is not checkpointed
+     `done`; the LLM call passes `tools=None` (completion never reads
+     documents/metadata — no-reparse contract); the answer is parsed by
+     the matching `schemas.parse_*_payload()` and its referenced ids are
+     checked against `draft.validate_references()` (locked anchors ∪
+     included candidates only — an excluded candidate's id is rejected
+     exactly like an unknown one). Any rejection returns
+     `CompletionResult(rejected=True, rejection_reason=...)` after exactly
+     one LLM call — no rewrite loop. These functions **do not** persist
+     checkpoints or merge into the ontology; that is Task 4's
+     responsibility (they accept a `GenerateDraft` and return a result the
+     caller checkpoints).
+4. src/agents/agent_owl_generator/__init__.py
+   Package root now re-exports only the four staged entry points plus
+   `DetectionResult`/`CompletionResult` — `run_agent` is no longer part of
+   the public surface. `src/back/core/agents/AgentClient.py` and
+   `src/back/objects/ontology/Ontology.py` updated to import `run_agent`
+   explicitly from `agents.agent_owl_generator.engine` (the one remaining
+   caller of the deprecated bridge), since it is no longer reachable from
+   the package root.
+5. src/agents/tracing.py
+   `trace_agent()` gained a `stage` keyword; every span additionally sets
+   `stage` (from the decorator) and `draft_id`/`draft_revision` (forwarded
+   from the wrapped call's kwargs, when present) as span attributes, so a
+   resumed run's traces correlate across checkpointed substages (SPEC §8).
+6. tests/units/agents/test_owl_generator_schemas.py (new, 22 tests)
+   Detection-payload parsing (minimal candidate, fence-stripping,
+   malformed/missing-key rejection, synonym-as-alternate-label, dedup
+   against an anchor's canonical label/alternate label/another candidate,
+   unknown `type_hint` coercion, `max_candidates` bound, evidence
+   passthrough) and the three completion schemas (parse + required-field
+   rejection + referenced-id extraction).
+7. tests/units/agents/test_owl_generator_staged.py (new, 26 tests)
+   Detection (default inclusion, anchor dedup, no-reparse tool surface,
+   truncation recovery, malformed-answer rejection with zero retries,
+   trace identity); relations/attributes/axioms (valid-closure success,
+   no document tools, out-of-closure and excluded-candidate rejection with
+   exactly one LLM call, trace identity, truncation recovery,
+   ordering-gate rejection with zero LLM calls when a predecessor is not
+   done); the no-one-shot-default contract (`staged` module does not
+   expose or reference `run_agent`; all four entry points are callable);
+   and prompt contracts (anchors/alternate labels surfaced for dedup,
+   alternate labels as lexical evidence, naming rules present, excluded
+   candidates omitted from the completion catalog).
+8. tests/units/agents/test_agent_tracing.py
+   Added `TestTraceAgentStageTags` (1 test) pinning that `stage`/`draft_id`/
+   `draft_revision` land on the span's attributes when tracing is enabled.
+9. tests/eval/staged_contract.py (new)
+   Behavioral, deterministic scoring for every `staged`-tagged dataset row:
+   each `expected.constraints[].kind` maps to a check function that
+   exercises the real `staged`/`schemas`/`GenerateDraft` code paths
+   (scripted `call_serving_endpoint` responses, no live endpoint). Replaces
+   the prior schema-only validation for these rows.
+10. tests/eval/run_agent_owl_generator.py
+    Calls `staged_contract.score_staged_examples()` after the existing
+    structural validation, so the offline eval run now behaviorally scores
+    the staged contract in addition to the pre-existing parsed-corpus
+    contract.
+11. tests/eval/thresholds.yaml
+    Added `owl_generator.staged_contract: 0.95` (SPEC §5's proposed
+    aggregate), now enforced by the runner above.
+12. .planning/agents/agent_owl_generator/SPEC.md
+    Updated every `(staged, planned)` annotation that Task 3 now satisfies
+    to reflect the landed staged entry points, live tracing, live
+    reject-only entity closure/ordering/staleness enforcement, and the
+    live behavioral staged-contract eval — while keeping `(staged,
+    planned)` on the genuinely still-pending Task 4/5 items (async
+    workflow routes, checkpoint persistence, the append-only final merge,
+    and the wizard UI). Recorded the Task 3 dry-run eval result in §10.
+
+No API, checkpoint-persistence, or frontend code was touched (Task 4/5
+scope). `engine.py`'s pitfall-tool/consolidation rewrite loops are
+unchanged — they remain scoped to the deprecated one-shot bridge only, not
+the staged path.
+
+Modified files:
+- src/agents/agent_owl_generator/schemas.py (new)
+- src/agents/agent_owl_generator/prompts.py (new)
+- src/agents/agent_owl_generator/staged.py (new)
+- src/agents/agent_owl_generator/__init__.py
+- src/agents/tracing.py
+- src/back/core/agents/AgentClient.py
+- src/back/objects/ontology/Ontology.py
+- tests/units/agents/test_owl_generator_schemas.py (new)
+- tests/units/agents/test_owl_generator_staged.py (new)
+- tests/units/agents/test_agent_tracing.py
+- tests/eval/staged_contract.py (new)
+- tests/eval/run_agent_owl_generator.py
+- tests/eval/thresholds.yaml
+- .planning/agents/agent_owl_generator/SPEC.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- RED: temporarily moved `staged.py`/`prompts.py`/`schemas.py` out of
+  `src/agents/agent_owl_generator/` and ran
+  `uv run --frozen pytest -q tests/units/agents/test_owl_generator_staged.py
+  tests/units/agents/test_owl_generator_schemas.py` → 2 collection errors,
+  `ModuleNotFoundError: No module named 'agents.agent_owl_generator.staged'`.
+  Restored the files.
+- GREEN (focused): `uv run --frozen pytest -q
+  tests/units/agents/test_owl_generator_staged.py
+  tests/units/agents/test_owl_generator_schemas.py
+  tests/units/agents/test_agent_tracing.py` → 73 passed.
+- Regression (agents/ontology/domain/api):
+  `uv run --frozen pytest -q tests/units/agents/ tests/units/ontology/
+  tests/units/domain/ tests/units/api/` → 1752 passed.
+- Offline eval: `uv run --frozen python tests/eval/run_agent_owl_generator.py`
+  → all 14 staged examples PASS, staged-contract aggregate `1.000`
+  (threshold `0.950`); all 10 parsed-corpus cases PASS, aggregate `1.000`
+  (threshold `0.900`). No live MLflow run — same missing-credentials
+  blocker as Task 1/2 (`DATABRICKS_HOST`/`DATABRICKS_TOKEN`/
+  `ONTOBRICKS_LLM_ENDPOINT` not configured in this environment).
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6482 passed,
+  304 skipped, 6 deselected, 1 xfailed, 32 warnings in 44.74s (identical
+  pass count to the pre-change baseline — no regressions).

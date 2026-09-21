@@ -165,3 +165,57 @@ class TestTraceDecorators:
             pass
 
         assert original_name.__name__ == "original_name"
+
+
+class TestTraceAgentStageTags:
+    """When tracing IS ready, ``trace_agent`` tags the span with the staged
+    identifiers (stage, draft_id, draft_revision) so a resumed run's traces
+    correlate across substages (SPEC §8)."""
+
+    def _fake_mlflow(self, recorded):
+        class _Span:
+            def set_inputs(self, *_a, **_k):
+                pass
+
+            def set_outputs(self, *_a, **_k):
+                pass
+
+            def set_attributes(self, attrs):
+                recorded.update(attrs)
+
+        class _CM:
+            def __enter__(self_inner):
+                return _Span()
+
+            def __exit__(self_inner, *exc):
+                return False
+
+        mock = MagicMock()
+        mock.start_span.return_value = _CM()
+
+        class _SpanType:
+            AGENT = "AGENT"
+            LLM = "LLM"
+            TOOL = "TOOL"
+
+        entities = MagicMock()
+        entities.SpanType = _SpanType
+        return mock, entities
+
+    def test_stage_and_draft_tags_set_on_span(self, monkeypatch):
+        recorded: dict = {}
+        mock_mlflow, mock_entities = self._fake_mlflow(recorded)
+        tracing_mod._TRACING_READY = True
+        with patch.dict(
+            "sys.modules",
+            {"mlflow": mock_mlflow, "mlflow.entities": mock_entities},
+        ):
+            @trace_agent(name="owl_generator.detect", stage="detect")
+            def my_stage(**kwargs):
+                return "ok"
+
+            assert my_stage(draft_id="draft-1", draft_revision=4) == "ok"
+        tracing_mod._TRACING_READY = False
+        assert recorded.get("stage") == "detect"
+        assert recorded.get("draft_id") == "draft-1"
+        assert recorded.get("draft_revision") == "4"

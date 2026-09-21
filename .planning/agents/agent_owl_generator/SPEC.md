@@ -3,12 +3,17 @@
 > Required by `.cursor/12-ai-feature-lifecycle.mdc`.
 > Material change in progress: staged Generate (design:
 > `docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md`,
-> plan: `staged-ontology-generate`). Sections marked **(staged, planned)**
-> describe the target contract for the staged entry points that Task 3 of
-> that plan implements; the runtime agent still exposes only the one-shot
-> `run_agent` entry point as of this SPEC revision. This revision documents
-> the target contract and expands the eval dataset ahead of the code change,
-> per the AI Feature Lifecycle gate (SPEC + dataset are the entry ticket).
+> plan: `staged-ontology-generate`). **Task 3 has landed**: the staged agent
+> entry points (`detect_entities`, `infer_relations`, `infer_attributes`,
+> `infer_axioms` in `agents.agent_owl_generator.staged`) now exist and are
+> the package's public surface (`agents.agent_owl_generator.__all__`).
+> Sections still marked **(staged, planned)** describe target contract for
+> Tasks 4/5 (async workflow routes, checkpoint persistence, and the wizard
+> UI), which have not landed yet — those stages do not yet drive anything
+> reachable from the API or frontend. The deprecated one-shot `run_agent`
+> bridge in `agents.agent_owl_generator.engine` still backs the existing
+> `/wizard/generate-async` route only until Task 4 replaces it; it is not
+> re-exported from the package root and the staged module never calls it.
 
 ## 1. Purpose
 
@@ -18,15 +23,17 @@ proposes classes, properties, and relationships in a single LLM-driven step
 and returns a structure that conforms to the OntoBricks ontology JSON format
 consumed by `back/objects/ontology/OntologyService`.
 
-**(staged, planned)** The agent is being split into four explicit entry
+**(staged — live as of Task 3)** The agent is split into four explicit entry
 points — `detect_entities`, `infer_relations`, `infer_attributes`, and
 `infer_axioms` — driven by a durable, human-reviewed draft instead of a
 single unattended call. Detection proposes candidate entities for human
 review; completion (relations → attributes → axioms, in that strict order)
 consumes only the reviewed, validated entity set and appends its result to
 the existing ontology instead of replacing it. The generic one-shot default
-is removed: no entry point silently produces and applies a full ontology
-without an intervening review step.
+is removed from the package's public surface: `agent_owl_generator.__all__`
+exposes only the four staged entry points, and no staged function calls the
+still-existing legacy `run_agent` bridge. Wiring the staged functions into
+async workflow routes and the final append-only merge is Task 4 — see §2.
 
 ## 2. Identity
 
@@ -40,7 +47,7 @@ without an intervening review step.
 | `max_owl_eval_rounds` | `2` (`MAX_OWL_EVAL_ROUNDS`; Stage-1 PGE evaluator retry cap — **(staged, planned)** retained only as a reject/report check, not a rewrite trigger; see §6a) |
 | `max_classes` | `40` (`_DEFAULT_MAX_CLASSES`; over-generation guard — accepted ontology is asked to consolidate above this. Overridable via `options["max_classes"]`, `<=0` disables) |
 | `mlflow_experiment` | `/Shared/ontobricks/agents/owl_generator` |
-| `stage_entry_points` | **(staged, planned)** `detect_entities` (Stage 1), `infer_relations` / `infer_attributes` / `infer_axioms` (Stage 3, strict order); the current `run_agent` one-shot entry point is deprecated once the staged entry points ship and is not exposed as a default UI/API path |
+| `stage_entry_points` | `detect_entities` (Stage 1), `infer_relations` / `infer_attributes` / `infer_axioms` (Stage 3, strict order) — **live** as of Task 3 (`agents.agent_owl_generator.staged`); `run_agent` (`agents.agent_owl_generator.engine`) is deprecated, not re-exported from the package root, and never called by the staged module — **(staged, planned)** wiring these into async workflow routes/checkpoint persistence and gating `/wizard/generate-async` is Task 4 |
 
 ## 3. Tool surface
 
@@ -53,15 +60,15 @@ without an intervening review step.
 
 The tool surface is unchanged by staging: every stage that reads source
 material (`detect_entities` only) uses these same four tools. Completion
-entry points (`infer_relations`, `infer_attributes`, `infer_axioms`)
-**(staged, planned)** do not call `list_documents` or `read_document` at
+entry points (`infer_relations`, `infer_attributes`, `infer_axioms`) —
+**live as of Task 3** — do not call `list_documents` or `read_document` at
 all — they consume only the persisted, validated Stage 2 entity contract
 (canonical label, description, type hint, evidence text, alternate labels
 captured during review), never a fresh document or metadata read. This is
 the no-reparse contract for completion: evidence captured once during
 review is the only lexical grounding completion stages get.
 
-## 3a. Structured schemas (staged, planned)
+## 3a. Structured schemas (staged — live as of Task 3)
 
 Detection output (`detect_entities`) is a bounded list of candidates, not
 free-text OWL:
@@ -114,8 +121,9 @@ Three concrete examples for the current one-shot behavior, still true for
 3. Given only pending or failed documents, the agent reports that document
    parsing is not ready and does not invent document-grounded ontology terms.
 
-Three additional examples for the staged contract **(planned, exercised once
-Task 3 lands the staged entry points)**:
+Three additional examples for the staged contract **(live as of Task 3;
+exercised behaviorally by `tests/eval/staged_contract.py` and
+`tests/units/agents/test_owl_generator_staged.py`)**:
 
 4. Given an existing ontology with a `Customer` class and a document
    introducing "Carrier," `detect_entities` proposes `Carrier` as a new,
@@ -145,27 +153,27 @@ Task 3 lands the staged entry points)**:
 **Ontology-quality aggregate threshold:** ≥ `0.82`.
 **Parsed-corpus contract threshold:** ≥ `0.90`.
 
-**(staged, planned)** — proposed dimensions for the staged contract, scored
-once the staged entry points and their harness exist (Task 3 of the
-`staged-ontology-generate` plan). Threshold values are proposed in this
-revision; they are not yet in `tests/eval/thresholds.yaml` and are not
-enforced by CI until the staged harness lands:
+**Staged contract dimensions — live as of Task 3.** The staged entry points
+and `tests/eval/staged_contract.py` now exist, so every dimension below is
+scored deterministically (scripted LLM responses, no live endpoint needed)
+against every `staged`-tagged dataset row, gated by
+`tests/eval/thresholds.yaml`'s `owl_generator.staged_contract: 0.95`:
 
-| Dimension | Metric | Threshold (proposed) | Weight | Judge |
+| Dimension | Metric | Threshold | Weight | Judge |
 |---|---|---|---|---|
-| `stage_default_inclusion` | every detected candidate has `included=true` before review | `1.00` | contract | Planned staged-detection contract judge (`tests/eval/run_agent_owl_generator.py`, staged harness) |
-| `stage_anchor_dedup` | no locked anchor (by id, canonical label, or alternate label) is re-proposed as a new candidate | `1.00` | contract | same (planned) |
-| `stage_entity_closure` | no completion output references an id outside locked anchors ∪ validated new set | `1.00` | contract | same (planned) |
-| `stage_order_contract` | `attributes` never checkpoints before `relations`; `axioms` never before `attributes` | `1.00` | contract | same (planned) |
-| `stage_checkpoint_resume` | a resumed Stage 3 run does not re-run a substage already checkpointed `done` | `1.00` | contract | same (planned) |
-| `stage_stale_fingerprint_block` | resume/update is refused when the source fingerprint changed since detection | `1.00` | contract | same (planned) |
-| `stage_alternate_label_lexical_use` | synonyms surface as `alternate_labels`, not separate candidate entities | `0.90` | contract | same (planned) |
-| `stage_no_rewrite_after_reject` | a validation-rejected stage output is reported as a failure, never resubmitted as an in-request rewrite | `1.00` | contract | same (planned) |
-| `stage_no_one_shot_default` | no entry point applies a full ontology without passing through detect → review → complete | `1.00` | contract | same (planned) |
+| `stage_default_inclusion` | every detected candidate has `included=true` before review | `1.00` | contract | `tests/eval/staged_contract.py` (deterministic) |
+| `stage_anchor_dedup` | no locked anchor (by id, canonical label, or alternate label) is re-proposed as a new candidate | `1.00` | contract | same |
+| `stage_entity_closure` | no completion output references an id outside locked anchors ∪ validated new set | `1.00` | contract | same |
+| `stage_order_contract` | `attributes` never checkpoints before `relations`; `axioms` never before `attributes` | `1.00` | contract | same |
+| `stage_checkpoint_resume` | a resumed Stage 3 run does not re-run a substage already checkpointed `done` | `1.00` | contract | same |
+| `stage_stale_fingerprint_block` | resume/update is refused when the source fingerprint changed since detection | `1.00` | contract | same |
+| `stage_alternate_label_lexical_use` | synonyms surface as `alternate_labels`, not separate candidate entities | `0.90` | contract | same |
+| `stage_no_rewrite_after_reject` | a validation-rejected stage output is reported as a failure, never resubmitted as an in-request rewrite | `1.00` | contract | same |
+| `stage_no_one_shot_default` | no entry point applies a full ontology without passing through detect → review → complete | `1.00` | contract | same |
 
-**Staged contract aggregate threshold (proposed):** ≥ `0.95`. To be
-calibrated against real staged-agent traces before it is added to
-`tests/eval/thresholds.yaml` and gated by CI.
+**Staged contract aggregate threshold:** ≥ `0.95`, enforced in
+`tests/eval/thresholds.yaml` and CI via `tests/eval/run_agent_owl_generator.py`
+(current result: `1.000` over 14 examples — see §10).
 
 ## 6. Failure modes
 
@@ -173,18 +181,20 @@ calibrated against real staged-agent traces before it is added to
 |---|---|---|
 | **Truncated ontology → empty result.** The final Turtle answer is cut off at the output-token cap (`finish_reason == "length"`); the salvaged remainder fails to parse in every RDF syntax, so `/ontology/parse-owl` lands 0 classes and the Generate wizard polls until timeout. | `OntologyParser` logs `Content appeared truncated`; `rdf_utils.parse_rdf_flexible` fails all formats; session saved with 0 classes. In tests: `finish_reason == "length"` on the text answer. | `max_tokens=8192` (was 4096) + a truncation guard in `engine.run_agent`: a length-capped answer is not accepted — the agent is asked to re-emit the ontology concisely (within `MAX_ITERATIONS`), or the run fails with an explicit "output truncated" error instead of a silent empty ontology. Regression: `tests/eval/datasets/agent_owl_generator/regression.jsonl` + `tests/units/agents/test_agent_owl_generator_truncation.py`. |
 | **Over-generation / class explosion.** The model over-decomposes — one class per column or per attribute value (e.g. `VatAmount`, `MeterReading`, `Payment`, `Call`) — emitting ~110 classes for a ~5-entity guideline. The ontology parses fine but downstream **auto-mapping** chunks ~5 classes/chunk with cool-downs, so ~22 chunks overrun the scenario `AUTOMAP_TIMEOUT` (600s) → "Auto-Map produced no entity SQL". | Auto-assign log shows `Chunk N/22` (vs the healthy `N/4`); accepted ontology `owl:Class` count ≫ input entity count. In tests: `_count_owl_classes(content) > max_classes`. | Prompt: replaced the "30–60 classes" size limit with "prefer 8–25, one class per real-world entity, never a class per column/value, hard limit 40". Guard: a class-count check in `engine.run_agent` asks the model (bounded by `_MAX_CONSOLIDATE_ROUNDS=2`) to consolidate above `max_classes` (default 40) before accepting. Regression: `tests/eval/datasets/agent_owl_generator/regression.jsonl` + `tests/units/agents/test_agent_owl_generator_class_cap.py`. |
-| **Structural defects survive generation.** Orphan classes, dangling `rdfs:domain`/`rdfs:range`, naming violations, or duplicate classes. | `evaluate_ontology()` reports Tier-1 issues. In tests: `tests/units/pge_eval/test_owl_evaluator_stage.py`. | **Current:** the pitfall-tool loop (`tool_check_owl_pitfalls`, called directly after each OWL answer) and the Stage-1 PGE evaluator (`_evaluate_ontology_stage`, bounded by `MAX_OWL_EVAL_ROUNDS=2`) both feed violations back into the LLM loop and ask it to re-emit corrected Turtle — a post-generation **rewrite** loop. **(staged, planned)** This rewrite loop is removed. Pitfall rules move into the stage prompts up front (prompt-first); `evaluate_ontology()` stays as a deterministic check but becomes **reject-only** — a failing stage output is reported as a failure for the user to retry, never silently patched by an automatic re-prompt within the same request. Fails open on parse errors. Regression: `tests/eval/datasets/agent_owl_generator/regression.jsonl` + `tests/units/pge_eval/`. |
-| **Repeated warehouse parsing.** Generate invokes `ai_parse_document` while reading a source. | Parsed-corpus eval observes an extractor/parse call. | Agent document tools have no extractor dependency and return only persisted corpus content. Completion entry points additionally never call a document tool at all (§3). |
+| **Structural defects survive generation.** Orphan classes, dangling `rdfs:domain`/`rdfs:range`, naming violations, or duplicate classes. | `evaluate_ontology()` reports Tier-1 issues. In tests: `tests/units/pge_eval/test_owl_evaluator_stage.py`. | **Legacy `run_agent` bridge only:** the pitfall-tool loop (`tool_check_owl_pitfalls`, called directly after each OWL answer) and the Stage-1 PGE evaluator (`_evaluate_ontology_stage`, bounded by `MAX_OWL_EVAL_ROUNDS=2`) both feed violations back into the LLM loop and ask it to re-emit corrected Turtle — a post-generation **rewrite** loop; unchanged in the deprecated `engine.run_agent` bridge, which is not on the staged path. **Live as of Task 3 for the staged entry points:** this rewrite loop is absent from `agents.agent_owl_generator.staged`. Pitfall rules (naming, closure) are stated in the stage prompts up front (prompt-first, `prompts.py`); `schemas.py`'s parsers and `GenerateDraft.validate_references()` are the deterministic checks and are **reject-only** — a failing stage output sets `rejected=True`/`rejection_reason` and is reported as a failure for the user to retry, never silently patched by an automatic re-prompt within the same request. Tests: `tests/units/agents/test_owl_generator_staged.py` (`*_rejected_no_rewrite`), `tests/eval/staged_contract.py` (`stage_no_rewrite_after_reject`). |
+| **Repeated warehouse parsing.** Generate invokes `ai_parse_document` while reading a source. | Parsed-corpus eval observes an extractor/parse call. | Agent document tools have no extractor dependency and return only persisted corpus content. Completion entry points additionally never call a document tool at all (§3, live as of Task 3 — `tools=None` on every `infer_*` LLM call). |
 | **Corpus not ready.** The agent treats pending/failed files as evidence. | Tool payload has `parse_status != ready`; response claims document evidence. | Return a structured unavailable payload and require status disclosure in evals. |
 | **Internal sidecar exposed.** `_parsed` appears in the document list. | Listed filename contains `_parsed`. | Filter internal directories before tool results are built. |
-| **(staged, planned) Entity injection.** A completion substage (`infer_relations`/`infer_attributes`/`infer_axioms`) references or introduces an entity id outside the locked anchors plus the validated Stage 2 set. | Server-side validation of every referenced id against the closed entity set before checkpointing. | Reject the substage output outright; do not checkpoint; do not merge; surface a retryable failure for that substage only. |
-| **(staged, planned) Stale draft resumed against a changed source.** The user (or a retry) continues a draft after the selected metadata, ready-document manifests, or existing ontology identities changed since detection. | Recomputed `source_fingerprint` mismatches the draft's stored value. | Invalidate the draft for resume/update; require an explicit re-run of `detect_entities`; never silently reuse stale candidates or silently reparse to "refresh" the fingerprint. |
-| **(staged, planned) Out-of-order or duplicated substage execution.** A retry or race starts `infer_axioms` before `infer_attributes` is checkpointed `done`, or re-runs a substage already `done`. | `completion_checkpoints` status inspected before every substage starts. | Refuse to start a substage unless its predecessor is `done`; skip any substage already `done` on resume. |
-| **(staged, planned) Replace instead of append.** The final merge deletes or renames a pre-existing entity instead of appending validated new entities and enriching anchors. | Merge diff shows a removed or renamed pre-existing entity id. | Merge is append-only by construction: existing entities keep their `id`/canonical label; only relations/attributes/axioms/alternate-labels may be added to them; new entities are added, never substituted for old ones. |
+| **Entity injection.** A completion substage (`infer_relations`/`infer_attributes`/`infer_axioms`) references or introduces an entity id outside the locked anchors plus the validated Stage 2 set. | Server-side validation of every referenced id against the closed entity set before checkpointing (`_run_completion()` + `GenerateDraft.validate_references()`). | **Live as of Task 3.** Reject the substage output outright (`rejected=True`); do not checkpoint (checkpoint persistence itself is Task 4); surface a retryable failure for that substage only. |
+| **Stale draft resumed against a changed source.** The user (or a retry) continues a draft after the selected metadata, ready-document manifests, or existing ontology identities changed since detection. | Recomputed `source_fingerprint` mismatches the draft's stored value. | **Live (Task 2 draft layer, exercised by the staged contract).** Invalidate the draft for resume/update (`GenerateDraft.ensure_not_stale`); require an explicit re-run of `detect_entities`; never silently reuse stale candidates or silently reparse to "refresh" the fingerprint. |
+| **Out-of-order or duplicated substage execution.** A retry or race starts `infer_axioms` before `infer_attributes` is checkpointed `done`, or re-runs a substage already `done`. | `completion_checkpoints` status inspected before every substage starts (`staged._ordering_error()`, fails before any LLM call). | **Live as of Task 3.** Refuse to start a substage unless its predecessor is `done`; skip any substage already `done` on resume (`GenerateDraft.next_pending_substage()`). |
+| **(staged, planned) Replace instead of append.** The final merge deletes or renames a pre-existing entity instead of appending validated new entities and enriching anchors. | Merge diff shows a removed or renamed pre-existing entity id. | Merge is append-only by construction: existing entities keep their `id`/canonical label; only relations/attributes/axioms/alternate-labels may be added to them; new entities are added, never substituted for old ones. Implementing the actual merge against the live ontology is Task 4 — `staged.py`'s completion results are returned to the caller, never merged or persisted by these functions themselves. |
 
-## 6a. Prompt-first pitfall handling and append guarantees (staged, planned)
+## 6a. Prompt-first pitfall handling and append guarantees
 
-Cross-reference for §6's staged rows and §3a's entity-closure rule:
+Cross-reference for §6's staged rows and §3a's entity-closure rule. Prompt-
+first pitfalls, entity closure, and no-reparse are **live as of Task 3**;
+append-only merge is still **(staged, planned)** for Task 4:
 
 - **Prompt-first, not rewrite-after.** Pitfall constraints (naming rules,
   orphan-class avoidance, domain/range completeness, duplicate-class
@@ -217,15 +227,16 @@ Cross-reference for §6's staged rows and §3a's entity-closure rule:
   locked-anchor append/dedup, strict relations→attributes→axioms ordering,
   checkpoint recovery, stale-source invalidation, no-reparse, no
   post-rejection rewrite after a deterministic validation failure, and no
-  one-shot generation path/default — see §3a/§6a). The `staged` cases
-  describe the target contract ahead of the Task 3 implementation; they are
-  not yet judged behaviorally by `tests/eval/run_agent_owl_generator.py`
-  because `detect_entities` / `infer_relations` / `infer_attributes` /
-  `infer_axioms` do not exist at runtime yet (see §8 for how they will be
-  wired in). The runner does structurally validate every staged row
-  (`_validate_staged_examples`): a floor of 14 examples, unique ids, a
-  present `input.stage`, non-empty `expected.constraints`, and mandatory
-  coverage of the `stage_no_rewrite_after_reject` and
+  one-shot generation path/default — see §3a/§6a). As of Task 3, the
+  `staged` cases are scored **behaviorally** by
+  `tests/eval/run_agent_owl_generator.py` (via `tests/eval/staged_contract.py`):
+  each constraint `kind` maps to a deterministic check that exercises the
+  real `detect_entities` / `infer_relations` / `infer_attributes` /
+  `infer_axioms` / `GenerateDraft` code paths with scripted LLM responses
+  (no live endpoint required). The runner still structurally validates every
+  staged row first (`_validate_staged_examples`): a floor of 14 examples,
+  unique ids, a present `input.stage`, non-empty `expected.constraints`, and
+  mandatory coverage of the `stage_no_rewrite_after_reject` and
   `stage_no_one_shot_default` constraint kinds, so neither review-flagged
   gap can silently regress out of the dataset.
 - **Planning mirror:** `.planning/agents/agent_owl_generator/eval/dataset.jsonl`.
@@ -235,14 +246,19 @@ Cross-reference for §6's staged rows and §3a's entity-closure rule:
 
 Existing: `@trace_agent` on the entry point in `src/agents/agent_owl_generator/`. Verify `@trace_tool` is on each tool handler.
 
-**(staged, planned)** Each of the four staged entry points
+**Live as of Task 3.** Each of the four staged entry points
 (`detect_entities`, `infer_relations`, `infer_attributes`, `infer_axioms`)
-gets its own `@trace_agent` span. Every staged span additionally carries
-`draft_id`, `draft_revision`, and `stage` (`detect` | `relations` |
-`attributes` | `axioms`) as trace tags/attributes so a resumed run's traces
-can be correlated across the checkpointed substages, and so an eval harness
-can assert stage-order and no-rewrite-after-reject directly from the trace
-without re-deriving it from prose output.
+has its own `@trace_agent(name=..., stage=...)` span
+(`owl_generator.detect` / `.relations` / `.attributes` / `.axioms`). Every
+staged span additionally carries `draft_id`, `draft_revision`, and `stage`
+(`detect` | `relations` | `attributes` | `axioms`) as trace tags/attributes
+when the caller passes them, so a resumed run's traces can be correlated
+across the checkpointed substages, and so an eval harness can assert
+stage-order and no-rewrite-after-reject directly from the trace without
+re-deriving it from prose output. **(staged, planned)** wiring `draft_id`/
+`draft_revision` from a persisted draft into every call is Task 4 (checkpoint
+persistence); the staged functions already accept and forward those kwargs
+to the trace today.
 
 ## 9. Plan reference
 
@@ -276,11 +292,18 @@ planned)` sections; plan: `staged-ontology-generate`).
       none are configured in this environment (`--live requires host,
       token, and endpoint`, exit from `argparse`). No run URI exists for
       this attempt and none is fabricated here. Recorded to run when a
-      configured environment is available, before or alongside Task 3's
-      staged-agent implementation.
-- [ ] Staged-contract eval run URI (new dimensions in §5): not applicable
-      until Task 3 implements `detect_entities` / `infer_relations` /
-      `infer_attributes` / `infer_axioms` and their harness.
+      configured environment is available.
+- [x] Post-change staged-contract eval (Task 3 — `detect_entities` /
+      `infer_relations` / `infer_attributes` / `infer_axioms` now exist):
+      `uv run --frozen python tests/eval/run_agent_owl_generator.py` →
+      all 14 staged examples PASS, staged-contract aggregate `1.000`
+      (threshold `0.950`, deterministic/scripted, no live endpoint); all 10
+      parsed-corpus cases unaffected, aggregate `1.000` (threshold `0.900`).
+      Live MLflow eval run for the staged dimensions is blocked for the same
+      credential reason as the pre-change baseline above; no run URI is
+      fabricated here.
 - [ ] Baseline eval run URI pasted into PR body.
-- [ ] Aggregate threshold ≥ declared value in §5.
+- [x] Aggregate threshold ≥ declared value in §5 (staged `1.000` ≥ `0.950`;
+      parsed-corpus `1.000` ≥ `0.900`; deterministic scoring, not a live
+      MLflow judge run — see the blocked item above).
 - [ ] Reviewer waiver recorded in the PR, if used.
