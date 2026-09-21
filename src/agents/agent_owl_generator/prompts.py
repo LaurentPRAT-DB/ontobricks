@@ -159,6 +159,17 @@ def _entity_catalog(draft: GenerateDraft) -> str:
     candidates are deliberately absent (they are outside the closure and any
     reference to them is rejected). Alternate labels are surfaced as lexical
     evidence for naming heuristics.
+
+    **Bare-id rendering (live-bug fix).** The id is rendered as a plain
+    ``id: <value>`` field, never bracketed (``[<value>]``) or quoted. A
+    bracketed id (e.g. ``[Agent]``) previously caused a live failure: the
+    old catalog rendered ``  • [Agent] Agent`` and the closure rule said
+    "reference entities ONLY by the ids listed above" — the model copied the
+    bracketed token verbatim as the `domain`/`range` value, and
+    :meth:`GenerateDraft.validate_references` (which compares against the
+    bare id from :meth:`GenerateDraft.closed_entity_ids`) rejected every
+    single reference. There is nothing left in this rendering a model could
+    mistake for part of the id value itself.
     """
     lines = []
     for entity in (*draft.existing_anchors, *draft.candidate_entities):
@@ -167,14 +178,22 @@ def _entity_catalog(draft: GenerateDraft) -> str:
         alt = ", ".join(entity.alternate_labels)
         alt_suffix = f" | alt: {alt}" if alt else ""
         desc = f" — {entity.description}" if entity.description else ""
-        lines.append(f"  • [{entity.id}] {entity.canonical_label}{alt_suffix}{desc}")
+        lines.append(
+            f"- id: {entity.id}\n  label: {entity.canonical_label}{alt_suffix}{desc}"
+        )
     return "\n".join(lines)
 
 
 _CLOSURE_RULE = (
-    "You MUST reference entities ONLY by the ids listed above. NEVER invent a "
-    "new entity or a new id. Any output referencing an id not listed will be "
-    "rejected."
+    "You MUST reference entities ONLY by the exact bare id value shown "
+    "after `id:` in the closed entity set below — copy that value exactly, "
+    "character for character, with NO brackets and NO quotes around it, "
+    "and NEVER substitute the label text instead. For example, if the "
+    "catalog shows `id: Agent` / `label: Agent`, the value you must use is "
+    "Agent — never [Agent], never \"Agent\", and never a paraphrase of the "
+    "label. NEVER invent a new entity or a new id. Any output referencing "
+    "an id not listed above — including a bracketed or quoted form of a "
+    "valid id — will be rejected."
 )
 
 
@@ -244,11 +263,25 @@ def _prior_results_block(draft: GenerateDraft, substages: Sequence[str]) -> str:
     return "\n".join(lines)
 
 
+# Trailing instruction wording (live-verification finding, this revision).
+# Live probing of `databricks-claude-sonnet-5` while verifying the
+# id-bracketing fix surfaced a SEPARATE quirk this same revision exposes:
+# once a completion substage sends `response_format` (it never did before
+# this fix), a trailing user-turn instruction phrased "Return the <X>
+# JSON." sometimes makes the model double-encode its answer — it puts a
+# JSON *string* containing the real answer as the value of the top-level
+# array key instead of the array itself (e.g.
+# ``{"relations": "{\"relations\": [...]}"}"``), which fails
+# `parse_relations_payload`'s `'relations' must be a list` check. Reworded
+# to "Now infer and provide the <x>." (verified live to answer correctly,
+# repeatably) — a wording-only prompt change, not a parsing workaround: no
+# lenient/tolerant parsing was added for the double-encoded shape, and
+# `validate_references`/reject-only stay unweakened either way.
 def build_relations_user_prompt(draft: GenerateDraft) -> str:
     return (
         "Closed entity set (reference ONLY these ids):\n"
         f"{_entity_catalog(draft)}\n\n"
-        "Return the relations JSON."
+        "Now infer and provide the relations."
     )
 
 
@@ -259,7 +292,7 @@ def build_attributes_user_prompt(draft: GenerateDraft) -> str:
         "Closed entity set (reference ONLY these ids):\n"
         f"{_entity_catalog(draft)}\n"
         f"{prior_section}"
-        "\nReturn the attributes JSON."
+        "\nNow infer and provide the attributes."
     )
 
 
@@ -270,5 +303,5 @@ def build_axioms_user_prompt(draft: GenerateDraft) -> str:
         "Closed entity set (reference ONLY these ids):\n"
         f"{_entity_catalog(draft)}\n"
         f"{prior_section}"
-        "\nReturn the axioms JSON."
+        "\nNow infer and provide the axioms."
     )

@@ -446,6 +446,24 @@ def detect_entities(
 # =====================================================
 
 
+def _completion_response_format(
+    builder: Callable[[Any], Dict[str, Any]], draft: GenerateDraft
+) -> Optional[Dict[str, Any]]:
+    """Build a substage's enum-constrained ``response_format`` from the
+    draft's own closed entity set (live-bug fix — see the module note in
+    ``schemas.py``'s "Transport-level structured output for Stage 3"
+    section). Returns ``None`` when the closed set is empty (an edge case
+    ``ensure_ready_for_completion`` already prevents in the production
+    workflow path) rather than building a schema with an impossible empty
+    ``enum`` — completion then relies on the strengthened bare-id prompt
+    (``prompts.py``) plus the unconditional ``validate_references`` check.
+    """
+    closed_ids = draft.closed_entity_ids()
+    if not closed_ids:
+        return None
+    return builder(closed_ids)
+
+
 def _ordering_error(draft: GenerateDraft, substage: str) -> str:
     """Return a non-empty reason string when *substage* may not start yet."""
     idx = _SUBSTAGE_ORDER.index(substage)
@@ -470,8 +488,21 @@ def _run_completion(
     user_prompt: str,
     parse_fn: Callable[[str], Dict[str, Any]],
     refs_fn: Callable[[Dict[str, Any]], set],
+    response_format: Optional[Dict[str, Any]],
     on_step: Optional[Callable[[str], None]],
 ) -> CompletionResult:
+    """Run one Stage-3 completion substage's single structured LLM call.
+
+    ``response_format`` (live-bug fix) is the substage's enum-constrained
+    ``json_schema`` (see ``_completion_response_format``/``schemas.py``'s
+    ``build_relations_response_format``/etc.) — passed with ``tools=None``
+    always, so a bracketed/invented id is structurally impossible on an
+    endpoint that honours it. When ``None`` (empty closed set, or the
+    endpoint rejects the parameter and ``call_serving_endpoint`` strips it
+    after one retry), the strengthened bare-id prompt is the fallback
+    safety net, and the ``validate_references`` closure check below still
+    runs unconditionally either way — reject-only, never trust the wire.
+    """
     # Strict ordering gate — fail fast, before any LLM call.
     ordering_reason = _ordering_error(draft, substage)
     if ordering_reason:
@@ -501,6 +532,7 @@ def _run_completion(
                 endpoint_name,
                 messages,
                 tools=None,  # completion never reads documents/metadata
+                response_format=response_format,
                 max_tokens=_GEN_MAX_TOKENS,
                 temperature=_TEMPERATURE,
                 timeout=LLM_TIMEOUT,
@@ -589,6 +621,9 @@ def infer_relations(
         user_prompt=prompts.build_relations_user_prompt(draft),
         parse_fn=schemas.parse_relations_payload,
         refs_fn=schemas.relations_referenced_ids,
+        response_format=_completion_response_format(
+            schemas.build_relations_response_format, draft
+        ),
         on_step=on_step,
     )
 
@@ -616,6 +651,9 @@ def infer_attributes(
         user_prompt=prompts.build_attributes_user_prompt(draft),
         parse_fn=schemas.parse_attributes_payload,
         refs_fn=schemas.attributes_referenced_ids,
+        response_format=_completion_response_format(
+            schemas.build_attributes_response_format, draft
+        ),
         on_step=on_step,
     )
 
@@ -643,5 +681,8 @@ def infer_axioms(
         user_prompt=prompts.build_axioms_user_prompt(draft),
         parse_fn=schemas.parse_axioms_payload,
         refs_fn=schemas.axioms_referenced_ids,
+        response_format=_completion_response_format(
+            schemas.build_axioms_response_format, draft
+        ),
         on_step=on_step,
     )

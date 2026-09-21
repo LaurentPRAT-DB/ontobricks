@@ -582,6 +582,48 @@ def _c_rejects_excluded_ref(_e, constraint) -> bool:
     return result.rejected and mock_llm.call_count == 1
 
 
+def _c_rejects_bracketed_id_ref(example, constraint) -> bool:
+    """Live bug regression (id-bracketing): the old catalog rendered ids in
+    brackets (``[cand-6]``) and the closure rule said "reference ids listed
+    above" — the model copied the bracketed token verbatim as domain/range,
+    and ``validate_references`` (comparing against the *bare* id) rejected
+    every such reference. This proves a bracketed id — even one that
+    exactly matches a real closed-set id once the brackets are stripped —
+    is still rejected reject-only, with no in-request rewrite, exercising
+    the real ``infer_relations`` orchestrator built from the example's own
+    ``input.draft`` (never a hand-picked literal)."""
+    bare_id = str(constraint["value"])
+    bracketed_id = f"[{bare_id}]"
+    draft_cfg = example.get("input", {}).get("draft", {})
+    anchors = [
+        _anchor(a["id"], a.get("canonical_label", a["id"]))
+        for a in draft_cfg.get("existing_anchors", [])
+    ]
+    candidates = [
+        _candidate(
+            c.get("canonical_label", c["id"]),
+            c["id"],
+            included=c.get("included", True),
+        )
+        for c in draft_cfg.get("candidate_entities", [])
+    ]
+    draft = GenerateDraft.new(
+        source_fingerprint="s", existing_anchors=anchors, candidate_entities=candidates
+    )
+    other_id = next(iter(draft.closed_entity_ids() - {bare_id}), bare_id)
+    payload = json.dumps(
+        {"relations": [{"label": "x", "domain": bracketed_id, "range": other_id}]}
+    )
+    with patch.object(staged, "call_serving_endpoint") as mock_llm:
+        mock_llm.side_effect = [_answer(payload)]
+        result = staged.infer_relations(host="h", token="t", endpoint_name="e", draft=draft)
+    return (
+        result.rejected
+        and bracketed_id in result.rejection_reason
+        and mock_llm.call_count == 1
+    )
+
+
 def _c_does_not_merge_on_rejection(_e, _c) -> bool:
     # A rejected substage returns success=False and does not persist a result.
     draft = GenerateDraft.new(
@@ -687,6 +729,7 @@ _CHECKS: Dict[str, Callable[[dict, dict], bool]] = {
     "resume_starts_at": _c_resume_starts_at,
     "does_not_rerun": _c_does_not_rerun,
     "rejects_reference_to_excluded_entity": _c_rejects_excluded_ref,
+    "rejects_bracketed_id_reference": _c_rejects_bracketed_id_ref,
     "does_not_merge_on_rejection": _c_does_not_merge_on_rejection,
     "does_not_call_document_tools": _c_no_document_tools,
     "uses_persisted_evidence_only": _c_uses_persisted_evidence_only,

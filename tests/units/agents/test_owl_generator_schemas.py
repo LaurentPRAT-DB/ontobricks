@@ -299,3 +299,67 @@ class TestParseAxiomsPayload:
             schemas.parse_axioms_payload(
                 '{"axioms": [{"kind": "subClassOf", "object": "cls-Customer-a1"}]}'
             )
+
+
+# ---------------------------------------------------------------------------
+# Transport-level structured output for Stage 3 (live id-bracketing bug fix)
+#
+# Root cause: the old catalog/prompt rendered each entity id in brackets
+# (``[<id>]``) and the closure rule said "reference entities ONLY by the
+# ids listed above" — the model copied the bracketed token verbatim as
+# domain/range, and `GenerateDraft.validate_references` (comparing against
+# the *bare* id) rejected every reference. These enum-constrained
+# `response_format` builders make a bracketed/invented id structurally
+# impossible on an endpoint that honours `response_format` — see
+# `agents.agent_owl_generator.staged._completion_response_format`.
+# ---------------------------------------------------------------------------
+
+
+class TestRelationsResponseFormat:
+    def test_is_a_strict_json_schema(self):
+        rf = schemas.build_relations_response_format({"cls-Customer-a1", "cand-6"})
+        assert rf["type"] == "json_schema"
+        assert rf["json_schema"]["strict"] is True
+
+    def test_domain_and_range_are_enum_constrained_to_closed_ids(self):
+        rf = schemas.build_relations_response_format({"cls-Customer-a1", "cand-6"})
+        item = rf["json_schema"]["schema"]["properties"]["relations"]["items"]
+        assert item["properties"]["domain"]["enum"] == ["cand-6", "cls-Customer-a1"]
+        assert item["properties"]["range"]["enum"] == ["cand-6", "cls-Customer-a1"]
+        assert item["additionalProperties"] is False
+        assert set(item["required"]) == {"label", "domain", "range", "evidence"}
+
+    def test_domain_and_range_enums_are_distinct_objects(self):
+        # Two separately-mutable schema objects, never the same dict
+        # reference shared by identity between the two fields.
+        rf = schemas.build_relations_response_format({"cand-6"})
+        item = rf["json_schema"]["schema"]["properties"]["relations"]["items"]
+        assert item["properties"]["domain"] is not item["properties"]["range"]
+
+
+class TestAttributesResponseFormat:
+    def test_domain_is_enum_constrained_to_closed_ids(self):
+        rf = schemas.build_attributes_response_format({"cls-Customer-a1", "cand-6"})
+        item = rf["json_schema"]["schema"]["properties"]["attributes"]["items"]
+        assert item["properties"]["domain"]["enum"] == ["cand-6", "cls-Customer-a1"]
+        assert item["additionalProperties"] is False
+        assert set(item["required"]) == {"label", "domain", "datatype", "evidence"}
+
+
+class TestAxiomsResponseFormat:
+    def test_subject_and_object_are_enum_constrained_to_closed_ids(self):
+        rf = schemas.build_axioms_response_format({"cls-Customer-a1", "cand-6"})
+        item = rf["json_schema"]["schema"]["properties"]["axioms"]["items"]
+        assert item["properties"]["subject"]["enum"] == ["cand-6", "cls-Customer-a1"]
+        assert item["properties"]["object"]["enum"] == ["cand-6", "cls-Customer-a1"]
+        assert item["additionalProperties"] is False
+        assert set(item["required"]) == {"kind", "subject", "object"}
+
+    def test_kind_is_enum_constrained_to_the_three_axiom_kinds(self):
+        rf = schemas.build_axioms_response_format({"cand-6"})
+        item = rf["json_schema"]["schema"]["properties"]["axioms"]["items"]
+        assert set(item["properties"]["kind"]["enum"]) == {
+            "subClassOf",
+            "disjointWith",
+            "equivalentClass",
+        }

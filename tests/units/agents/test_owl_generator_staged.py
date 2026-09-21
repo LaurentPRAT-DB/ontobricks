@@ -447,6 +447,46 @@ class TestInferRelations:
         )
         assert result.success is True
 
+    # -----------------------------------------------------------------
+    # Live bug fix: id-bracketing. The old catalog rendered ids in
+    # brackets (`[cand-6]`) and the closure rule said "reference ids
+    # listed above" — the model copied the bracketed token verbatim,
+    # which `validate_references` (comparing against the bare id) always
+    # rejected. Fix: transport-level enum-constrained `response_format`
+    # (structural — a bracketed id becomes impossible on an endpoint
+    # that honours it) plus a strengthened bare-id prompt (fallback
+    # safety net when the endpoint doesn't honour `response_format`).
+    # -----------------------------------------------------------------
+
+    def test_relations_call_uses_enum_constrained_response_format(self):
+        draft = _draft()
+        payload = '{"relations": []}'
+        with patch.object(staged, "call_serving_endpoint") as mock_llm:
+            mock_llm.side_effect = [_answer(payload)]
+            staged.infer_relations(host="h", token="t", endpoint_name="e", draft=draft)
+        call = mock_llm.call_args_list[0]
+        assert call.kwargs["tools"] is None
+        rf = call.kwargs["response_format"]
+        assert rf["type"] == "json_schema"
+        item = rf["json_schema"]["schema"]["properties"]["relations"]["items"]
+        assert set(item["properties"]["domain"]["enum"]) == draft.closed_entity_ids()
+        assert set(item["properties"]["range"]["enum"]) == draft.closed_entity_ids()
+
+    def test_bracketed_id_reference_still_rejected_reject_only(self):
+        # Even in the fallback path (no response_format enforcement, or an
+        # endpoint that ignores it), a bracketed id must still be rejected
+        # outright — never silently stripped/normalized and never
+        # resubmitted for a rewrite.
+        payload = (
+            '{"relations": [{"label": "shipsTo", '
+            '"domain": "[cand-6]", "range": "cls-Customer-a1"}]}'
+        )
+        result, mock_llm = self._run([_answer(payload)])
+        assert result.success is False
+        assert result.rejected is True
+        assert "[cand-6]" in result.rejection_reason
+        assert mock_llm.call_count == 1
+
 
 # ---------------------------------------------------------------------------
 # Stage 3: attributes (ordering + closure)
@@ -498,6 +538,13 @@ class TestInferAttributes:
             == "owl_generator.attributes"
         )
 
+    def test_attributes_call_uses_enum_constrained_response_format(self):
+        draft = _draft(relations_done=True)
+        _, mock_llm = self._run([_answer('{"attributes": []}')], draft)
+        rf = mock_llm.call_args_list[0].kwargs["response_format"]
+        item = rf["json_schema"]["schema"]["properties"]["attributes"]["items"]
+        assert set(item["properties"]["domain"]["enum"]) == draft.closed_entity_ids()
+
 
 # ---------------------------------------------------------------------------
 # Stage 3: axioms (ordering + no-rewrite-after-reject)
@@ -540,6 +587,54 @@ class TestInferAxioms:
         assert result.rejected is True
         assert "cls-UnknownGhost" in result.rejection_reason
         assert mock_llm.call_count == 1
+
+    def test_axioms_call_uses_enum_constrained_response_format(self):
+        draft = _draft(relations_done=True, attributes_done=True)
+        _, mock_llm = self._run([_answer('{"axioms": []}')], draft)
+        rf = mock_llm.call_args_list[0].kwargs["response_format"]
+        item = rf["json_schema"]["schema"]["properties"]["axioms"]["items"]
+        assert set(item["properties"]["subject"]["enum"]) == draft.closed_entity_ids()
+        assert set(item["properties"]["object"]["enum"]) == draft.closed_entity_ids()
+        assert item["properties"]["kind"]["enum"] == [
+            "subClassOf",
+            "disjointWith",
+            "equivalentClass",
+        ]
+
+
+# ---------------------------------------------------------------------------
+# Completion response_format degrades transparently when unsupported
+# (mirrors TestDetectionResponseFormatFallbackIntegration for Stage 1).
+# ---------------------------------------------------------------------------
+
+
+class TestCompletionResponseFormatFallbackIntegration:
+    def test_infer_relations_succeeds_when_response_format_unsupported(self):
+        rejection = MagicMock()
+        rejection.status_code = 400
+        rejection.text = "does not support the response_format parameter"
+        http_error = requests.exceptions.HTTPError(response=rejection)
+
+        success_resp = MagicMock()
+        success_resp.json.return_value = _answer('{"relations": []}')
+
+        def _retry_side_effect(_url, _headers, payload, timeout=None):
+            if payload.get("response_format"):
+                raise http_error
+            assert "tools" not in payload
+            return success_resp
+
+        draft = _draft()
+        with patch(
+            "agents.engine_base.call_llm_with_retry", side_effect=_retry_side_effect
+        ):
+            result = staged.infer_relations(
+                host="h",
+                token="t",
+                endpoint_name="dbx-completion-fallback-ep",
+                draft=draft,
+            )
+        assert result.success is True
 
 
 # ---------------------------------------------------------------------------
@@ -653,6 +748,67 @@ class TestPrompts:
         text = prompts.build_relations_user_prompt(draft)
         assert "cand-6" in text
         assert "cand-4" not in text
+
+    # -----------------------------------------------------------------
+    # Live bug fix: id-bracketing. See TestInferRelations's
+    # `test_bracketed_id_reference_still_rejected_reject_only` for the
+    # runtime reject-only proof; these pin the prompt-level half of the
+    # fix (the strengthened bare-id catalog + closure rule wording that
+    # is the fallback safety net when response_format isn't honoured).
+    # -----------------------------------------------------------------
+
+    def test_entity_catalog_renders_bare_ids_without_brackets(self):
+        draft = _draft(
+            anchors=[GenerateEntity.locked_anchor("Agent", "Agent")],
+            candidates=[GenerateEntity.new_candidate("Carrier", entity_id="cand-6")],
+        )
+        text = prompts.build_relations_user_prompt(draft)
+        assert "[Agent]" not in text
+        assert "[cand-6]" not in text
+        assert "id: Agent" in text
+        assert "id: cand-6" in text
+
+    def test_closure_rule_forbids_bracketed_or_quoted_ids(self):
+        text = prompts.build_relations_system_prompt()
+        lowered = text.lower()
+        assert "no brackets" in lowered
+        assert "no quotes" in lowered
+        assert "bare" in lowered
+        # The forbidden bracketed form is shown explicitly as a
+        # counter-example, so the model can't misinterpret "no brackets"
+        # as merely stylistic.
+        assert "[agent]" in lowered
+
+    def test_closure_rule_wording_shared_by_attributes_and_axioms_prompts(self):
+        # The strengthened closure rule text is shared via `_CLOSURE_RULE`
+        # — every Stage-3 prompt gets the same bare-id requirement.
+        for text in (
+            prompts.build_attributes_system_prompt(),
+            prompts.build_axioms_system_prompt(),
+        ):
+            lowered = text.lower()
+            assert "no brackets" in lowered
+            assert "bare" in lowered
+
+    def test_completion_user_prompts_avoid_the_return_json_double_encoding_trigger(
+        self,
+    ):
+        # Live-verification finding (this revision): once completion sends
+        # `response_format`, a trailing "Return the <X> JSON." instruction
+        # sometimes made `databricks-claude-sonnet-5` double-encode its
+        # answer as a JSON *string* nested inside the top-level array key
+        # (e.g. `{"relations": "{\"relations\": [...]}"}"`), which fails
+        # `parse_relations_payload`. Verified live that "Now infer and
+        # provide the X." does not trigger this.
+        draft = _draft(relations_done=True, attributes_done=True)
+        for text in (
+            prompts.build_relations_user_prompt(draft),
+            prompts.build_attributes_user_prompt(draft),
+            prompts.build_axioms_user_prompt(draft),
+        ):
+            assert "Return the" not in text
+            assert "JSON." not in text
+            assert "Now infer and provide the" in text
 
 
 # ---------------------------------------------------------------------------

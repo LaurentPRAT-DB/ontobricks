@@ -2322,3 +2322,215 @@ Modified files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6724 passed,
 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 54.15s.
+
+## Fix: live id-bracketing false rejection in Stage-3 completion (bare-id catalog + enum-constrained response_format)
+
+### Context
+
+Blocking bug reproduced live by the user: Stage-3 completion failed after
+13.1s with `relations: references unknown or excluded entity id(s):
+[Agent], [Call], [Claim], [Contract], [Customer], [Customerjourneyevent],
+[Energyasset], [Financialdocument], [Interaction], [Invoice], [Meter],
+[Meterreading], [Payment], [Person], [Subscription],
+[cand-3a295986dc3f], [cand-6d2837cbaf28]`.
+
+Root cause: `agents.agent_owl_generator.prompts._entity_catalog` rendered
+each entity as `  • [{entity.id}] {label}` and the closure rule said
+"reference entities ONLY by the ids listed above" — the model copied the
+*bracketed* token (e.g. `[Agent]`) verbatim as the `domain`/`range` value.
+`GenerateDraft.validate_references` compares against the **bare** id from
+`closed_entity_ids()`, so every reference was rejected — a prompt-format-
+induced id mismatch, not a real closure violation (the `cand-*` ids in the
+error prove detection/inclusion worked correctly; only the id *format* was
+wrong).
+
+### Changes (two layers, no schema-repair/rewrite loop added — reject-only unweakened)
+
+1. `src/agents/agent_owl_generator/prompts.py`
+   Prompt-only layer, insufficient alone (a prompt cannot structurally stop
+   a non-compliant model — same lesson as the prior Stage-1 fix).
+   `_entity_catalog` now renders each entity as a bare
+   `- id: <value>\n  label: <value>` pair — never bracketed or quoted.
+   `_CLOSURE_RULE` rewritten to explicitly forbid brackets/quotes/label
+   substitution, with a worked counter-example (`id: Agent` → use `Agent`,
+   never `[Agent]`, never `"Agent"`). Also reworded the trailing
+   instruction in `build_relations_user_prompt`/`build_attributes_user_
+   prompt`/`build_axioms_user_prompt` from "Return the `<X>` JSON." to "Now
+   infer and provide the `<x>`." — a SEPARATE quirk surfaced only by this
+   same revision's `response_format` change: live probing of
+   `databricks-claude-sonnet-5` showed that once a completion substage
+   sends `response_format` for the first time, the old trailing phrasing
+   occasionally made the model double-encode its answer (a JSON *string*
+   holding the real answer nested inside the top-level array key, e.g.
+   `{"relations": "{\"relations\": [...]}"}"`), which fails
+   `parse_relations_payload`. The new phrasing was verified live to answer
+   correctly, repeatably. Wording-only — no lenient/tolerant parsing was
+   added for the double-encoded shape.
+2. `src/agents/agent_owl_generator/schemas.py`
+   Structural layer, the actual fix. Added `_AXIOM_KINDS`, `_closed_id_enum`
+   (a fresh `{"type": "string", "enum": sorted(ids)}` dict per call — never
+   shared by reference across fields), and
+   `build_relations_response_format`/`build_attributes_response_format`/
+   `build_axioms_response_format`: strict `json_schema` payloads
+   (`additionalProperties: false`, explicit `required`) whose id-valued
+   fields (`domain`/`range`/`subject`/`object`) are each an `enum` of
+   exactly `draft.closed_entity_ids()`. `axioms`' `kind` is constrained to
+   the same 3-value enum the prompt documents
+   (`subClassOf`/`disjointWith`/`equivalentClass`). Because the id fields
+   are an enum, a bracketed or invented id is now structurally impossible
+   on any endpoint that honours `response_format` — not merely instructed
+   against.
+3. `src/agents/agent_owl_generator/staged.py`
+   Added `_completion_response_format(builder, draft)`: builds the
+   substage's enum-constrained schema from `draft.closed_entity_ids()`, or
+   returns `None` when the closed set is empty (rather than building an
+   impossible empty `enum`) so completion falls back to the strengthened
+   bare-id prompt as the safety net. `_run_completion` now accepts and
+   forwards `response_format` to `call_serving_endpoint`, always with
+   `tools=None` (completion never reads documents/metadata, so there is no
+   tools/response_format conflict to guard). `infer_relations`/
+   `infer_attributes`/`infer_axioms` each now pass
+   `_completion_response_format(schemas.build_*_response_format, draft)`.
+   `validate_references` is unchanged and still runs unconditionally on
+   every substage's parsed output — reject-only, never trust the wire even
+   with schema enforcement; an unsupported `response_format` degrades
+   transparently via the existing per-endpoint ban cache in
+   `agents.engine_base.call_serving_endpoint` (same fallback mechanism as
+   the prior Stage-1 fix).
+4. `tests/units/agents/test_owl_generator_schemas.py`
+   Added `TestRelationsResponseFormat`/`TestAttributesResponseFormat`/
+   `TestAxiomsResponseFormat`: strict-schema shape, `additionalProperties`,
+   required fields, enum contents built from an arbitrary id set, distinct
+   dict objects per field (no accidental shared-reference enum), and the
+   `kind` enum for axioms.
+5. `tests/units/agents/test_owl_generator_staged.py`
+   Added: bare-id catalog rendering (`test_entity_catalog_renders_bare_ids_
+   without_brackets`); closure-rule wording forbidding brackets/quotes,
+   shared across relations/attributes/axioms prompts
+   (`test_closure_rule_forbids_bracketed_or_quoted_ids`,
+   `test_closure_rule_wording_shared_by_attributes_and_axioms_prompts`);
+   per-substage `response_format` wiring with the enum built from
+   `closed_entity_ids()` and `tools=None`; a bracketed-id answer still
+   rejected reject-only with exactly one LLM call (no second finalization);
+   an unsupported `response_format` degrading transparently end-to-end
+   (`TestCompletionResponseFormatFallbackIntegration`); and the trailing
+   double-encoding-trigger regression
+   (`test_completion_user_prompts_avoid_the_return_json_double_encoding_
+   trigger`).
+6. `tests/eval/staged_contract.py`
+   Added `_c_rejects_bracketed_id_ref`, mapped to the new
+   `rejects_bracketed_id_reference` constraint kind — a real behavioural
+   check (scripts a `[cand-...]`-shaped domain/range answer and asserts
+   rejection with no rewrite), never the neutral-1.0 "unmapped kind"
+   default. Added `TestRejectsBracketedIdReferenceCheck` unit tests for the
+   new check function itself.
+7. `tests/eval/test_staged_contract.py`
+   Unit tests pinning `_c_rejects_bracketed_id_ref`'s behavior.
+8. `tests/eval/run_agent_owl_generator.py`
+   `_MIN_STAGED_EXAMPLES` raised `15` -> `16`;
+   `_REQUIRED_STAGED_CONSTRAINT_KINDS` extended with
+   `rejects_bracketed_id_reference` so the new dimension can't silently
+   disappear from the dataset.
+9. `tests/eval/datasets/agent_owl_generator/baseline.jsonl` and
+   `.planning/agents/agent_owl_generator/eval/dataset.jsonl` (byte-identical
+   mirrors)
+   Appended `staged-bracketed-id-rejection-001`: a `complete_relations` row
+   built from the exact live-bug shape (one locked anchor + one included
+   candidate, `cand-6`) whose scripted constraint requires rejection of a
+   `[cand-6]`-bracketed reference with no post-rejection rewrite.
+10. `.planning/agents/agent_owl_generator/SPEC.md`
+    Documented the bare-id catalog + transport-level enum enforcement in
+    §3a; added the `stage_completion_bare_id_enforcement` row (**scored**,
+    unlike the Stage-1 transport row, via `rejects_bracketed_id_reference`)
+    to §5's staged table; added the "Id-bracketing false rejection"
+    failure-mode row to §6 with full root-cause/fix detail; raised the
+    dataset floor `15` -> `16` and documented the new regression row in §7;
+    appended the full sign-off entry to §10 with RED/GREEN evidence, both
+    live results, and the double-encoding-wording secondary finding.
+
+### RED/GREEN evidence
+
+RED confirmed by running the new tests against the pre-fix source (no
+`build_*_response_format` in `schemas.py`, no `response_format` parameter
+on `_run_completion`, bracketed catalog rendering in `prompts.py`) — all
+new assertions failed with `AttributeError`/`KeyError`/plain assertion
+failures, none pre-existing. GREEN after implementing the fix: all new and
+pre-existing tests pass.
+
+### Deterministic/offline eval (unchanged gate, unweakened)
+
+`uv run --frozen python tests/eval/run_agent_owl_generator.py` → all 16
+staged examples PASS, staged-contract aggregate `1.000` (threshold
+`0.950`); all 10 parsed-corpus cases PASS, aggregate `0.985` (threshold
+`0.900`, unaffected — the single pre-existing sub-threshold row,
+`owl-pending-only` at `0.850`, is unrelated to this change).
+
+### Live eval (`--live`, `DEFAULT` Databricks CLI profile, `ONTOBRICKS_LLM_ENDPOINT=databricks-claude-sonnet-5` — the production-gated eval endpoint)
+
+MLflow run:
+`https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663818/runs/17f9399a8e44413bbf93838b0935d2a7`.
+Parsed-corpus contract aggregate `0.985` (≥ `0.900`, met). Deterministic
+staged-contract gate `1.000` (≥ `0.950`, unweakened, includes the new
+`staged-bracketed-id-rejection-001` row scoring `1.000`).
+
+Staged **live** evidence (informational only, per `staged_contract.py`'s
+own documented design — "not re-enforced" as a second CI gate, real
+endpoint output varies run to run): 5 detect rows all PASS `1.000`; the
+representative completion chain scored `infer_relations` PASS
+(`rejected=False`, `tools=None`) and `infer_attributes` FAIL
+(`rejected=True`, error `output must contain a 'attributes' list`) on this
+particular run — aggregate `0.958` against the informational, non-gating
+comparison point of `0.950`. This looks like a recurrence of the
+double-encoding quirk the prompt-wording fix targets, this time on the
+`attributes` substage; not chased further with additional paid live calls
+in this task per the live-verification budget constraint — flagged below
+as a residual concern for follow-up.
+
+### Exact-case live verification (read-only, exactly ONE `infer_relations` call, against the user's own endpoint `benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`)
+
+Built a `GenerateDraft` in `COMPLETING` stage from the live session's own
+data — `fastapi_session/b3bd26a3fbe54f89895b0cfcfbff1feb`'s
+`domain_data.generate_draft`: the exact 15 locked anchors
+(`Agent`, `Call`, ..., `Subscription`) and the exact 2 already-included
+candidates (`cand-3a295986dc3f` "PaymentMethod",
+`cand-6d2837cbaf28` "Address") that produced the original live bug report
+— read-only (`json.load`, no session mutation; confirmed untouched
+afterwards). Called the production `staged.infer_relations` path directly
+with `databricks auth token --profile DEFAULT` credentials (never
+printed). Result: `success=True`, `rejected=False`, 26 relations returned,
+zero out-of-closure or bracketed ids — every `domain`/`range` value is a
+bare id from `closed_entity_ids()` (e.g. `{"label": "hasAddress",
+"domain": "Customer", "range": "cand-6d2837cbaf28"}`). This is the exact
+same session/anchor/candidate combination that produced the original
+`[Agent], [Call], ...` rejection error — confirming the fix resolves the
+reported bug end-to-end against the user's own endpoint.
+
+### Concerns (residual, informational)
+
+The `infer_attributes` FAIL observed in the informational live-scoring
+section above (real `databricks-claude-sonnet-5` endpoint, not the user's
+endpoint) suggests the double-encoding quirk the wording fix targets may
+not be fully eliminated on every substage/run — it is non-gating by the
+harness's own design and was not chased further to stay within the
+live-call budget for this task, but is worth a follow-up probe if it
+recurs. Both live verifications otherwise landed clean: the exact-case
+`infer_relations` call against the user's own endpoint (the specific
+combination that reproduced the original bug) returned zero bracketed or
+out-of-closure ids.
+
+Modified/added files:
+- `src/agents/agent_owl_generator/prompts.py`
+- `src/agents/agent_owl_generator/schemas.py`
+- `src/agents/agent_owl_generator/staged.py`
+- `tests/units/agents/test_owl_generator_schemas.py`
+- `tests/units/agents/test_owl_generator_staged.py`
+- `tests/eval/staged_contract.py`
+- `tests/eval/test_staged_contract.py`
+- `tests/eval/run_agent_owl_generator.py`
+- `tests/eval/datasets/agent_owl_generator/baseline.jsonl`
+- `.planning/agents/agent_owl_generator/eval/dataset.jsonl`
+- `.planning/agents/agent_owl_generator/SPEC.md`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6743 passed,
+304 skipped, 6 deselected, 1 xfailed, 32 warnings in 56.54s.

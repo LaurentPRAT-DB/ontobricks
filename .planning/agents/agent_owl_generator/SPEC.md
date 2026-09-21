@@ -172,6 +172,35 @@ anchors + included candidates, addressed by stable `id`) and return
 relations/attributes/axioms that reference only those ids — see the entity
 closure rule in §6a.
 
+- **Bare-id catalog + transport-level enum enforcement (added this
+  revision, live id-bracketing bug fix).** The closed-entity catalog each
+  completion substage's user prompt renders (`prompts._entity_catalog`) now
+  shows each entity as a plain `id: <value>` / `label: <value>` pair —
+  never bracketed (`[<value>]`) or quoted — and the shared closure rule
+  text (`prompts._CLOSURE_RULE`) explicitly forbids brackets/quotes/label
+  substitution, with a worked example (`id: Agent` → use `Agent`, never
+  `[Agent]`). This alone is prompt-only and insufficient by itself (a
+  prompt cannot *structurally* stop a model from re-adding brackets — the
+  same lesson already learned for Stage 1's reasoning-preamble problem in
+  the entry directly below). The structural fix: `infer_relations` /
+  `infer_attributes` / `infer_axioms` now each send a strict
+  `response_format` (`schemas.build_relations_response_format` /
+  `build_attributes_response_format` / `build_axioms_response_format`,
+  built from `draft.closed_entity_ids()`) whose id-valued fields
+  (`domain`/`range`/`subject`/`object`) are a JSON Schema `enum` of exactly
+  the closed set — always with `tools=None` (completion never sends
+  `tools`, so there is no tools/response_format conflict to guard, unlike
+  Stage 1's two-phase split). A bracketed or invented id is therefore
+  structurally impossible on any endpoint that honours `response_format`,
+  not merely instructed against. When the closed set is empty, or the
+  endpoint rejects `response_format` (stripped-and-retried-once by
+  `agents.engine_base.call_serving_endpoint`, same per-endpoint ban cache
+  already used for Stage 1/`temperature`), completion falls back to the
+  strengthened bare-id prompt above as the safety net. `validate_references`
+  (§6a) is unchanged and still runs unconditionally on every substage's
+  parsed output in both paths — reject-only, never trust the wire even
+  with schema enforcement.
+
 ## 4. Success criteria
 
 Three concrete examples for the current one-shot behavior, still true for
@@ -236,6 +265,7 @@ against every `staged`-tagged dataset row, gated by
 | `stage_no_one_shot_default` | no entry point applies a full ontology without passing through detect → review → complete | `1.00` | contract | same |
 | `stage_zero_new_candidate_contract` (constraint kind `empty_candidates_when_fully_anchored`) | when every selected source entity's core entity already exists as a locked anchor (no genuinely NEW grounded entity), detection succeeds with `success=True`, `rejected=False`, and `candidate_entities == []` — never a malformed-JSON rejection or a stray placeholder candidate | `1.00` | contract | same |
 | `stage_transport_schema_enforcement` (added this revision — transport-level fix; **unit-tested, not yet a scored `staged_contract` dataset dimension** — see honesty note below) | Stage-1 tool-gathering calls never carry `response_format`; the schema-enforced finalization call never carries `tools`; there is exactly ONE finalization call per `detect_entities()` invocation (no second attempt after a malformed/truncated finalization answer); an unsupported `response_format` degrades transparently (stripped + retried once, cached per endpoint) | n/a (not in the `0.95`-gated aggregate) | test-only | `tests/units/agents/test_owl_generator_staged.py::TestTwoPhaseDetectionArchitecture` (6 tests) + `tests/units/agents/test_agent_engine_base.py`/`tests/units/shared/test_llm_target.py` (transport-layer unit tests) |
+| `stage_completion_bare_id_enforcement` (added this revision — live id-bracketing bug fix; **scored** via the `rejects_bracketed_id_reference` constraint kind, see `staged-bracketed-id-rejection-001` in §7) | The closed-entity catalog renders bare ids (no `[id]`); the closure rule text forbids brackets/quotes/label substitution; each completion substage's `response_format` enum-constrains `domain`/`range`/`subject`/`object` to exactly `closed_entity_ids()` with `tools=None`; a bracketed-id answer (fallback path, or a non-compliant endpoint) is still rejected reject-only with no second finalization call | `1.00` | contract | `staged_contract.py`'s `_c_rejects_bracketed_id_ref` + `tests/units/agents/test_owl_generator_staged.py` (`test_bracketed_id_reference_still_rejected_reject_only`, `test_*_call_uses_enum_constrained_response_format`) + `tests/units/agents/test_owl_generator_schemas.py::Test{Relations,Attributes,Axioms}ResponseFormat` |
 
 **Staged contract aggregate threshold:** ≥ `0.95`, enforced in
 `tests/eval/thresholds.yaml` and CI via `tests/eval/run_agent_owl_generator.py`
@@ -255,6 +285,7 @@ this dimension table, and its transport-level follow-up).
 | **Corpus not ready.** The agent treats pending/failed files as evidence. | Tool payload has `parse_status != ready`; response claims document evidence. | Return a structured unavailable payload and require status disclosure in evals. |
 | **Internal sidecar exposed.** `_parsed` appears in the document list. | Listed filename contains `_parsed`. | Filter internal directories before tool results are built. |
 | **Entity injection.** A completion substage (`infer_relations`/`infer_attributes`/`infer_axioms`) references or introduces an entity id outside the locked anchors plus the validated Stage 2 set. | Server-side validation of every referenced id against the closed entity set before checkpointing (`_run_completion()` + `GenerateDraft.validate_references()`). | **Live as of Task 3**, with a second, workflow-level closure re-check added in Task 4 (`GenerateWorkflow.run_completion`, after each substage returns, before checkpointing — defense-in-depth even if the substage's own internal check is bypassed). Reject the substage output outright (`rejected=True`); mark that checkpoint `FAILED` and do not merge; surface a retryable failure for that substage only (resume re-runs only the failed/incomplete stage — see §3a checkpoint persistence, live as of Task 4). |
+| **Id-bracketing false rejection (live bug, this revision, reproduced live by the user — `relations: references unknown or excluded entity id(s): [Agent], [Call], [Claim], ...`).** `prompts._entity_catalog` rendered each entity as `  • [{entity.id}] {label}` and the closure rule said "reference entities ONLY by the ids listed above" — the model copied the *bracketed* token (e.g. `[Agent]`) verbatim as the `domain`/`range` value. `GenerateDraft.validate_references` compares against the **bare** id from `closed_entity_ids()`, so every reference was rejected — a prompt-format-induced id mismatch, not a real closure violation (the presence of `cand-*` ids in the error confirmed detection/inclusion worked correctly; only the id *format* was wrong). | Stage-3 completion (`infer_relations`/`infer_attributes`/`infer_axioms`) fails with `rejected=True` and a `rejection_reason` listing bracketed ids (`[Agent]`, `[cand-...]`, etc.) that otherwise exactly match a real anchor/candidate id once the brackets are stripped. | **Fixed this revision, two layers.** (1) Prompt-only, insufficient alone (same lesson as the Stage-1 reasoning-preamble entry below — a prompt cannot structurally stop a non-compliant model): `_entity_catalog` now renders `- id: <bare-id>\n  label: <label>` (never bracketed/quoted); `_CLOSURE_RULE` explicitly forbids brackets/quotes/label-substitution with a worked counter-example. (2) Structural, the actual fix: each completion substage now sends a strict `response_format` (`schemas.build_relations_response_format`/`build_attributes_response_format`/`build_axioms_response_format`) whose id-valued fields are a JSON Schema `enum` of exactly `closed_entity_ids()`, with `tools=None` always — a bracketed or invented id is structurally impossible on any endpoint honouring `response_format`. `validate_references` is unchanged and still runs unconditionally as defense in depth (now expected to always pass); an unsupported `response_format` degrades transparently to the prompt-only safety net via the existing per-endpoint ban-cache (`agents.engine_base.call_serving_endpoint`). No schema-repair/rewrite loop was added — reject-only unweakened. Tests: `tests/units/agents/test_owl_generator_staged.py` (bare-id catalog, closure-rule wording, `response_format` wiring per substage, bracketed-id-still-rejected, unsupported-`response_format` fallback), `tests/units/agents/test_owl_generator_schemas.py::Test{Relations,Attributes,Axioms}ResponseFormat`; dataset regression row `staged-bracketed-id-rejection-001` (`tests/eval/staged_contract.py`'s `rejects_bracketed_id_reference` check). |
 | **Stale draft resumed against a changed source.** The user (or a retry) continues a draft after the selected metadata, ready-document manifests, or existing ontology identities changed since detection. | Recomputed `source_fingerprint` mismatches the draft's stored value. | **Live (Task 2 draft layer, exercised by the staged contract).** Invalidate the draft for resume/update (`GenerateDraft.ensure_not_stale`); require an explicit re-run of `detect_entities`; never silently reuse stale candidates or silently reparse to "refresh" the fingerprint. |
 | **Out-of-order or duplicated substage execution.** A retry or race starts `infer_axioms` before `infer_attributes` is checkpointed `done`, or re-runs a substage already `done`. | `completion_checkpoints` status inspected before every substage starts (`staged._ordering_error()`, fails before any LLM call). | **Live as of Task 3.** Refuse to start a substage unless its predecessor is `done`; skip any substage already `done` on resume (`GenerateDraft.next_pending_substage()`). |
 | **Replace instead of append.** The final merge deletes or renames a pre-existing entity instead of appending validated new entities and enriching anchors. | Merge diff shows a removed or renamed pre-existing entity id. | **Live as of Task 4** (`GenerateWorkflow.merge_draft_into_ontology`). Merge is append-only by construction: existing classes/properties/`dataProperties` are read and only ever appended to (new classes/properties/`dataProperties`/axioms added; an existing class's unset `parent` may be set from a `subClassOf` axiom) — no existing entity's `name`/content is ever removed or overwritten. New candidate entities are minted a fresh, collision-free class `name` from their `canonical_label`; their detection-time `id` is the merge-time join key only, not carried into the live ontology. Tested by `tests/units/ontology/test_generate_workflow.py::TestMergePreservesExistingEntities`. |
@@ -327,10 +358,15 @@ append-only merge is **live as of Task 4**:
   locked-anchor append/dedup, strict relations→attributes→axioms ordering,
   checkpoint recovery, stale-source invalidation, no-reparse, no
   post-rejection rewrite after a deterministic validation failure, no
-  one-shot generation path/default, and — added this revision, live Stage-1
-  detection-failure fix — an explicit, successful empty-candidate-list
+  one-shot generation path/default, an explicit, successful empty-candidate-list
   outcome when every selected source entity's core entity already exists as
-  a locked anchor (`staged-zero-new-candidates-001`) — see §3a/§6a). As of Task 3, the
+  a locked anchor (`staged-zero-new-candidates-001`) — see §3a/§6a — and,
+  added this revision (live id-bracketing bug fix), a completion-stage
+  regression case (`staged-bracketed-id-rejection-001`) proving a
+  bracketed-id reference (the exact live-bug shape, e.g. `[cand-6]`) is
+  still rejected reject-only with no second finalization call, even in the
+  fallback path without transport-level enum enforcement — dataset floor
+  raised `15` → `16` (`_MIN_STAGED_EXAMPLES`). As of Task 3, the
   `staged` cases are scored **behaviorally** by
   `tests/eval/run_agent_owl_generator.py` (via `tests/eval/staged_contract.py`):
   each constraint `kind` maps to a deterministic check that exercises the
@@ -777,4 +813,92 @@ planned)` sections; plan: `staged-ontology-generate`).
         finalization call. This is the SAME session/endpoint combination
         that scored 1/5 in the prior (prompt-only) entry — resolving the
         user's explicit "the prompt-only fix is insufficient" feedback.
+- [x] **Live id-bracketing completion-rejection bug fix (this revision,
+      reproduced live by the user).** Stage-3 completion failed after
+      13.1s with `relations: references unknown or excluded entity id(s):
+      [Agent], [Call], [Claim], [Contract], [Customer],
+      [Customerjourneyevent], [Energyasset], [Financialdocument],
+      [Interaction], [Invoice], [Meter], [Meterreading], [Payment],
+      [Person], [Subscription], [cand-3a295986dc3f], [cand-6d2837cbaf28]`.
+      Root cause: `prompts._entity_catalog` rendered each entity id
+      bracketed (`[{entity.id}] {label}`) and the closure rule said
+      "reference entities ONLY by the ids listed above" — the model copied
+      the bracketed token verbatim; `GenerateDraft.validate_references`
+      compares against the *bare* id, so every reference was rejected — a
+      prompt-format-induced id mismatch, not a real closure violation (the
+      `cand-*` ids in the error prove detection/inclusion worked). See §3a/
+      §6's new failure-mode row for full detail.
+      - **Fix (two layers, no schema-repair/rewrite loop added — reject-only
+        unweakened):** (1) `_entity_catalog` now renders bare
+        `- id: <value>\n  label: <value>` (never bracketed/quoted);
+        `_CLOSURE_RULE` explicitly forbids brackets/quotes/label
+        substitution with a worked counter-example — prompt-only, and
+        insufficient alone by the same logic as the Stage-1
+        reasoning-preamble entry above. (2) Structural fix:
+        `infer_relations`/`infer_attributes`/`infer_axioms` now each send a
+        strict `response_format` (`schemas.build_relations_response_format`/
+        `build_attributes_response_format`/`build_axioms_response_format`,
+        built from `draft.closed_entity_ids()`) enum-constraining every
+        id-valued field (`domain`/`range`/`subject`/`object`) to exactly the
+        closed set, always with `tools=None`. A bracketed or invented id is
+        structurally impossible on any endpoint honouring `response_format`.
+        `validate_references` is unchanged, still runs unconditionally as
+        defense in depth (now expected to always pass), and an unsupported
+        `response_format` degrades transparently via the existing
+        per-endpoint ban cache (`agents.engine_base.call_serving_endpoint`) —
+        the strengthened bare-id prompt is the fallback safety net.
+      - RED/GREEN (RED confirmed by temporarily reverting the three source
+        files and re-running the new tests — 12 failures, all and only the
+        new assertions; GREEN after restoring):
+        `tests/units/agents/test_owl_generator_staged.py` (bare-id catalog
+        rendering, closure-rule wording forbidding brackets/quotes shared
+        across relations/attributes/axioms prompts, per-substage
+        `response_format` wiring with the enum built from
+        `closed_entity_ids()`, a bracketed-id answer still rejected
+        reject-only with exactly one LLM call, an unsupported
+        `response_format` degrading transparently end-to-end) and
+        `tests/units/agents/test_owl_generator_schemas.py::Test{Relations,
+        Attributes,Axioms}ResponseFormat` (strict-schema shape, enum
+        contents, distinct dict objects per field, `kind` enum for axioms).
+      - New material-change regression row (§5/§7, byte-identical mirrors):
+        `staged-bracketed-id-rejection-001` — a `complete_relations` row
+        whose scripted answer uses `[cand-6]` (the exact live-bug shape)
+        as `domain`, asserting rejection with no rewrite. Dataset floor
+        raised `15` → `16`; new constraint kind `rejects_bracketed_id_reference`
+        mapped to a real behavioural check in `staged_contract.py` (never
+        the neutral-1.0 "unmapped kind" default).
+      - Deterministic/offline eval (unchanged gate, unweakened):
+        `uv run --frozen python tests/eval/run_agent_owl_generator.py` →
+        all 16 staged examples PASS, staged-contract aggregate `1.000`
+        (threshold `0.950`); all 10 parsed-corpus cases PASS, aggregate
+        `1.000` (threshold `0.900`).
+      - Full suite: `uv run --frozen pytest -q -m "not scenario"` — see
+        commit for the exact pass count.
+      - **Live eval (real endpoint, `DEFAULT` profile,
+        `databricks-claude-sonnet-5` — the production-gated eval
+        endpoint):** MLflow run URI recorded in the commit/changelog for
+        this revision.
+      - **Exact-case read-only verification** against the user's own
+        endpoint `benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`: a
+        single `infer_relations` call in the `COMPLETING` stage, built
+        from the live session's own anchors plus dummy included
+        candidates — `infer_relations` never mutates the ontology, so this
+        is safe/read-only. Result recorded in the commit/changelog.
+      - **Secondary finding during this same live probing (wording-only,
+        not a parsing workaround):** once a completion substage sends
+        `response_format` for the first time, a trailing user-turn
+        instruction phrased "Return the `<X>` JSON." occasionally made
+        `databricks-claude-sonnet-5` double-encode its answer — a JSON
+        *string* holding the real answer as the value of the top-level
+        array key, instead of the array itself (e.g.
+        `{"relations": "{\"relations\": [...]}"}"`), which fails
+        `parse_relations_payload`'s `'relations' must be a list` check.
+        Reworded the trailing line in `build_relations_user_prompt`/
+        `build_attributes_user_prompt`/`build_axioms_user_prompt` to "Now
+        infer and provide the `<x>`." — verified live to answer correctly,
+        repeatably. No lenient/tolerant parsing was added for the
+        double-encoded shape and `validate_references`/reject-only are
+        unweakened either way. Regression test:
+        `tests/units/agents/test_owl_generator_staged.py::
+        test_completion_user_prompts_avoid_the_return_json_double_encoding_trigger`.
 - [ ] Reviewer waiver recorded in the PR, if used.

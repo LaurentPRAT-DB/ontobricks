@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Sequence, Set
+from typing import Any, Dict, Iterable, List, Sequence, Set
 
 from back.core.logging import get_logger
 from back.objects.ontology.GenerateDraft import (
@@ -241,6 +241,152 @@ def parse_detection_payload(
         if max_candidates and len(candidates) >= max_candidates:
             break
     return candidates
+
+
+# ---------------------------------------------------------------------------
+# Transport-level structured output (response_format) for Stage 3
+# ---------------------------------------------------------------------------
+#
+# Live-bug fix (id-bracketing failure): the old catalog/prompt rendered each
+# entity id in brackets (``[<id>]``) and the closure rule said "reference
+# entities ONLY by the ids listed above" — the model copied the bracketed
+# token verbatim as `domain`/`range`/`subject`/`object`, and
+# `GenerateDraft.validate_references` (which compares against the *bare* id
+# from `closed_entity_ids()`) rejected every single reference
+# (``relations: references unknown or excluded entity id(s): [Agent],
+# [Call], ...``). `prompts._entity_catalog`/`_CLOSURE_RULE` were fixed to
+# render/require a bare id (see `prompts.py`), but a prompt-only instruction
+# cannot *structurally* prevent a model from re-adding brackets — the same
+# lesson already learned for Stage 1's reasoning-preamble problem (see
+# `DETECTION_RESPONSE_FORMAT` above). These builders make each completion
+# substage's id-valued fields (`domain`/`range`/`subject`/`object`) a
+# strict-schema ENUM of exactly `GenerateDraft.closed_entity_ids()`, so an
+# out-of-closure OR bracketed/quoted id is structurally impossible on any
+# endpoint that honours `response_format` — not merely instructed against.
+# Completion never sends `tools`, so there is no tools/response_format
+# conflict to guard here (unlike Stage 1's two-phase split).
+#
+# This does NOT replace the reject-only `validate_references` check run
+# after parsing (defense in depth — never trust the wire even with schema
+# enforcement) — it must simply always pass now. It also does NOT change
+# `parse_*_payload`'s own field contract: every field these schemas require
+# is exactly the field the parser already reads.
+# ---------------------------------------------------------------------------
+
+_AXIOM_KINDS = ("subClassOf", "disjointWith", "equivalentClass")
+
+
+def _closed_id_enum(closed_ids: Iterable[str]) -> Dict[str, Any]:
+    """A strict ``enum`` schema of the closed entity id set, sorted for a
+    deterministic/diffable schema. A fresh dict per call (never shared by
+    reference) so two fields (e.g. ``domain``/``range``) each get their own
+    schema object."""
+    return {"type": "string", "enum": sorted({str(i) for i in closed_ids})}
+
+
+def build_relations_response_format(closed_ids: Iterable[str]) -> Dict[str, Any]:
+    """Strict ``json_schema`` for Stage-3 relations: ``domain``/``range`` are
+    each constrained to the exact closed entity id set — see module note
+    above. Mirrors :func:`parse_relations_payload`'s field contract
+    (``label``, ``domain``, ``range``) plus optional ``evidence``."""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "relations_output",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "relations": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string"},
+                                "domain": _closed_id_enum(closed_ids),
+                                "range": _closed_id_enum(closed_ids),
+                                "evidence": {"type": ["string", "null"]},
+                            },
+                            "required": ["label", "domain", "range", "evidence"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["relations"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def build_attributes_response_format(closed_ids: Iterable[str]) -> Dict[str, Any]:
+    """Strict ``json_schema`` for Stage-3 attributes: ``domain`` is
+    constrained to the exact closed entity id set — see module note above.
+    Mirrors :func:`parse_attributes_payload`'s field contract (``label``,
+    ``domain``, ``datatype``) plus optional ``evidence``."""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "attributes_output",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "attributes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "label": {"type": "string"},
+                                "domain": _closed_id_enum(closed_ids),
+                                "datatype": {"type": "string"},
+                                "evidence": {"type": ["string", "null"]},
+                            },
+                            "required": ["label", "domain", "datatype", "evidence"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["attributes"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def build_axioms_response_format(closed_ids: Iterable[str]) -> Dict[str, Any]:
+    """Strict ``json_schema`` for Stage-3 axioms: ``subject``/``object`` are
+    each constrained to the exact closed entity id set — see module note
+    above. Mirrors :func:`parse_axioms_payload`'s field contract (``kind``,
+    ``subject``, ``object``); ``kind`` is constrained to the same 3-value
+    enum the axioms prompt documents."""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "axioms_output",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "axioms": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "kind": {"type": "string", "enum": list(_AXIOM_KINDS)},
+                                "subject": _closed_id_enum(closed_ids),
+                                "object": _closed_id_enum(closed_ids),
+                            },
+                            "required": ["kind", "subject", "object"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["axioms"],
+                "additionalProperties": False,
+            },
+        },
+    }
 
 
 # ---------------------------------------------------------------------------

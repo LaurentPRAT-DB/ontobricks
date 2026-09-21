@@ -58,7 +58,7 @@ THRESHOLDS = ROOT / "tests/eval/thresholds.yaml"
 # tool-call traces. This check keeps the staged rows represented and
 # structurally executable now, without weakening the existing parsed-corpus
 # contract check above.
-_MIN_STAGED_EXAMPLES = 15
+_MIN_STAGED_EXAMPLES = 16
 _REQUIRED_STAGED_CONSTRAINT_FIELDS = {"kind", "value"}
 
 # Every required staged topic must be exercised by at least one staged
@@ -75,6 +75,10 @@ _REQUIRED_STAGED_CONSTRAINT_KINDS = {
     "stage_no_rewrite_after_reject",
     "stage_no_one_shot_default",
     "empty_candidates_when_fully_anchored",
+    # Live id-bracketing bug fix (this revision): a bracketed id (the exact
+    # live-bug shape, e.g. `[cand-6]`) must always be rejected reject-only —
+    # locked in so this coverage cannot silently disappear from the dataset.
+    "rejects_bracketed_id_reference",
 }
 
 
