@@ -132,7 +132,7 @@ class TestScoreStagedExamplesLiveTargetsStagedEntryPoints:
                 DATASET, ROOT / "tests/eval/thresholds.yaml",
                 host="https://test.databricks.com", token="tok", endpoint="ep",
             )
-        assert spy_detect.call_count == 4  # the 4 "detect"-tagged staged rows
+        assert spy_detect.call_count == 5  # the 5 "detect"-tagged staged rows
         assert "aggregate" in scores
         assert all(isinstance(v, float) for v in scores.values())
 
@@ -259,14 +259,15 @@ class TestScoreStagedExamplesLiveReportsDetectionFailureExplicitly:
                 DATASET, ROOT / "tests/eval/thresholds.yaml",
                 host="https://test.databricks.com", token="tok", endpoint="ep",
             )
-        # 4 detect-tagged rows -> exactly one detect_entities()/LLM call each,
-        # regardless of how many constraints each row declares (7 dedup/
-        # inclusion/synonym constraints total across these 4 rows).
-        assert spy_detect.call_count == 4
+        # 5 detect-tagged rows -> exactly one detect_entities()/LLM call each,
+        # regardless of how many constraints each row declares (dedup/
+        # inclusion/synonym/zero-candidate constraints total across these 5
+        # rows).
+        assert spy_detect.call_count == 5
         # +1 for the completion chain's "relations" substage call (it stops
         # there since this fake reply rejects as a relations payload) — no
         # extra calls beyond one per detect row plus the chain's own calls.
-        assert spy_llm.call_count == 5
+        assert spy_llm.call_count == 6
 
 
 class TestLiveModeInitializesTracingBeforeAnyFoundationModelCall:

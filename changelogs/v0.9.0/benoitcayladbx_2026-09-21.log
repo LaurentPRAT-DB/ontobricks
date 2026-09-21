@@ -1990,3 +1990,161 @@ Modified files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6688 passed,
 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.11s.
+
+---
+
+## Fix live Stage-1 false rejection when every selected entity is already a locked anchor
+
+Context: Two live Generate tasks (`aa2f34cc`, `72fd9955`) failed after a
+successful Foundation Model call with `output is not valid JSON: Expecting
+value: line 1 column 1 (char 0)`; the draft stayed `null`. Root cause: the
+active session's 10 selected tables' core entities were ALL already among
+its 15 locked ontology anchors, so the model had no genuinely NEW grounded
+candidate — the Stage-1 prompt said "JSON only" but never defined what to
+answer in that case, so the model wrote prose/analysis instead of
+`{"candidate_entities": []}`, and `detect_entities` correctly-but-
+unhelpfully rejected the malformed output. Fixed per strict TDD and the AI
+Feature Lifecycle gate, prompt-only (no rewrite/re-prompt loop; reject-only
+architecture unchanged).
+
+Changes:
+
+1. `src/agents/agent_owl_generator/prompts.py`
+   `build_detection_system_prompt` now states, immediately after the
+   anchors listing, that existing anchors are context-not-candidates and
+   that when nothing new is grounded the mandatory answer is exactly
+   `{"candidate_entities": []}` (no explanation/refusal/prose/fence). The
+   OUTPUT section additionally requires the first character of the reply
+   to be `{` and forbids an analysis/reasoning preamble before the JSON —
+   added after live reproduction showed the model narrating visible
+   reasoning ahead of its JSON answer.
+2. `src/back/objects/ontology/GenerateWorkflow.py`
+   `run_detection`'s rejection path no longer echoes the raw parser/schema
+   exception text to the user; it raises a generic `DraftValidationError`
+   stating the model failed the structured contract and suggesting a
+   retry. The raw detail is still logged server-side for debugging.
+3. `tests/units/agents/test_owl_generator_staged.py`
+   Added `TestZeroCandidateContract` (5 tests pinning the exact empty-JSON
+   contract wording, anchors-are-context wording, no-prose/refusal
+   wording, contract stated even with zero anchors, and the no-reasoning-
+   preamble/first-char-`{` rule) and
+   `test_empty_candidate_list_is_a_successful_result_not_a_rejection`
+   (confirms `detect_entities` treats an empty candidate list as a
+   successful, non-rejected result).
+4. `tests/units/agents/test_owl_generator_schemas.py`
+   Added 2 tests pinning that `parse_detection_payload` already accepted
+   — and continues to accept — an empty `candidate_entities` list, with
+   and without existing anchors.
+5. `tests/units/ontology/test_generate_workflow.py`
+   Added `test_detection_rejection_message_is_generic_not_raw_parser_text`
+   pinning that the user-facing rejection message never leaks the raw
+   parser exception text.
+6. `tests/eval/datasets/agent_owl_generator/baseline.jsonl` and
+   `.planning/agents/agent_owl_generator/eval/dataset.jsonl` (byte-
+   identical mirrors)
+   Added regression row `staged-zero-new-candidates-001`: 2 tables, both
+   already covered by 2 locked anchors, expecting
+   `success=True`/`rejected=False`/`candidate_entities=[]`.
+7. `tests/eval/run_agent_owl_generator.py`
+   Raised `_MIN_STAGED_EXAMPLES` from 14 to 15; added
+   `empty_candidates_when_fully_anchored` to
+   `_REQUIRED_STAGED_CONSTRAINT_KINDS` so this row cannot silently
+   disappear from the dataset.
+8. `tests/eval/staged_contract.py`
+   `_build_scripted_detection_payload` now returns
+   `{"candidate_entities": []}` for rows tagged
+   `empty_candidates_when_fully_anchored` (instead of the default
+   placeholder-candidate payload); added the
+   `_c_empty_candidates_when_fully_anchored` behavioural check and wired
+   it into `_CHECKS`.
+9. `tests/eval/test_staged_contract.py`
+   Added `TestZeroNewCandidatesWhenFullyAnchoredCheck` (6 tests: the new
+   constraint kind maps to a real behavioural check rather than the
+   "unmapped kind" neutral-1.0 default, passes for the real orchestrator
+   run, fails on a regression to a non-empty/rejected result, the
+   scripted builder emits the exact empty payload, and the dataset harness
+   requires this kind's coverage).
+10. `tests/eval/test_run_agent_owl_generator.py`
+    Updated hardcoded `spy_detect.call_count`/`spy_llm.call_count`
+    assertions (4→5, 5→6) to account for the new detect-tagged dataset
+    row.
+11. `.planning/agents/agent_owl_generator/SPEC.md`
+    Added the "Zero-new-candidate contract" bullet to §3a; added the
+    `stage_zero_new_candidate_contract` dimension to §5's staged table;
+    added the "Zero-new-candidate false rejection (live bug, fixed this
+    revision)" row to §6's failure-mode table; updated §7 to list the new
+    15th staged-contract row; added the full sign-off entry to §10 with
+    RED/GREEN evidence and both live results below.
+
+Deterministic/offline eval (unweakened gate):
+`uv run --frozen python tests/eval/run_agent_owl_generator.py` → all 15
+staged examples PASS, staged-contract aggregate `1.000` (threshold
+`0.950`); all 10 parsed-corpus cases PASS, aggregate `1.000` (threshold
+`0.900`).
+
+Live eval (`--live`, `DEFAULT` Databricks CLI profile,
+`ONTOBRICKS_LLM_ENDPOINT=databricks-claude-sonnet-5` — the production-
+gated eval endpoint): MLflow run
+`https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663818/runs/9003944a961b43139e7bd50fdcd5474c`.
+Parsed-corpus contract `judge_score=0.985` (≥ `0.900`, met). Deterministic
+staged-contract gate `1.000` (≥ `0.950`, unweakened). Staged **live**
+evidence (`staged_live_*`) aggregate `1.000` over 5 detect rows + the
+3-substage completion chain, including `staged-zero-new-candidates-001`
+scoring `1.000` live: the real `databricks-claude-sonnet-5` model returned
+`success=True`, `rejected=False`, `candidate_entities=[]` for the fully-
+anchored case. MLflow tracing confirmed initialized
+(`[TRACING] setup_tracing(...) -> enabled`) before the run's first live
+call.
+
+Exact-case reproduction (read-only, against the user's own active endpoint
+`benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`, distinct from the
+eval-gated endpoint above): loaded the real 10 selected tables + 15 locked
+anchors from the local session file
+`fastapi_session/b3bd26a3fbe54f89895b0cfcfbff1feb` (read-only; session/
+draft never mutated) and called the production `staged.detect_entities`
+path directly with `databricks auth token DEFAULT` credentials (never
+printed). Mixed/intermittent result across 5 calls made while diagnosing
+and verifying the fix: 1 succeeded (`success=True`, valid JSON, some
+genuinely-new candidates grounded in this endpoint's fuller metadata
+comments) and 4 still failed with the identical `output is not valid
+JSON: Expecting value: line 1 column 1 (char 0)` rejection. A captured step
+trace on the failing calls shows the model itself writing a visible
+reasoning/analysis preamble in the answer channel despite the strengthened
+"first character must be `{`, no reasoning preamble" instruction — this
+reproduced *after* the fix was applied. A raw-response probe confirmed
+`message.content` is a plain string (not distinct text/thinking content
+blocks) on this AI-Gateway route, so the model's own visible narration —
+not a content-extraction bug on our side — is the proximate cause of the
+residual failures.
+
+Concern (residual, not fixed by this revision): this specific user endpoint
+alias appears to intermittently ignore strict JSON-only formatting
+instructions by narrating visible reasoning in the answer channel,
+independent of whether the eventual answer would be empty or non-empty —
+an apparent model/route reliability characteristic, not a deterministic
+prompt defect. Per this task's hard constraints (no post-validation
+rewrite/re-prompt loop; reject-only architecture mandatory; no permissive
+prose parsing), this residual non-determinism cannot be fully eliminated
+by a prompt/schema-only fix — a user hitting this endpoint may still need
+to manually retry an occasional rejected detection call. The originally-
+reported bug (no explicit zero-candidate contract) is fixed and verified
+both deterministically and live against the production-gated
+`databricks-claude-sonnet-5` endpoint above.
+
+Modified files:
+- `src/agents/agent_owl_generator/prompts.py`
+- `src/back/objects/ontology/GenerateWorkflow.py`
+- `tests/units/agents/test_owl_generator_staged.py`
+- `tests/units/agents/test_owl_generator_schemas.py`
+- `tests/units/ontology/test_generate_workflow.py`
+- `tests/eval/datasets/agent_owl_generator/baseline.jsonl`
+- `.planning/agents/agent_owl_generator/eval/dataset.jsonl`
+- `tests/eval/run_agent_owl_generator.py`
+- `tests/eval/staged_contract.py`
+- `tests/eval/test_staged_contract.py`
+- `tests/eval/test_run_agent_owl_generator.py`
+- `.planning/agents/agent_owl_generator/SPEC.md`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6703 passed,
+304 skipped, 6 deselected, 1 xfailed, 32 warnings in 36.79s.

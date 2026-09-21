@@ -18,6 +18,30 @@ from typing import Sequence
 
 from back.objects.ontology.GenerateDraft import GenerateDraft, GenerateEntity
 
+# Explicit zero-new-candidate contract (live-bug fix): stated unconditionally
+# and prominently in Stage 1's system prompt, right after the anchors listing.
+# Root cause of the live failure this fixes: a session whose every selected
+# table's core entity was already a locked anchor gave the model NO new
+# grounded candidate. The prompt said "JSON only" but never defined what to
+# return in that case, so the model replied with prose/refusal instead of a
+# structured answer, and detect_entities correctly rejected it as malformed
+# JSON — a confusing failure for a case that should always succeed. This is a
+# prompt-only fix: the reject-only architecture and the schema (which already
+# accepts `{"candidate_entities": []}`) are unchanged — no post-validation
+# rewrite/re-prompt loop is introduced.
+_ZERO_CANDIDATE_CONTRACT = """\
+# ZERO-NEW-CANDIDATE CONTRACT (CRITICAL — READ BEFORE ANSWERING)
+Existing ontology entities (listed above, if any) are valid CONTEXT for your
+reasoning — they are NOT candidates and must never be re-emitted. If, after
+reviewing the metadata and any ready document, every real-world entity the
+domain needs is already one of those locked anchors — or no genuinely NEW
+grounded entity exists at all — that is a normal, SUCCESSFUL outcome, not an
+error. In that case you MUST return exactly:
+{"candidate_entities": []}
+Do NOT explain why the list is empty. Do NOT refuse or apologize. Do NOT
+write prose, a summary, or a markdown code fence — the empty JSON object
+above, verbatim, is the entire (and complete) answer."""
+
 # Shared naming constraints, stated once and injected into every stage prompt.
 _NAMING_RULES = """\
 # NAMING RULES (CRITICAL — NO EXCEPTIONS)
@@ -73,6 +97,8 @@ reviewed stage. Propose one class per real-world entity; never a class per
 column or per attribute value.
 
 {anchors_section}
+{_ZERO_CANDIDATE_CONTRACT}
+
 # SYNONYMS
 Any synonym you find in metadata comments or document text (e.g. "Client" for
 "Customer") is an ALTERNATE LABEL of a single candidate — put it in
@@ -82,6 +108,10 @@ description prose.
 {_NAMING_RULES}
 
 # OUTPUT (JSON ONLY — NO PROSE, NO CODE FENCES)
+Your ENTIRE reply is ONLY the JSON object below. The FIRST CHARACTER of your
+reply MUST be `{{`. Never precede it with an analysis section, step-by-step
+reasoning, a "Here is my answer" preamble, or any other sentence — even
+after you finish gathering context with tools, go straight to the JSON.
 Return a single JSON object:
 {{"candidate_entities": [
   {{"canonical_label": "Carrier",
@@ -91,7 +121,10 @@ Return a single JSON object:
     "alternate_labels": ["Shipper", "Freight Company"]}}
 ]}}
 Prefer 8–25 candidates for a typical domain; hard cap 40. Ground every
-candidate in the metadata or a ready document."""
+candidate in the metadata or a ready document. If nothing new is grounded
+(see the ZERO-NEW-CANDIDATE CONTRACT above), return
+{{"candidate_entities": []}} instead — an empty list is a complete, valid
+answer, never an error to explain."""
 
 
 def build_detection_user_prompt(

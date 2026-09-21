@@ -136,6 +136,12 @@ def _build_scripted_detection_payload(example: dict) -> dict:
     real ``detect_entities()``/``schemas`` dedup and defaulting logic has
     real work to do (rather than the check hand-writing the outcome)."""
     constraints = {c["kind"]: c["value"] for c in example.get("expected", {}).get("constraints", [])}
+    if constraints.get("empty_candidates_when_fully_anchored"):
+        # Live bug fix (Stage-1 zero-new-candidate contract): every selected
+        # table's core entity is already a locked anchor, so the ONLY
+        # contract-compliant scripted answer is the explicit empty list —
+        # never the generic "Placeholder" fallback below.
+        return {"candidate_entities": []}
     wanted = list(example.get("expected", {}).get("contains", []))
     if "min_new_candidate_entities" in constraints:
         n = int(constraints["min_new_candidate_entities"])
@@ -383,6 +389,17 @@ def _c_no_separate_synonym(example, _c) -> bool:
         alts = [alts]
     labels = {c.canonical_label for c in result.candidate_entities}
     return not any(a in labels for a in alts)
+
+
+def _c_empty_candidates_when_fully_anchored(example, _c) -> bool:
+    """Live bug regression: a session where every selected table's core
+    entity already exists as a locked anchor gives the model no NEW
+    grounded candidate — the only contract-compliant answer is a
+    *successful* result with an explicit empty ``candidate_entities`` list,
+    never a rejection (malformed JSON) and never a stray placeholder
+    candidate."""
+    result, _ = _run_detection_for_example(example)
+    return result.success and not result.rejected and result.candidate_entities == []
 
 
 def _c_does_not_parse(example, constraint) -> bool:
@@ -643,6 +660,7 @@ _CHECKS: Dict[str, Callable[[dict, dict], bool]] = {
     "min_new_candidate_entities": _c_min_new_candidates,
     "synonyms_as_alternate_labels": _c_synonyms_as_alt,
     "no_separate_synonym_entity": _c_no_separate_synonym,
+    "empty_candidates_when_fully_anchored": _c_empty_candidates_when_fully_anchored,
     "does_not_parse": _c_does_not_parse,
     "append_only_merge": _c_append_only,
     "manual_entity_added": _c_manual_added,

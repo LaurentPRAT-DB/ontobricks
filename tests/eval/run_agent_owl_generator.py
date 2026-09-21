@@ -58,19 +58,23 @@ THRESHOLDS = ROOT / "tests/eval/thresholds.yaml"
 # tool-call traces. This check keeps the staged rows represented and
 # structurally executable now, without weakening the existing parsed-corpus
 # contract check above.
-_MIN_STAGED_EXAMPLES = 14
+_MIN_STAGED_EXAMPLES = 15
 _REQUIRED_STAGED_CONSTRAINT_FIELDS = {"kind", "value"}
 
 # Every required staged topic must be exercised by at least one staged
 # example's constraint `kind` (see SPEC.md §5 proposed staged dimensions).
-# This locks in coverage for the two review-flagged contract gaps — a
-# rejected stage output must never be silently rewritten in-request, and no
-# entry point may perform one-shot generation as a default — so a future
-# dataset edit cannot silently drop them while still satisfying the count
-# floor above.
+# This locks in coverage for the review-flagged contract gaps — a rejected
+# stage output must never be silently rewritten in-request, no entry point
+# may perform one-shot generation as a default, and a fully-anchored source
+# (every selected entity already a locked anchor) must succeed with an
+# explicit empty candidate list rather than a malformed-JSON rejection (the
+# live Stage-1 detection failure this fixes) — so a future dataset edit
+# cannot silently drop any of them while still satisfying the count floor
+# above.
 _REQUIRED_STAGED_CONSTRAINT_KINDS = {
     "stage_no_rewrite_after_reject",
     "stage_no_one_shot_default",
+    "empty_candidates_when_fully_anchored",
 }
 
 

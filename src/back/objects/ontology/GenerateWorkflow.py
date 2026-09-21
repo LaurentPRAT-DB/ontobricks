@@ -216,8 +216,19 @@ def run_detection(
     )
     if not result.success:
         if result.rejected:
+            # Reject-only, user-safe message: the raw parser/schema error
+            # (`result.error`) may echo back arbitrary model text and is
+            # logged server-side for diagnosis only, never surfaced to the
+            # end user — see the live Stage-1 detection failure fix (SPEC
+            # §6, "zero-new-candidate" failure mode).
+            logger.warning(
+                "Stage-1 detection output rejected (not surfaced to the "
+                "user): %s",
+                result.error,
+            )
             raise DraftValidationError(
-                result.error or "Detection output was malformed and rejected."
+                "The AI model did not return the expected structured "
+                "entity list for this request. Please retry detection."
             )
         raise InfrastructureError(
             "Ontology entity detection failed", detail=result.error

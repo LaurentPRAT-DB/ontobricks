@@ -106,6 +106,21 @@ class TestParseDetectionPayload:
         candidates = schemas.parse_detection_payload(payload)
         assert len(candidates) == 1
 
+    def test_empty_candidate_list_is_accepted_not_rejected(self):
+        # Live bug fix: the mandatory answer when every grounded entity is
+        # already a locked anchor (or nothing new exists) is an explicit
+        # empty list — that is a valid, successful parse, not a schema
+        # violation.
+        candidates = schemas.parse_detection_payload('{"candidate_entities": []}')
+        assert candidates == []
+
+    def test_empty_candidate_list_accepted_even_with_anchors_present(self):
+        anchors = [GenerateEntity.locked_anchor("cls-Customer-a1", "Customer")]
+        candidates = schemas.parse_detection_payload(
+            '{"candidate_entities": []}', existing_anchors=anchors
+        )
+        assert candidates == []
+
     def test_unknown_type_hint_coerced_to_class(self):
         payload = (
             '{"candidate_entities": [{"canonical_label": "Order", '

@@ -173,6 +173,18 @@ class TestDetectEntities:
         _, mock_llm = _detect([_answer(payload)])
         assert mock_llm.call_args_list[0].kwargs["trace_name"] == "owl_generator.detect"
 
+    def test_empty_candidate_list_is_a_successful_result_not_a_rejection(self):
+        # Live bug (Stage-1 zero-new-candidate case): every selected table's
+        # core entity is already a locked anchor, so the model's ONLY
+        # contract-compliant answer is the empty list — that must succeed,
+        # not be treated as malformed/rejected.
+        payload = '{"candidate_entities": []}'
+        result, mock_llm = _detect([_answer(payload)])
+        assert result.success is True
+        assert result.rejected is False
+        assert result.candidate_entities == []
+        assert mock_llm.call_count == 1
+
 
 # ---------------------------------------------------------------------------
 # Stage 3: relations
@@ -450,6 +462,67 @@ class TestPrompts:
         text = prompts.build_relations_user_prompt(draft)
         assert "cand-6" in text
         assert "cand-4" not in text
+
+
+# ---------------------------------------------------------------------------
+# Live Stage-1 detection failure fix: explicit zero-new-candidate contract
+# ---------------------------------------------------------------------------
+#
+# Root cause: a session with every selected table's core entity already a
+# locked anchor gives the model no NEW grounded candidate. The prompt said
+# "JSON only" but never explicitly defined what to return in that case, so
+# the model replied with prose/refusal instead of a structured answer, and
+# `detect_entities` correctly (but unhelpfully, from the user's perspective)
+# rejected it with "output is not valid JSON". The fix is prompt-only — the
+# reject-only architecture and schema (which already accepts an empty list)
+# are unchanged.
+
+
+class TestZeroCandidateContract:
+    def test_system_prompt_states_the_exact_empty_json_contract(self):
+        anchors = [
+            GenerateEntity.locked_anchor("cls-Customer-a1", "Customer"),
+            GenerateEntity.locked_anchor("cls-Order-b2", "Order"),
+        ]
+        text = prompts.build_detection_system_prompt(existing_anchors=anchors)
+        # The exact, byte-literal JSON the model must emit when nothing new
+        # is grounded — not a paraphrase the model could reinterpret.
+        assert '{"candidate_entities": []}' in text
+
+    def test_system_prompt_states_anchors_are_context_not_candidates(self):
+        anchors = [GenerateEntity.locked_anchor("cls-Customer-a1", "Customer")]
+        text = prompts.build_detection_system_prompt(existing_anchors=anchors)
+        lowered = text.lower()
+        assert "not candidates" in lowered or "never candidates" in lowered
+
+    def test_system_prompt_forbids_prose_refusal_or_fence_on_empty_result(self):
+        anchors = [GenerateEntity.locked_anchor("cls-Customer-a1", "Customer")]
+        text = prompts.build_detection_system_prompt(existing_anchors=anchors)
+        lowered = text.lower()
+        assert "no explanation" in lowered or "no prose" in lowered
+        assert "refus" in lowered  # "refusal"/"refuse"
+
+    def test_system_prompt_states_the_zero_candidate_contract_even_with_no_anchors(
+        self,
+    ):
+        # The contract must be stated unconditionally, not only appended to
+        # the "existing anchors" branch — a from-scratch domain with zero
+        # anchors could still legitimately ground nothing new from a sparse
+        # source.
+        text = prompts.build_detection_system_prompt(existing_anchors=())
+        assert '{"candidate_entities": []}' in text
+
+    def test_system_prompt_forbids_a_reasoning_preamble_before_the_json(self):
+        # Live investigation finding: against a real endpoint with a large
+        # multi-table source, the model gathered context via tools
+        # correctly, then — once forced onto its final (no-tools) turn —
+        # wrote a visible step-by-step "Analysis:" preamble before (never
+        # reaching) the JSON, which fails to parse. The prompt must forbid
+        # this explicitly, not just forbid "explaining an empty result".
+        text = prompts.build_detection_system_prompt(existing_anchors=())
+        lowered = text.lower()
+        assert "first character" in lowered
+        assert "analysis" in lowered or "reasoning" in lowered
 
 
 # ---------------------------------------------------------------------------

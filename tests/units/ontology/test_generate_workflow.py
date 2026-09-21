@@ -176,6 +176,33 @@ class TestRunDetection:
                 domain_session, _settings(), host="h", token="t", endpoint_name="e"
             )
 
+    def test_detection_rejection_message_is_generic_not_raw_parser_text(
+        self, domain_session, monkeypatch
+    ):
+        """The user-visible message for a rejected Stage-1 answer must say
+        the model failed the structured contract and suggest retrying — it
+        must never leak the raw parser exception text (which could echo
+        model prose) to the end user. The raw detail is still logged
+        server-side for diagnosis."""
+        raw_parser_error = (
+            "output is not valid JSON: Expecting value: line 1 column 1 (char 0)"
+        )
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "detect_entities",
+            lambda **kw: DetectionResult(
+                success=False, error=raw_parser_error, rejected=True
+            ),
+        )
+        with pytest.raises(DraftValidationError) as excinfo:
+            wf.run_detection(
+                domain_session, _settings(), host="h", token="t", endpoint_name="e"
+            )
+        message = str(excinfo.value)
+        assert "Expecting value" not in message
+        assert "line 1 column 1" not in message
+        assert "retry" in message.lower()
+
     def test_detection_infra_failure_raises_infrastructure_error(
         self, domain_session, monkeypatch
     ):
