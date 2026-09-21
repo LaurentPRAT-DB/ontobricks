@@ -193,6 +193,79 @@ class TestDraftRoutes:
                 _Request({}), session_mgr=object()
             )
 
+    # -- Malformed payload shapes must 400, never TypeError/500 (task 4 --
+    # -- review finding #7) --------------------------------------------
+
+    async def test_update_draft_non_numeric_revision_is_400(self, route_ctx):
+        with pytest.raises(ValidationError):
+            await route_ctx.routes.update_generate_draft(
+                _Request({"revision": "not-a-number", "op": "exclude"}),
+                session_mgr=object(),
+            )
+
+    async def test_update_draft_non_dict_entity_is_400(self, route_ctx):
+        """``op=add`` with a non-object ``entity`` must not leak an
+        AttributeError/TypeError from ``entity.get(...)`` as a 500."""
+        with pytest.raises(ValidationError):
+            await route_ctx.routes.update_generate_draft(
+                _Request({"revision": 0, "op": "add", "entity": "Carrier"}),
+                session_mgr=object(),
+            )
+
+    async def test_update_draft_non_dict_updates_is_400(self, route_ctx):
+        """``op=update`` with a non-object ``updates`` must not leak an
+        AttributeError from ``updates.items()`` as a 500."""
+        with pytest.raises(ValidationError):
+            await route_ctx.routes.update_generate_draft(
+                _Request(
+                    {
+                        "revision": 0,
+                        "op": "update",
+                        "entity_id": "cand-1",
+                        "updates": "canonical_label=Foo",
+                    }
+                ),
+                session_mgr=object(),
+            )
+
+    async def test_update_draft_non_string_entity_id_is_400(self, route_ctx):
+        with pytest.raises(ValidationError):
+            await route_ctx.routes.update_generate_draft(
+                _Request({"revision": 0, "op": "exclude", "entity_id": 123}),
+                session_mgr=object(),
+            )
+
+    async def test_update_draft_unknown_updates_fields_are_ignored_not_500(
+        self, route_ctx, monkeypatch
+    ):
+        """An unknown field inside ``updates`` is filtered out by the
+        workflow layer already — the route must still succeed (400 is only
+        for malformed *shapes*, not unknown keys within a valid object)."""
+        captured = {}
+
+        def _fake_update(domain, **kw):
+            captured.update(kw)
+            return GenerateDraft.new(source_fingerprint="sha256:x")
+
+        monkeypatch.setattr(wf, "update_draft", _fake_update)
+
+        result = await route_ctx.routes.update_generate_draft(
+            _Request(
+                {
+                    "revision": 2,
+                    "op": "update",
+                    "entity_id": "cand-1",
+                    "updates": {"canonical_label": "Foo", "not_a_real_field": "x"},
+                }
+            ),
+            session_mgr=object(),
+        )
+        assert result["success"] is True
+        assert captured["updates"] == {
+            "canonical_label": "Foo",
+            "not_a_real_field": "x",
+        }
+
     async def test_update_draft_delegates_to_workflow(self, route_ctx, monkeypatch):
         captured = {}
 

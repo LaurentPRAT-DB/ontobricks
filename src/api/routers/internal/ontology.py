@@ -1977,15 +1977,36 @@ async def update_generate_draft(
     if revision is None or not op:
         raise ValidationError("Both 'revision' and 'op' are required")
 
+    # Validate payload *shapes* at the route boundary — a malformed
+    # revision/entity/updates/entity_id must surface as a user-facing 400,
+    # never a raw TypeError/ValueError leaking through as a 500 (task 4
+    # review finding #7). Unknown *fields* inside an otherwise well-shaped
+    # ``updates``/``entity`` object are a separate concern already handled
+    # by ``GenerateWorkflow.update_draft`` (filtered, not rejected).
+    try:
+        revision = int(revision)
+    except (TypeError, ValueError):
+        raise ValidationError(f"'revision' must be an integer, got {revision!r}")
+
+    entity = data.get("entity")
+    if entity is not None and not isinstance(entity, dict):
+        raise ValidationError("'entity' must be a JSON object")
+    updates = data.get("updates")
+    if updates is not None and not isinstance(updates, dict):
+        raise ValidationError("'updates' must be a JSON object")
+    entity_id = data.get("entity_id")
+    if entity_id is not None and not isinstance(entity_id, str):
+        raise ValidationError("'entity_id' must be a string")
+
     domain = get_domain(session_mgr)
     with map_route_errors("Updating Generate draft failed", logger):
         draft = GenerateWorkflow.update_draft(
             domain,
-            revision=int(revision),
+            revision=revision,
             op=op,
-            entity=data.get("entity"),
-            entity_id=data.get("entity_id"),
-            updates=data.get("updates"),
+            entity=entity,
+            entity_id=entity_id,
+            updates=updates,
         )
     return {"success": True, "draft": draft.to_dict()}
 

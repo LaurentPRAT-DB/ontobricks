@@ -845,10 +845,18 @@ Changes:
    neither `require_domain_llm` nor `create_task`/`threading.Thread`).
 9. tests/units/api/test_no_llm_route_contract.py
    `ROUTES` now lists `start_generate_detection`/`start_generate_completion`
-   (both call `require_domain_llm` only inside their background-thread
-   target, never in the `async def` body) instead of the removed
-   `generate_ontology_async`. Added
-   `test_legacy_one_shot_generate_route_never_calls_require_domain_llm`,
+   instead of the removed `generate_ontology_async`. [Corrected 2026-09-21:
+   the original entry here mischaracterized where `require_domain_llm` is
+   called — it actually runs synchronously in the `async def` route body,
+   *before* `create_task`/the background thread are created (only cheap
+   credential/endpoint resolution, no blocking FM call); the existing
+   `test_every_ontology_and_mapping_llm_route_uses_domain_guard` contract
+   test asserts exactly this ordering (`require_domain_llm(` appears
+   before `create_task(` in source) for both new routes. The actual
+   blocking LLM completion calls — `GenerateWorkflow.run_detection()`/
+   `run_completion()` — happen inside the background-thread target, never
+   in the route body; that is the invariant this contract test enforces.]
+   Added `test_legacy_one_shot_generate_route_never_calls_require_domain_llm`,
    asserting the 410 route calls neither `require_domain_llm` nor
    `create_task` — the strongest possible "no silent one-shot path"
    regression test for this route.
@@ -913,3 +921,190 @@ Tests:
   304 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.35s (42 more
   passing than the Task 3 baseline — the new focused tests above; no
   regressions).
+
+---
+
+## Fix Task 4 review findings: lifecycle gate, idempotent merge, type-hint/subClassOf validation, SKOS altLabel, payload validation
+
+Context: Follow-up review pass on the Task 4 staged-Generate wiring (see
+the entry above). Two "Important" and five "Minor" findings, fixed with
+TDD (RED before each production change), no frontend files touched.
+
+Changes:
+
+1. src/shared/fastapi/main.py (Important #1 — lifecycle/edit locking)
+   `_is_status_gated_edit` previously exempted every `/wizard/` path from
+   the version-status/single-editor-lock gate, including
+   `POST /ontology/wizard/generate/complete` — which actually runs the
+   deterministic append-only merge and calls `domain.save()`, a genuine
+   design mutation. Added `_STATUS_GATE_WIZARD_EDIT_SUFFIXES` (currently
+   just `.../generate/complete`), checked *before* the blanket `/wizard/`
+   exemption, so `complete` is now gated exactly like every other
+   `/ontology/` write while Stage 1 `detect` and Stage 2
+   `draft/update`/`draft/discard` (session-scoped draft only, never the
+   persisted design) remain exempt.
+2. tests/units/auth/test_permission_middleware.py
+   Added `test_generate_complete_is_gated`,
+   `test_generate_review_routes_remain_exempt`,
+   `test_generate_complete_get_not_gated` to `TestIsStatusGatedEdit`, and a
+   new `TestGenerateCompleteLifecycleGate` class covering: `complete`
+   blocked on `PUBLISHED`/`IN-REVIEW`; `complete` passes on `DRAFT` with no
+   lock holder; `complete` blocked by a different lock holder on `DRAFT`;
+   admins not exempt from the lock; viewer role still blocked; and the
+   three review-only routes staying reachable on a locked version and
+   despite another user holding the edit lock.
+3. src/back/objects/ontology/GenerateDraft.py (Important #2 — durable
+   merge checkpoint)
+   Added a `merge_checkpoint` field (`{"status": ..., "result": ...}`,
+   default `pending`), deliberately independent of `stage`/
+   `completion_checkpoints`: the merge is a workflow-level step whose
+   completion must be checkable across a crash between its own
+   `domain.save()` and `stage` flipping to `done`, which the existing
+   per-substage checkpoints cannot express. Added
+   `with_merge_checkpoint()` (rejects reopening an already-`done`
+   checkpoint, mirroring `with_checkpoint()`'s strictness) and wired
+   serialization (`to_dict`/`from_dict`/`new`) plus self-healing
+   normalization for missing/invalid persisted values.
+4. src/back/objects/ontology/GenerateWorkflow.py (Important #2 — idempotent
+   merge; Minor #3 — type_hint validation; Minor #5 — subClassOf handling;
+   Minor #7 — payload validation defense-in-depth)
+   - `run_completion()`: checks `draft.merge_checkpoint` before ever
+     calling `merge_draft_into_ontology()` again. If already `done`,
+     short-circuits with the cached merge stats (and still finishes the
+     `stage -> DONE` transition if that didn't land last time). Otherwise
+     sets the checkpoint to `running`, runs the merge, sets it to `failed`
+     (re-raising) or `done` accordingly. The staleness check
+     (`ensure_not_stale`) is now only performed on the initial
+     `REVIEWING -> COMPLETING` transition — once completion has started,
+     the merge itself grows the live ontology, so re-fingerprinting the
+     current source on every resume would misread that self-inflicted
+     growth as drift and permanently block a legitimate resume.
+   - `merge_draft_into_ontology()` is now idempotent by construction as
+     defense in depth on top of the checkpoint: new classes are tagged
+     `generated_from=<candidate id>` so a second call for the same draft
+     recognizes and reuses already-merged classes instead of re-adding
+     them under a suffixed name; object-property relations are deduped by
+     `(domain, range, label)`; `disjointWith`/`equivalentClass` axioms are
+     deduped by `(type, subject, sorted(objects))`; `alternate_labels` are
+     deduped order-preservingly when building a new class.
+   - Added an upfront reject-only check: an *included* candidate with a
+     `type_hint` other than `class` raises `DraftValidationError` before
+     any mutation — the ontology model only supports merging class
+     candidates today, so a property-hinted candidate is rejected
+     explicitly rather than silently merged as a wrongly-shaped class.
+   - `subClassOf` axiom handling: an exact-repeat parent is now a silent
+     no-op (idempotent); a *different* parent on a class that already has
+     one raises `DraftValidationError` (the model supports only one
+     `parent` per class — multi-inheritance is explicitly rejected, never
+     silently dropped as before).
+   - `update_draft()`: wrapped the op-dispatch body in
+     `try/except (TypeError, ValueError, AttributeError)`, re-raising as
+     `DraftValidationError`, so a malformed nested field (e.g. non-list
+     `evidence`) that slips past the route-level shape checks still
+     surfaces as a 400, never a 500.
+5. tests/units/ontology/test_generate_draft.py
+   Added `TestMergeCheckpoint`: defaults to `pending`; `running`/`done`/
+   `failed` transitions and result storage; rejects reopening a `done`
+   checkpoint; rejects an invalid status; round-trips through
+   serialization; self-heals a missing or invalid persisted checkpoint to
+   `pending`. Imported `CHECKPOINT_PENDING`.
+6. tests/units/ontology/test_generate_workflow.py
+   Added `TestSubClassOfAndDisjointAxiomMerge` (exact-repeat `subClassOf`
+   deduped not errored; conflicting `subClassOf` rejected explicitly;
+   `disjointWith` deduped on exact repeat), `TestTypeHintValidationInMerge`
+   (`class` merges normally; `object_property`/`data_property` rejected;
+   an excluded non-class candidate is never checked), and
+   `TestIdempotentMerge` (checkpoint defaults `pending` before completion
+   and is `done` after; a simulated crash after the merge already touched
+   the live ontology but before the checkpoint write resumes idempotently
+   without duplicating entities; a `done` checkpoint with `stage` still
+   `completing` short-circuits and finishes the stage transition; a
+   repeated `complete` call on an already-`DONE` draft is rejected).
+   Removed a dead conditional in `_seed_ready_for_merge` left over from an
+   earlier draft of the test helpers.
+7. src/back/core/w3c/owl/OntologyGenerator.py (Minor #4 — alternate_labels
+   as first-class OWL data)
+   `_add_class` now emits a `skos:altLabel` triple for every entry in a
+   class's `alternate_labels`, using rdflib's standard `SKOS` namespace
+   (consistent with the existing `RDF`/`RDFS`/`OWL` prefix usage) — the
+   synonym data was previously only an in-app session field, never
+   round-tripped through the OWL export/import contract.
+8. src/back/core/w3c/owl/OntologyParser.py
+   `get_classes()` now reads back `skos:altLabel` triples per class into
+   the parsed `alternate_labels` list (deduped, sorted for determinism).
+9. tests/units/ontology/test_owl_generator.py /
+   tests/units/ontology/test_owl_parser.py
+   Added round-trip tests: `alternate_labels` export as `skos:altLabel`
+   and re-import identically; no `alternate_labels` omits the triple
+   entirely; a class with no `altLabel` parses to an empty list.
+10. src/api/routers/internal/ontology.py (Minor #7 — payload validation at
+    the route boundary)
+    `update_generate_draft` now validates payload *shapes* before calling
+    into `GenerateWorkflow.update_draft`: `revision` must coerce to `int`
+    (was previously an unguarded `int(revision)` that raised a raw
+    `ValueError`, mapped to a 500 by `map_route_errors`); `entity`/
+    `updates` must be JSON objects if present; `entity_id` must be a
+    string if present. Each failure now raises `ValidationError` (400).
+11. tests/units/api/test_generate_routes.py
+    Added `test_update_draft_non_numeric_revision_is_400`,
+    `test_update_draft_non_dict_entity_is_400`,
+    `test_update_draft_non_dict_updates_is_400`,
+    `test_update_draft_non_string_entity_id_is_400` to `TestDraftRoutes`.
+12. .planning/agents/agent_owl_generator/SPEC.md
+    Updated the "Replace instead of append" pitfall bullet and added new
+    bullets documenting: the durable `merge_checkpoint` + idempotent-merge
+    defense in depth against duplicate merges on crash/retry; that
+    included non-`class` `type_hint` candidates are rejected, not silently
+    merged; that `alternate_labels` round-trips through OWL as
+    `skos:altLabel`; and that a conflicting `subClassOf` (different
+    existing parent) is rejected explicitly, never silently dropped. Also
+    documented that `POST /wizard/generate/complete` is lifecycle-gated
+    while Stage 1/2 remain exempt.
+13. changelogs/v0.9.0/benoitcayladbx_2026-09-21.log (Minor #6 — changelog
+    inaccuracy)
+    Corrected earlier in this file (entry 9 of the Task 4 section above):
+    `require_domain_llm` runs synchronously in the `async def` route body
+    before `create_task`, not "only inside the background-thread target"
+    as originally stated.
+
+Modified/added files:
+- src/shared/fastapi/main.py
+- src/back/objects/ontology/GenerateDraft.py
+- src/back/objects/ontology/GenerateWorkflow.py
+- src/back/core/w3c/owl/OntologyGenerator.py
+- src/back/core/w3c/owl/OntologyParser.py
+- src/api/routers/internal/ontology.py
+- tests/units/auth/test_permission_middleware.py
+- tests/units/ontology/test_generate_draft.py
+- tests/units/ontology/test_generate_workflow.py
+- tests/units/ontology/test_owl_generator.py
+- tests/units/ontology/test_owl_parser.py
+- tests/units/api/test_generate_routes.py
+- .planning/agents/agent_owl_generator/SPEC.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- RED: each finding's new test class/method was written and observed
+  failing against the pre-fix code (lifecycle gate: `complete` passed
+  through ungated; merge: duplicate classes on a simulated re-run;
+  type_hint: non-class candidates silently merged as classes; altLabel:
+  `KeyError`/missing round-trip; subClassOf: `AssertionError` on silent
+  drop of a conflicting parent; payload validation: raw
+  `TypeError`/`ValueError` surfaced as 500 via `map_route_errors`) before
+  each corresponding production change.
+- GREEN (focused): `uv run --frozen pytest -q
+  tests/units/auth/test_permission_middleware.py
+  tests/units/ontology/test_generate_draft.py
+  tests/units/ontology/test_generate_workflow.py
+  tests/units/ontology/test_owl_generator.py
+  tests/units/ontology/test_owl_parser.py
+  tests/units/api/test_generate_routes.py` → 533 passed.
+- Offline eval: `uv run --frozen python tests/eval/run_agent_owl_generator.py`
+  → unchanged: all 14 staged examples PASS, staged-contract aggregate
+  `1.000` (threshold `0.950`); all 10 parsed-corpus cases PASS, aggregate
+  `1.000` (threshold `0.900`). No new eval dimension needed — these are
+  merge/validation/permission-layer fixes, not new agent behavior.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6590 passed,
+  304 skipped, 6 deselected, 1 xfailed, 32 warnings in 55.26s — no
+  regressions (50 more passing than the Task 4 baseline: the new focused
+  tests above).

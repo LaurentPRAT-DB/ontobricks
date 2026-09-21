@@ -302,39 +302,50 @@ def update_draft(
     if draft is None:
         raise NotFoundError("No Generate draft to update. Run detection first.")
 
-    if op == "add":
-        entity = entity or {}
-        label = str(entity.get("canonical_label", "") or "")
-        new_entity = GenerateEntity.new_candidate(
-            label,
-            description=str(entity.get("description", "") or ""),
-            type_hint=entity.get("type_hint") or TYPE_CLASS,
-            evidence=entity.get("evidence"),
-            alternate_labels=entity.get("alternate_labels"),
-            origin=ORIGIN_MANUAL,
-        )
-        draft = replace(draft, draft_revision=revision).with_candidate_added(new_entity)
-    elif op == "remove":
-        draft = replace(draft, draft_revision=revision).with_candidate_removed(
-            entity_id or ""
-        )
-    elif op == "update":
-        field_updates = {
-            k: v for k, v in (updates or {}).items() if k in _EDITABLE_FIELDS
-        }
-        draft = replace(draft, draft_revision=revision).with_candidate_updated(
-            entity_id or "", **field_updates
-        )
-    elif op == "include":
-        draft = replace(draft, draft_revision=revision).with_candidate_updated(
-            entity_id or "", included=True
-        )
-    elif op == "exclude":
-        draft = replace(draft, draft_revision=revision).with_candidate_updated(
-            entity_id or "", included=False
-        )
-    else:
-        raise ValidationError(f"Unknown draft update op: {op!r}")
+    # Nested field values (e.g. a string where ``evidence``/``alternate_labels``
+    # expects a list) can still raise a raw TypeError/ValueError/AttributeError
+    # deep inside ``GenerateEntity`` construction even after the route
+    # boundary's shape checks — translate those into a 400 too, defense in
+    # depth (task 4 review finding #7), rather than letting them surface as
+    # an unhandled 500.
+    try:
+        if op == "add":
+            entity = entity or {}
+            label = str(entity.get("canonical_label", "") or "")
+            new_entity = GenerateEntity.new_candidate(
+                label,
+                description=str(entity.get("description", "") or ""),
+                type_hint=entity.get("type_hint") or TYPE_CLASS,
+                evidence=entity.get("evidence"),
+                alternate_labels=entity.get("alternate_labels"),
+                origin=ORIGIN_MANUAL,
+            )
+            draft = replace(draft, draft_revision=revision).with_candidate_added(
+                new_entity
+            )
+        elif op == "remove":
+            draft = replace(draft, draft_revision=revision).with_candidate_removed(
+                entity_id or ""
+            )
+        elif op == "update":
+            field_updates = {
+                k: v for k, v in (updates or {}).items() if k in _EDITABLE_FIELDS
+            }
+            draft = replace(draft, draft_revision=revision).with_candidate_updated(
+                entity_id or "", **field_updates
+            )
+        elif op == "include":
+            draft = replace(draft, draft_revision=revision).with_candidate_updated(
+                entity_id or "", included=True
+            )
+        elif op == "exclude":
+            draft = replace(draft, draft_revision=revision).with_candidate_updated(
+                entity_id or "", included=False
+            )
+        else:
+            raise ValidationError(f"Unknown draft update op: {op!r}")
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise DraftValidationError(f"Invalid draft update payload: {exc}") from exc
 
     return store.save(draft)
 
@@ -382,14 +393,21 @@ def run_completion(
             "This Generate draft is not ready for completion. Run detection first."
         )
 
-    current_fp = compute_current_fingerprint(
-        domain, settings, draft.selected_source_config
-    )
-    draft.ensure_not_stale(current_fp)
-    draft.ensure_ready_for_completion()
-
     if draft.stage != COMPLETING:
+        # Staleness is only checked on the initial REVIEWING -> COMPLETING
+        # transition: once a completion run has started, the append-only
+        # merge itself grows the live ontology (new anchors) as substages
+        # are checkpointed done, so re-fingerprinting the *current* source
+        # on every resume (after a partial-substage failure or a
+        # crash-and-retry mid-merge) would see that self-inflicted growth
+        # as drift and permanently block resume. The source is frozen for
+        # the duration of one completion run by design.
+        current_fp = compute_current_fingerprint(
+            domain, settings, draft.selected_source_config
+        )
+        draft.ensure_not_stale(current_fp)
         draft = store.save(replace(draft, stage=COMPLETING))
+    draft.ensure_ready_for_completion()
 
     draft_id = domain.domain_folder or domain.info.get("name", "") or "generate-draft"
     runners = _substage_runners()
@@ -452,7 +470,29 @@ def run_completion(
             draft.with_checkpoint(substage, CHECKPOINT_DONE, result=result.result)
         )
 
-    merge_stats = merge_draft_into_ontology(domain, draft)
+    # Durable merge checkpoint (task 4 review finding #2) — deliberately
+    # checked *before* ever calling the merge again, independent of
+    # `stage`: a crash between `merge_draft_into_ontology` persisting into
+    # the live ontology (its own `domain.save()`) and this checkpoint being
+    # written as `done` is the one window a naive `stage`-only check cannot
+    # see through. Once this checkpoint is `done`, the merge is trusted to
+    # have happened and is never re-run — only the (side-effect-free)
+    # `stage` transition is finished off if it didn't make it last time.
+    if draft.merge_checkpoint["status"] == CHECKPOINT_DONE:
+        merge_stats = draft.merge_checkpoint["result"]
+        if draft.stage != DONE:
+            draft = store.save(replace(draft, stage=DONE))
+        return {"draft": draft.to_dict(), "merge": merge_stats}
+
+    draft = store.save(draft.with_merge_checkpoint(CHECKPOINT_RUNNING))
+    try:
+        merge_stats = merge_draft_into_ontology(domain, draft)
+    except DraftValidationError as exc:
+        store.save(
+            draft.with_merge_checkpoint(CHECKPOINT_FAILED, result={"error": str(exc)})
+        )
+        raise
+    draft = store.save(draft.with_merge_checkpoint(CHECKPOINT_DONE, result=merge_stats))
     draft = store.save(replace(draft, stage=DONE))
     return {"draft": draft.to_dict(), "merge": merge_stats}
 
@@ -504,8 +544,33 @@ def merge_draft_into_ontology(domain, draft: GenerateDraft) -> Dict[str, Any]:
     detection-time ``id`` stays the join key for this merge only — once
     merged, the new class's ``name`` becomes its stable identity for future
     Generate cycles, exactly like every other existing anchor).
+
+    **Idempotent by construction** (task 4 review finding #2, defense in
+    depth on top of the durable ``merge_checkpoint`` in
+    :func:`run_completion`): every class this function adds is tagged with
+    ``generated_from=<candidate id>`` so a second call for the same draft
+    (e.g. a resumed run after a crash between this function's own
+    ``domain.save()`` and the checkpoint recording that fact) recognizes
+    already-merged candidates and never re-adds them under a suffixed name
+    (``Carrier2``). Relations and binary axioms are deduped by their
+    resolved identity tuple; ``subClassOf`` is a no-op on an exact repeat.
     """
     from back.objects.ontology.Ontology import Ontology
+
+    # Reject-only, checked before any mutation (task 4 review finding #3):
+    # Stage 1/2 candidates may carry a non-class `type_hint`
+    # (object_property/data_property) as a hint for a *future* merge
+    # target, but the ontology model only supports merging class
+    # candidates today. Silently merging a property-hinted candidate as a
+    # (wrongly-shaped) class would be worse than rejecting it outright.
+    for candidate in draft.candidate_entities:
+        if candidate.included and candidate.type_hint != TYPE_CLASS:
+            raise DraftValidationError(
+                f"Candidate {candidate.canonical_label!r} has "
+                f"type_hint={candidate.type_hint!r}, but merge only "
+                "supports 'class' candidates today. Edit its type hint "
+                "back to 'class' or exclude it before completing."
+            )
 
     classes = list(domain.get_classes())
     properties = list(domain.get_properties())
@@ -513,6 +578,11 @@ def merge_draft_into_ontology(domain, draft: GenerateDraft) -> Dict[str, Any]:
 
     existing_names = {c.get("name") for c in classes if c.get("name")}
     existing_prop_names = {p.get("name") for p in properties if p.get("name")}
+    already_merged_by_candidate_id: Dict[str, str] = {
+        c["generated_from"]: c["name"]
+        for c in classes
+        if c.get("generated_from") and c.get("name")
+    }
 
     # id -> live ontology class "name": anchors keep their id-as-name;
     # newly-included candidates get a freshly-minted, unique class name.
@@ -522,25 +592,44 @@ def merge_draft_into_ontology(domain, draft: GenerateDraft) -> Dict[str, Any]:
     for candidate in draft.candidate_entities:
         if not candidate.included:
             continue
+        already_merged_name = already_merged_by_candidate_id.get(candidate.id)
+        if already_merged_name:
+            # Idempotent short-circuit: a previous (crashed/retried) merge
+            # attempt already appended this candidate — reuse its minted
+            # name rather than creating a duplicate class.
+            id_to_name[candidate.id] = already_merged_name
+            continue
         name = _unique_name(_sanitize_pascal(candidate.canonical_label), existing_names)
         existing_names.add(name)
         id_to_name[candidate.id] = name
-        added_classes.append(
-            Ontology.build_class_from_data(
-                {
-                    "uri": f"{base_uri}{name}",
-                    "name": name,
-                    "label": candidate.canonical_label,
-                    "description": candidate.description,
-                    "alternate_labels": list(candidate.alternate_labels),
-                }
-            )
+        new_class = Ontology.build_class_from_data(
+            {
+                "uri": f"{base_uri}{name}",
+                "name": name,
+                "label": candidate.canonical_label,
+                "description": candidate.description,
+                # Defense-in-depth dedup (order-preserving) in case the
+                # agent emitted the same synonym twice.
+                "alternate_labels": list(dict.fromkeys(candidate.alternate_labels)),
+            }
         )
+        new_class["generated_from"] = candidate.id
+        added_classes.append(new_class)
     classes = classes + added_classes
     class_by_name = {c["name"]: c for c in classes}
 
     def _result_for(substage: str) -> Dict[str, Any]:
         return (draft.completion_checkpoints.get(substage) or {}).get("result") or {}
+
+    # Idempotent dedup key for object properties: (domain, range, label).
+    # `_unique_name` mints a fresh suffixed name on every call regardless of
+    # whether the relation was already merged, so identity must be checked
+    # on this resolved tuple, not on the property name.
+    existing_relation_keys: Set[tuple] = {
+        (p.get("domain"), p.get("range"), p.get("label"))
+        for p in properties
+        if p.get("type") == "ObjectProperty"
+    }
 
     added_relations = 0
     for rel in _result_for(SUBSTAGE_RELATIONS).get("relations", []):
@@ -553,10 +642,15 @@ def merge_draft_into_ontology(domain, draft: GenerateDraft) -> Dict[str, Any]:
                 "merge: dropping relation with unresolved entity id: %s", rel
             )
             continue
-        prop_name = _unique_name(
-            _sanitize_camel(rel.get("label", "")), existing_prop_names
-        )
+        rel_label = rel.get("label") or ""
+        rel_key = (domain_name, range_name, rel_label)
+        if rel_key in existing_relation_keys:
+            # Idempotent: this relation was already merged (prior attempt
+            # or an exact repeat in the same result).
+            continue
+        prop_name = _unique_name(_sanitize_camel(rel_label), existing_prop_names)
         existing_prop_names.add(prop_name)
+        existing_relation_keys.add(rel_key)
         properties.append(
             Ontology.build_property_from_data(
                 {
@@ -597,6 +691,14 @@ def merge_draft_into_ontology(domain, draft: GenerateDraft) -> Dict[str, Any]:
         added_attributes += 1
 
     axioms = list(domain.axioms)
+    # Idempotent dedup key for disjointWith/equivalentClass: (type, subject,
+    # sorted objects) — order-independent so a repeat with objects listed
+    # in a different order is still recognized as the same axiom.
+    existing_binary_axiom_keys: Set[tuple] = {
+        (a.get("type"), a.get("subject"), tuple(sorted(a.get("objects") or [])))
+        for a in axioms
+    }
+
     added_axioms = 0
     for axiom in _result_for(SUBSTAGE_AXIOMS).get("axioms", []):
         kind = axiom.get("kind")
@@ -609,10 +711,36 @@ def merge_draft_into_ontology(domain, draft: GenerateDraft) -> Dict[str, Any]:
             continue
         if kind == _AXIOM_KINDS_SUBCLASS:
             subject_cls = class_by_name.get(subject_name)
-            if subject_cls is not None and not subject_cls.get("parent"):
+            if subject_cls is None:
+                continue
+            current_parent = subject_cls.get("parent")
+            if not current_parent:
                 subject_cls["parent"] = object_name
                 added_axioms += 1
+            elif current_parent == object_name:
+                # Idempotent: exact repeat (retried merge, or the agent
+                # proposing the same subClassOf twice) — a silent no-op,
+                # never an error.
+                continue
+            else:
+                # The ontology model supports only a single `parent` per
+                # class (see OntologyGenerator._add_class) — a second,
+                # *different* parent is multi-inheritance the model
+                # cannot represent. Reject explicitly rather than
+                # silently dropping it (task 4 review finding #5).
+                raise DraftValidationError(
+                    f"Cannot set {subject_name!r} subClassOf {object_name!r}: "
+                    f"{subject_name!r} already has a different parent "
+                    f"({current_parent!r}); multiple parent classes "
+                    "(multi-inheritance) are not supported by the "
+                    "ontology model."
+                )
         elif kind in _AXIOM_KINDS_BINARY:
+            axiom_key = (kind, subject_name, tuple(sorted([object_name])))
+            if axiom_key in existing_binary_axiom_keys:
+                # Idempotent: exact repeat, silent no-op.
+                continue
+            existing_binary_axiom_keys.add(axiom_key)
             axioms.append(
                 {"type": kind, "subject": subject_name, "objects": [object_name]}
             )

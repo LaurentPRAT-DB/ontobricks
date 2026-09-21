@@ -1333,10 +1333,39 @@ class TestIsStatusGatedEdit:
     def test_dtwin_non_gated_paths_remain_open(self, path):
         assert not self._fn(path, "POST")
 
-    # --- Wizard paths are exempt regardless ---
+    # --- Wizard paths are exempt regardless (except an explicit ---
+    # --- carve-out for the one wizard route that actually persists ---
+    # --- into the ontology design: staged Generate's merge). ---
 
     def test_wizard_path_exempt(self):
         assert not self._fn("/ontology/wizard/step1", "POST")
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/ontology/wizard/generate/detect",
+            "/ontology/wizard/generate/draft/update",
+            "/ontology/wizard/generate/draft/discard",
+        ],
+    )
+    def test_generate_review_routes_remain_exempt(self, path):
+        """Stage 1 detect and Stage 2 draft mutations only touch the
+        session-scoped draft, never the persisted ontology design — they
+        must stay reachable on a locked/PUBLISHED version exactly like the
+        rest of the wizard."""
+        assert not self._fn(path, "POST")
+
+    def test_generate_complete_is_gated(self):
+        """Stage 3 ``complete`` calls the deterministic append-only merge,
+        which persists new classes/properties/axioms into the loaded
+        version's design (``domain.save()``) — it must be status/lock
+        gated exactly like every other ``/ontology/`` design mutation,
+        despite living under the generally-exempt ``/wizard/`` prefix."""
+        assert self._fn("/ontology/wizard/generate/complete", "POST")
+
+    def test_generate_complete_get_not_gated(self):
+        """Only the mutating verbs matter — GET is never gated."""
+        assert not self._fn("/ontology/wizard/generate/complete", "GET")
 
 
 # ------------------------------------------------------------------
@@ -1397,3 +1426,87 @@ class TestLifecycleGateInDispatch:
         assert result.get("passed"), (
             f"KG filter should be allowed on {status} version"
         )
+
+
+# ------------------------------------------------------------------
+# Staged Generate: POST /ontology/wizard/generate/complete mutates the
+# design (append-only merge), so it must obey the same lifecycle-status
+# and single-editor-lock gate as every other design edit. Stage 1 detect
+# and Stage 2 draft review only touch the session-scoped draft (never the
+# persisted ontology), so they must remain reachable regardless of status
+# or lock, exactly like the rest of the wizard.
+# ------------------------------------------------------------------
+
+
+class TestGenerateCompleteLifecycleGate:
+    COMPLETE_PATH = "/ontology/wizard/generate/complete"
+    REVIEW_ONLY_PATHS = [
+        "/ontology/wizard/generate/detect",
+        "/ontology/wizard/generate/draft/update",
+        "/ontology/wizard/generate/draft/discard",
+    ]
+
+    @pytest.mark.parametrize("status", ["PUBLISHED", "IN-REVIEW"])
+    def test_complete_blocked_on_non_draft(self, status):
+        _, resp, result = _dispatch_with_status(
+            ROLE_APP_USER, ROLE_BUILDER,
+            version_status=status,
+            path=self.COMPLETE_PATH,
+        )
+        assert resp.status_code == 403
+        assert not result.get("passed")
+
+    def test_complete_passes_on_draft_with_no_lock_holder(self):
+        """Normal builder flow: DRAFT version, lock free/held by the
+        caller — completion must reach the handler."""
+        _, _, result = _dispatch_with_status(
+            ROLE_APP_USER, ROLE_BUILDER,
+            version_status="DRAFT",
+            path=self.COMPLETE_PATH,
+        )
+        assert result.get("passed")
+
+    def test_complete_blocked_by_other_lock_holder_on_draft(self):
+        """DRAFT version but a *different* user holds the edit lock —
+        completion must be blocked exactly like any other design edit."""
+        _, resp, result = _dispatch_with_edit_lock("Bob", path=self.COMPLETE_PATH)
+        assert resp.status_code == 403
+        assert not result.get("passed")
+
+    def test_complete_admin_not_exempt_from_lock(self):
+        """Admins must take over the lock first, same as every other
+        design-editing route — no route-specific admin bypass."""
+        _, resp, result = _dispatch_with_edit_lock(
+            "Bob", app_role=ROLE_ADMIN, domain_role=ROLE_ADMIN, path=self.COMPLETE_PATH,
+        )
+        assert resp.status_code == 403
+        assert not result.get("passed")
+
+    def test_complete_blocked_for_viewer_role(self):
+        """The plain role gate still applies underneath the lifecycle gate."""
+        _, resp, result = _dispatch_with_status(
+            ROLE_APP_USER, ROLE_VIEWER,
+            version_status="DRAFT",
+            path=self.COMPLETE_PATH,
+        )
+        assert resp.status_code == 403
+        assert not result.get("passed")
+
+    @pytest.mark.parametrize("path", REVIEW_ONLY_PATHS)
+    @pytest.mark.parametrize("status", ["PUBLISHED", "IN-REVIEW"])
+    def test_review_routes_reachable_on_locked_version(self, path, status):
+        """Stage 1/2 must stay reachable on a locked version — they never
+        touch the persisted design, only the session-scoped draft."""
+        _, _, result = _dispatch_with_status(
+            ROLE_APP_USER, ROLE_BUILDER,
+            version_status=status,
+            path=path,
+        )
+        assert result.get("passed"), f"{path} should be reachable on a {status} version"
+
+    @pytest.mark.parametrize("path", REVIEW_ONLY_PATHS)
+    def test_review_routes_reachable_despite_other_lock_holder(self, path):
+        """Stage 1/2 must not be blocked by the design edit-lock either —
+        it is not a design mutation."""
+        _, _, result = _dispatch_with_edit_lock("Bob", path=path)
+        assert result.get("passed")

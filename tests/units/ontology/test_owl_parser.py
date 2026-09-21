@@ -207,6 +207,28 @@ class TestGetClasses:
         names = [c["name"] for c in classes]
         assert names == sorted(names)
 
+    def test_alternate_labels_parsed_from_skos_altlabel(self):
+        """``alternate_labels`` (synonyms) are first-class ontology data,
+        serialized as ``skos:altLabel`` (task 4 review finding #4) — the
+        parser must read them back."""
+        turtle = """@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix : <http://test.org/ontology#> .
+
+:Carrier a owl:Class ;
+    rdfs:label "Carrier" ;
+    skos:altLabel "Shipper", "Hauler" .
+"""
+        parser = OntologyParser(turtle)
+        classes = {c["name"]: c for c in parser.get_classes()}
+        assert set(classes["Carrier"]["alternate_labels"]) == {"Shipper", "Hauler"}
+
+    def test_no_altlabel_yields_empty_list(self):
+        parser = OntologyParser(SAMPLE_TURTLE)
+        classes = {c["name"]: c for c in parser.get_classes()}
+        assert classes["Customer"]["alternate_labels"] == []
+
 
 class TestGetProperties:
     def test_extracts_properties(self):

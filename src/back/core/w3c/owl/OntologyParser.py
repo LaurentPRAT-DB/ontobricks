@@ -2,6 +2,7 @@
 
 import json
 from rdflib import Graph, RDF, RDFS, OWL, BNode
+from rdflib.namespace import SKOS
 from typing import List, Dict
 
 from back.core.logging import get_logger
@@ -234,6 +235,13 @@ class OntologyParser:
                 label = str(lbl)
                 break
 
+            # Get synonyms (alternate labels) from the standard SKOS
+            # altLabel vocabulary (task 4 review finding #4) — first-class
+            # ontology data, not an OntoBricks custom property.
+            alternate_labels = sorted(
+                {str(alt) for alt in self.graph.objects(cls, SKOS.altLabel)}
+            )
+
             # Get comment
             comment = None
             for cmt in self.graph.objects(cls, RDFS.comment):
@@ -319,6 +327,7 @@ class OntologyParser:
                     "uri": uri,
                     "name": name,
                     "label": label or name,
+                    "alternate_labels": alternate_labels,
                     "comment": comment or "",
                     "emoji": emoji or "",
                     "parent": parent or "",

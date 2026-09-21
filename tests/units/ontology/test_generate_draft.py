@@ -12,6 +12,7 @@ from back.core.errors import ConflictError, ValidationError
 from back.objects.ontology.GenerateDraft import (
     CHECKPOINT_DONE,
     CHECKPOINT_FAILED,
+    CHECKPOINT_PENDING,
     CHECKPOINT_RUNNING,
     COMPLETING,
     DETECTING,
@@ -761,6 +762,73 @@ class TestCheckpointOrdering:
         draft = GenerateDraft.new(source_fingerprint="fp")
         with pytest.raises(DraftValidationError):
             draft.with_checkpoint("relations", "not_a_status")
+
+
+# ---------------------------------------------------------------------------
+# Durable merge checkpoint (task 4 review finding #2) — independent of
+# `stage`/`completion_checkpoints`, checked before ever re-running the
+# append-only merge.
+# ---------------------------------------------------------------------------
+
+
+class TestMergeCheckpoint:
+    def test_defaults_to_pending(self):
+        draft = GenerateDraft.new(source_fingerprint="fp")
+        assert draft.merge_checkpoint == {"status": CHECKPOINT_PENDING, "result": None}
+
+    def test_with_merge_checkpoint_running(self):
+        draft = GenerateDraft.new(source_fingerprint="fp")
+        draft = draft.with_merge_checkpoint(CHECKPOINT_RUNNING)
+        assert draft.merge_checkpoint["status"] == CHECKPOINT_RUNNING
+
+    def test_with_merge_checkpoint_done_stores_result(self):
+        draft = GenerateDraft.new(source_fingerprint="fp")
+        stats = {"classes_added": 2}
+        draft = draft.with_merge_checkpoint(CHECKPOINT_DONE, result=stats)
+        assert draft.merge_checkpoint == {"status": CHECKPOINT_DONE, "result": stats}
+
+    def test_with_merge_checkpoint_failed_stores_error(self):
+        draft = GenerateDraft.new(source_fingerprint="fp")
+        draft = draft.with_merge_checkpoint(CHECKPOINT_FAILED, result={"error": "boom"})
+        assert draft.merge_checkpoint["status"] == CHECKPOINT_FAILED
+        assert draft.merge_checkpoint["result"] == {"error": "boom"}
+
+    def test_cannot_reopen_done_merge_checkpoint(self):
+        draft = GenerateDraft.new(source_fingerprint="fp")
+        draft = draft.with_merge_checkpoint(CHECKPOINT_DONE, result={})
+        with pytest.raises(DraftValidationError):
+            draft.with_merge_checkpoint(CHECKPOINT_RUNNING)
+
+    def test_invalid_status_rejected(self):
+        draft = GenerateDraft.new(source_fingerprint="fp")
+        with pytest.raises(DraftValidationError):
+            draft.with_merge_checkpoint("not_a_status")
+
+    def test_round_trips_through_serialization(self):
+        draft = GenerateDraft.new(source_fingerprint="fp")
+        draft = draft.with_merge_checkpoint(
+            CHECKPOINT_DONE, result={"classes_added": 1}
+        )
+        restored = GenerateDraft.from_dict(draft.to_dict())
+        assert restored.merge_checkpoint == draft.merge_checkpoint
+
+    def test_missing_merge_checkpoint_self_heals_to_pending(self):
+        """An older persisted draft (pre-this-field) must resume cleanly."""
+        draft = GenerateDraft.new(source_fingerprint="fp")
+        data = draft.to_dict()
+        del data["merge_checkpoint"]
+        restored = GenerateDraft.from_dict(data)
+        assert restored.merge_checkpoint == {
+            "status": CHECKPOINT_PENDING,
+            "result": None,
+        }
+
+    def test_invalid_persisted_status_self_heals_to_pending(self):
+        draft = GenerateDraft.new(source_fingerprint="fp")
+        data = draft.to_dict()
+        data["merge_checkpoint"] = {"status": "bogus", "result": None}
+        restored = GenerateDraft.from_dict(data)
+        assert restored.merge_checkpoint["status"] == CHECKPOINT_PENDING
 
 
 # ---------------------------------------------------------------------------

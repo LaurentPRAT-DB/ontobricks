@@ -78,6 +78,32 @@ class TestClassGeneration:
         parsed = {c["name"]: c for c in parser.get_classes()}
         assert parsed["Customer"]["dataset"] == dataset
 
+    def test_alternate_labels_export_import_roundtrip(self):
+        """Synonyms (``alternate_labels``) are first-class ontology data
+        (task 4 review finding #4), serialized as ``skos:altLabel`` and
+        preserved verbatim across a full export/import cycle."""
+        classes = [
+            {
+                "name": "Carrier",
+                "label": "Carrier",
+                "alternate_labels": ["Shipper", "Hauler"],
+            }
+        ]
+        gen = _make_generator(classes=classes)
+        owl = gen.generate()
+        assert "altLabel" in owl
+        assert "Shipper" in owl and "Hauler" in owl
+
+        parser = OntologyParser(owl_content=owl)
+        parsed = {c["name"]: c for c in parser.get_classes()}
+        assert set(parsed["Carrier"]["alternate_labels"]) == {"Shipper", "Hauler"}
+
+    def test_no_alternate_labels_omits_skos_altlabel(self):
+        classes = [{"name": "Customer", "label": "Customer"}]
+        gen = _make_generator(classes=classes)
+        owl = gen.generate()
+        assert "altLabel" not in owl
+
     def test_class_without_dataset_has_none(self):
         classes = [{"name": "Customer", "label": "Customer"}]
         gen = _make_generator(classes=classes)

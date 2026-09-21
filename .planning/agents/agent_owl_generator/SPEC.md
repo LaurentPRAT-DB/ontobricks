@@ -201,6 +201,9 @@ against every `staged`-tagged dataset row, gated by
 | **Stale draft resumed against a changed source.** The user (or a retry) continues a draft after the selected metadata, ready-document manifests, or existing ontology identities changed since detection. | Recomputed `source_fingerprint` mismatches the draft's stored value. | **Live (Task 2 draft layer, exercised by the staged contract).** Invalidate the draft for resume/update (`GenerateDraft.ensure_not_stale`); require an explicit re-run of `detect_entities`; never silently reuse stale candidates or silently reparse to "refresh" the fingerprint. |
 | **Out-of-order or duplicated substage execution.** A retry or race starts `infer_axioms` before `infer_attributes` is checkpointed `done`, or re-runs a substage already `done`. | `completion_checkpoints` status inspected before every substage starts (`staged._ordering_error()`, fails before any LLM call). | **Live as of Task 3.** Refuse to start a substage unless its predecessor is `done`; skip any substage already `done` on resume (`GenerateDraft.next_pending_substage()`). |
 | **Replace instead of append.** The final merge deletes or renames a pre-existing entity instead of appending validated new entities and enriching anchors. | Merge diff shows a removed or renamed pre-existing entity id. | **Live as of Task 4** (`GenerateWorkflow.merge_draft_into_ontology`). Merge is append-only by construction: existing classes/properties/`dataProperties` are read and only ever appended to (new classes/properties/`dataProperties`/axioms added; an existing class's unset `parent` may be set from a `subClassOf` axiom) — no existing entity's `name`/content is ever removed or overwritten. New candidate entities are minted a fresh, collision-free class `name` from their `canonical_label`; their detection-time `id` is the merge-time join key only, not carried into the live ontology. Tested by `tests/units/ontology/test_generate_workflow.py::TestMergePreservesExistingEntities`. |
+| **Duplicate merge on crash/retry.** A crash or draft-revision conflict between the merge's own `domain.save()` and the draft store recording that fact causes a resumed `run_completion` to re-run the merge and duplicate every appended class/relation/axiom. | Retrying `POST /wizard/generate/complete` on an already-(partially)-merged draft adds a second `Carrier2`/duplicate relation/duplicate axiom instead of a no-op. | **Fixed in the Task 4 review pass** — two layers of defense: (1) a durable `GenerateDraft.merge_checkpoint`, independent of `stage`/`completion_checkpoints`, checked before ever calling the merge again — once `done`, `run_completion` trusts it and never re-merges, regardless of what `stage` says; (2) `merge_draft_into_ontology` is itself idempotent (defense in depth): every added class is tagged `generated_from=<candidate id>` and skipped on a repeat call, relations are deduped by `(domain, range, label)`, binary axioms (`disjointWith`/`equivalentClass`) by `(type, subject, sorted(objects))`, and an exact-repeat `subClassOf` is a no-op. Tested by `tests/units/ontology/test_generate_workflow.py::TestIdempotentMerge` (crash-window resume, checkpoint-done short-circuit, repeated-complete-call rejection). |
+| **Silent type-hint mismatch at merge.** An included candidate carries a non-`class` `type_hint` (`object_property`/`data_property`) that the merge cannot yet place into the ontology model, but it gets silently merged as a (wrongly-shaped) class anyway. | A candidate hinted as a property appears as a top-level `owl:Class` after merge instead of being rejected. | **Fixed in the Task 4 review pass.** `merge_draft_into_ontology` rejects (raises `DraftValidationError`, atomic — nothing is merged) any included candidate whose `type_hint != "class"` before any mutation begins; the reviewer must edit the hint back to `class` or exclude the candidate. Tested by `tests/units/ontology/test_generate_workflow.py::TestTypeHintValidationInMerge`. |
+| **Silently dropped conflicting `subClassOf`.** A generated `subClassOf` axiom for an entity that already has a *different* parent is silently ignored instead of surfaced — the ontology model supports only one `parent` per class, so this is unrepresentable multi-inheritance. | Merge diff shows the axiom present in the substage result but no trace of it (no parent change, no error, no log the user sees). | **Fixed in the Task 4 review pass.** An exact repeat (same subject+parent) is still a silent no-op (idempotency); a *different* parent now raises `DraftValidationError` explicitly ("multiple parent classes ... are not supported"), never a silent drop. Tested by `tests/units/ontology/test_generate_workflow.py::TestSubClassOfAndDisjointAxiomMerge`. |
 
 ## 6a. Prompt-first pitfall handling and append guarantees
 
@@ -226,11 +229,34 @@ append-only merge is **live as of Task 4**:
   name during this one merge, not carried forward as the entity's identity.
   Existing (anchor) entities may gain new relations/attributes/axioms/an
   unset `parent` (from a `subClassOf` axiom) but their `name`/`uri`/existing
-  `dataProperties` are read-only during merge.
+  `dataProperties` are read-only during merge. Included candidates whose
+  `type_hint` is not `class` are rejected outright rather than silently
+  merged as a wrongly-shaped class.
+- **Idempotent/atomic merge.** A durable `GenerateDraft.merge_checkpoint`
+  (independent of `stage`) is checked before the merge ever runs again, so a
+  crash or draft-revision conflict between the merge's own `domain.save()`
+  and that checkpoint being recorded cannot cause `run_completion` to
+  duplicate the merge on resume. `merge_draft_into_ontology` is additionally
+  idempotent by construction — classes/relations/binary axioms are deduped
+  by stable identity keys, and an exact-repeat `subClassOf` is a no-op —
+  as defense in depth if it is ever called twice for the same draft. A
+  `subClassOf` axiom that conflicts with an entity's *already-different*
+  parent (multi-inheritance the model cannot represent) is rejected
+  explicitly, never silently dropped.
+- **First-class synonyms in OWL.** `alternate_labels` round-trips through
+  OWL export/import as `skos:altLabel` triples (`OntologyGenerator`/
+  `OntologyParser`), not merely as an in-app session field.
 - **No-reparse.** `detect_entities` is the only entry point that reads
   documents, and only through `list_documents`/`read_document` against
   `ready` manifests. Completion entry points read only the persisted Stage 2
   contract. No entry point ever triggers `ai_parse_document`.
+- **Lifecycle-gated merge.** `POST /wizard/generate/complete` persists into
+  the loaded version's design (`domain.save()`), so it is subject to the
+  same status/single-editor-lock gate as every other `/ontology/` write
+  (`shared.fastapi.main._is_status_gated_edit`) — blocked on a locked/
+  PUBLISHED version or while another user holds the edit lock. Stage 1
+  detect and Stage 2 draft read/update/discard only touch the session-scoped
+  draft and remain exempt, exactly like the rest of the wizard.
 
 ## 7. Eval dataset
 

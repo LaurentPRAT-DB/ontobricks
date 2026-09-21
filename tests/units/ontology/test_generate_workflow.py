@@ -748,3 +748,466 @@ class TestSubClassOfAndDisjointAxiomMerge:
 
         truck = next(c for c in domain_session.get_classes() if c["label"] == "Truck")
         assert truck["parent"] == "Vehicle"
+
+    def test_exact_repeat_subclassof_is_deduped_not_error(
+        self, domain_session, monkeypatch
+    ):
+        """The same subClassOf axiom appearing twice (agent redundancy, or a
+        re-run merge — task 4 review finding #2/#5) must be silently
+        deduped, not rejected."""
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "detect_entities",
+            lambda **kw: _detection_result(["Vehicle", "Truck"]),
+        )
+        draft = wf.run_detection(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        vehicle_id = draft.candidate_entities[0].id
+        truck_id = draft.candidate_entities[1].id
+
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_relations",
+            lambda **kw: _completion_ok("relations", {"relations": []}),
+        )
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_attributes",
+            lambda **kw: _completion_ok("attributes", {"attributes": []}),
+        )
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_axioms",
+            lambda **kw: _completion_ok(
+                "axioms",
+                {
+                    "axioms": [
+                        {
+                            "kind": "subClassOf",
+                            "subject": truck_id,
+                            "object": vehicle_id,
+                        },
+                        {
+                            "kind": "subClassOf",
+                            "subject": truck_id,
+                            "object": vehicle_id,
+                        },
+                    ]
+                },
+            ),
+        )
+
+        result = wf.run_completion(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+
+        truck = next(c for c in domain_session.get_classes() if c["label"] == "Truck")
+        assert truck["parent"] == "Vehicle"
+        # Only the first application counts; the exact repeat is a no-op.
+        assert result["merge"]["axioms_added"] == 1
+
+    def test_conflicting_subclassof_is_rejected_explicitly(
+        self, domain_session, monkeypatch
+    ):
+        """A *different* parent than the one already set is multi-parent
+        inheritance the ontology model cannot represent (only a single
+        `parent` field per class) — it must be rejected explicitly, never
+        silently dropped (task 4 review finding #5)."""
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "detect_entities",
+            lambda **kw: _detection_result(["Vehicle", "Boat", "Truck"]),
+        )
+        draft = wf.run_detection(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        vehicle_id = draft.candidate_entities[0].id
+        boat_id = draft.candidate_entities[1].id
+        truck_id = draft.candidate_entities[2].id
+
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_relations",
+            lambda **kw: _completion_ok("relations", {"relations": []}),
+        )
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_attributes",
+            lambda **kw: _completion_ok("attributes", {"attributes": []}),
+        )
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_axioms",
+            lambda **kw: _completion_ok(
+                "axioms",
+                {
+                    "axioms": [
+                        {
+                            "kind": "subClassOf",
+                            "subject": truck_id,
+                            "object": vehicle_id,
+                        },
+                        {
+                            "kind": "subClassOf",
+                            "subject": truck_id,
+                            "object": boat_id,
+                        },
+                    ]
+                },
+            ),
+        )
+
+        with pytest.raises(DraftValidationError, match="multiple parent"):
+            wf.run_completion(
+                domain_session, _settings(), host="h", token="t", endpoint_name="e"
+            )
+
+    def test_disjoint_with_axiom_deduped_on_exact_repeat(
+        self, domain_session, monkeypatch
+    ):
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "detect_entities",
+            lambda **kw: _detection_result(["Cat", "Dog"]),
+        )
+        draft = wf.run_detection(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        cat_id = draft.candidate_entities[0].id
+        dog_id = draft.candidate_entities[1].id
+
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_relations",
+            lambda **kw: _completion_ok("relations", {"relations": []}),
+        )
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_attributes",
+            lambda **kw: _completion_ok("attributes", {"attributes": []}),
+        )
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_axioms",
+            lambda **kw: _completion_ok(
+                "axioms",
+                {
+                    "axioms": [
+                        {"kind": "disjointWith", "subject": cat_id, "object": dog_id},
+                        {"kind": "disjointWith", "subject": cat_id, "object": dog_id},
+                    ]
+                },
+            ),
+        )
+
+        result = wf.run_completion(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        assert result["merge"]["axioms_added"] == 1
+        assert len(domain_session.axioms) == 1
+
+
+# ---------------------------------------------------------------------------
+# Minor review finding #3: honor/reject candidate type_hint in merge
+# ---------------------------------------------------------------------------
+
+
+class TestTypeHintValidationInMerge:
+    def test_class_type_hint_merges_normally(self, domain_session, monkeypatch):
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "detect_entities",
+            lambda **kw: DetectionResult(
+                success=True,
+                candidate_entities=[
+                    GenerateEntity.new_candidate("Carrier", type_hint="class"),
+                ],
+            ),
+        )
+        wf.run_detection(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        _stub_all_ok_module(monkeypatch)
+
+        result = wf.run_completion(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        assert result["merge"]["classes_added"] == 1
+
+    @pytest.mark.parametrize("type_hint", ["object_property", "data_property"])
+    def test_non_class_type_hint_is_rejected_not_ignored(
+        self, domain_session, monkeypatch, type_hint
+    ):
+        """An included candidate whose type_hint the merge cannot yet place
+        into the ontology model must be rejected explicitly, never silently
+        merged as a (wrongly-shaped) class (task 4 review finding #3)."""
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "detect_entities",
+            lambda **kw: DetectionResult(
+                success=True,
+                candidate_entities=[
+                    GenerateEntity.new_candidate("worksFor", type_hint=type_hint),
+                ],
+            ),
+        )
+        wf.run_detection(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        _stub_all_ok_module(monkeypatch)
+
+        with pytest.raises(DraftValidationError, match="type_hint"):
+            wf.run_completion(
+                domain_session, _settings(), host="h", token="t", endpoint_name="e"
+            )
+        # Nothing must have been merged — the rejection is atomic.
+        assert domain_session.get_classes() == []
+
+    def test_excluded_non_class_candidate_is_not_checked(
+        self, domain_session, monkeypatch
+    ):
+        """An excluded candidate never reaches the merge at all, so its
+        type_hint is irrelevant."""
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "detect_entities",
+            lambda **kw: DetectionResult(
+                success=True,
+                candidate_entities=[
+                    GenerateEntity.new_candidate("Carrier", type_hint="class"),
+                    GenerateEntity.new_candidate(
+                        "worksFor", type_hint="object_property"
+                    ),
+                ],
+            ),
+        )
+        draft = wf.run_detection(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        bad_id = draft.candidate_entities[1].id
+        wf.update_draft(
+            domain_session,
+            revision=draft.draft_revision,
+            op="exclude",
+            entity_id=bad_id,
+        )
+        _stub_all_ok_module(monkeypatch)
+
+        result = wf.run_completion(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        assert result["merge"]["classes_added"] == 1
+
+
+def _stub_all_ok_module(monkeypatch):
+    monkeypatch.setattr(
+        wf.owl_staged,
+        "infer_relations",
+        lambda **kw: _completion_ok("relations", {"relations": []}),
+    )
+    monkeypatch.setattr(
+        wf.owl_staged,
+        "infer_attributes",
+        lambda **kw: _completion_ok("attributes", {"attributes": []}),
+    )
+    monkeypatch.setattr(
+        wf.owl_staged,
+        "infer_axioms",
+        lambda **kw: _completion_ok("axioms", {"axioms": []}),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Important review finding #2: idempotent/atomic merge + durable merge
+# checkpoint (independent of `stage`/`completion_checkpoints`)
+# ---------------------------------------------------------------------------
+
+
+class TestIdempotentMerge:
+    def _seed_ready_for_merge(self, domain_session, monkeypatch, cand_id_holder):
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "detect_entities",
+            lambda **kw: _detection_result(["Carrier"]),
+        )
+        draft = wf.run_detection(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        cand_id = draft.candidate_entities[0].id
+        cand_id_holder["id"] = cand_id
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_relations",
+            lambda **kw: _completion_ok("relations", {"relations": []}),
+        )
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_attributes",
+            lambda **kw: _completion_ok(
+                "attributes",
+                {
+                    "attributes": [
+                        {
+                            "label": "trackingCode",
+                            "domain": cand_id,
+                            "datatype": "xsd:string",
+                        }
+                    ]
+                },
+            ),
+        )
+        monkeypatch.setattr(
+            wf.owl_staged,
+            "infer_axioms",
+            lambda **kw: _completion_ok("axioms", {"axioms": []}),
+        )
+        return draft
+
+    def test_merge_checkpoint_defaults_pending_before_completion(
+        self, domain_session, monkeypatch
+    ):
+        holder = {}
+        self._seed_ready_for_merge(domain_session, monkeypatch, holder)
+        draft = domain_session.generate_draft_store.load()
+        assert draft.merge_checkpoint["status"] == "pending"
+
+    def test_merge_checkpoint_done_after_successful_completion(
+        self, domain_session, monkeypatch
+    ):
+        holder = {}
+        self._seed_ready_for_merge(domain_session, monkeypatch, holder)
+        wf.run_completion(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+        draft = domain_session.generate_draft_store.load()
+        assert draft.merge_checkpoint["status"] == "done"
+        assert draft.merge_checkpoint["result"]["classes_added"] == 1
+
+    def test_crash_after_merge_before_checkpoint_write_is_idempotent_on_resume(
+        self, domain_session, monkeypatch
+    ):
+        """Simulates the exact crash window review finding #2 calls out:
+        `merge_draft_into_ontology` already persisted into the live
+        ontology (its own `domain.save()` succeeded), but the process died
+        before the draft store recorded the merge checkpoint as done — the
+        merge checkpoint is still `running`. On resume, `run_completion`
+        must re-run the merge (since its own checkpoint isn't `done`) but
+        the merge itself must be idempotent: no duplicate class/property.
+        """
+        holder = {}
+        draft = self._seed_ready_for_merge(domain_session, monkeypatch, holder)
+        store = domain_session.generate_draft_store
+
+        # Fast-forward the draft past the three substage checkpoints exactly
+        # like `run_completion` would, without calling it yet.
+        from dataclasses import replace as _replace
+        from back.objects.ontology.GenerateDraft import COMPLETING
+
+        draft = store.save(_replace(draft, stage=COMPLETING))
+        for substage in ("relations", "attributes", "axioms"):
+            runner = wf._substage_runners()[substage]
+            result = runner(
+                host="h",
+                token="t",
+                endpoint_name="e",
+                draft=draft,
+                options=None,
+                draft_id="d",
+                draft_revision=draft.draft_revision,
+                on_step=None,
+            )
+            draft = store.save(
+                draft.with_checkpoint(substage, CHECKPOINT_DONE, result=result.result)
+            )
+
+        # Simulate the crash: the merge checkpoint was marked `running`
+        # (as `run_completion` does right before calling the merge) and the
+        # merge itself was already applied to the live ontology, but no
+        # further draft-store write ever happened.
+        draft = store.save(draft.with_merge_checkpoint("running"))
+        first_stats = wf.merge_draft_into_ontology(domain_session, draft)
+        assert first_stats["classes_added"] == 1
+
+        # Resume: run_completion must not duplicate the class/attribute.
+        result = wf.run_completion(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+
+        classes = domain_session.get_classes()
+        carriers = [c for c in classes if c["label"] == "Carrier"]
+        assert len(carriers) == 1, "merge must not duplicate the class on retry"
+        assert len(carriers[0]["dataProperties"]) == 1
+        assert result["draft"]["stage"] == DONE
+
+    def test_merge_checkpoint_done_short_circuits_without_remerging(
+        self, domain_session, monkeypatch
+    ):
+        """If the merge checkpoint is already `done` (durably recorded) but
+        `stage` never made it to `done` (the narrower crash window right
+        after the merge-checkpoint write, before the stage write),
+        `run_completion` must NOT call the merge again — it trusts the
+        merge checkpoint, not `stage`."""
+        holder = {}
+        draft = self._seed_ready_for_merge(domain_session, monkeypatch, holder)
+        store = domain_session.generate_draft_store
+
+        from dataclasses import replace as _replace
+        from back.objects.ontology.GenerateDraft import COMPLETING
+
+        draft = store.save(_replace(draft, stage=COMPLETING))
+        for substage in ("relations", "attributes", "axioms"):
+            runner = wf._substage_runners()[substage]
+            result = runner(
+                host="h",
+                token="t",
+                endpoint_name="e",
+                draft=draft,
+                options=None,
+                draft_id="d",
+                draft_revision=draft.draft_revision,
+                on_step=None,
+            )
+            draft = store.save(
+                draft.with_checkpoint(substage, CHECKPOINT_DONE, result=result.result)
+            )
+
+        merge_stats = wf.merge_draft_into_ontology(domain_session, draft)
+        draft = store.save(
+            draft.with_merge_checkpoint(CHECKPOINT_DONE, result=merge_stats)
+        )
+        # `stage` is deliberately left at COMPLETING here (the crash window).
+
+        calls = []
+        real_merge = wf.merge_draft_into_ontology
+
+        def _spy(*args, **kwargs):
+            calls.append(1)
+            return real_merge(*args, **kwargs)
+
+        monkeypatch.setattr(wf, "merge_draft_into_ontology", _spy)
+
+        result = wf.run_completion(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+
+        assert not calls, "merge must not be called again once its checkpoint is done"
+        assert result["draft"]["stage"] == DONE
+        assert result["merge"] == merge_stats
+
+    def test_repeated_complete_call_after_success_is_rejected(
+        self, domain_session, monkeypatch
+    ):
+        """A completed draft (`stage == done`) cannot be completed again —
+        the top-level guard, not merge idempotency, is the first line of
+        defense for the ordinary (non-crash) repeated-call case."""
+        holder = {}
+        self._seed_ready_for_merge(domain_session, monkeypatch, holder)
+        wf.run_completion(
+            domain_session, _settings(), host="h", token="t", endpoint_name="e"
+        )
+
+        with pytest.raises(DraftValidationError):
+            wf.run_completion(
+                domain_session, _settings(), host="h", token="t", endpoint_name="e"
+            )

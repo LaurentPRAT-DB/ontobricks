@@ -105,6 +105,22 @@ def _default_checkpoints() -> Dict[str, Dict[str, Any]]:
     return {s: {"status": CHECKPOINT_PENDING, "result": None} for s in _SUBSTAGE_ORDER}
 
 
+def _default_merge_checkpoint() -> Dict[str, Any]:
+    return {"status": CHECKPOINT_PENDING, "result": None}
+
+
+def _normalize_merge_checkpoint(raw: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Self-healing normalization used on the deserialize path (mirrors
+    :func:`_normalize_checkpoints`): an unknown/missing status is coerced
+    back to ``pending`` rather than raising, so an older persisted draft
+    (from before this field existed) resumes cleanly."""
+    raw = raw or {}
+    status = raw.get("status")
+    if status not in _VALID_CHECKPOINT_STATUSES:
+        status = CHECKPOINT_PENDING
+    return {"status": status, "result": raw.get("result")}
+
+
 def _normalize_checkpoints(raw: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """Self-healing normalization used on the deserialize path.
 
@@ -415,6 +431,15 @@ class GenerateDraft:
     completion_checkpoints: Dict[str, Dict[str, Any]] = field(
         default_factory=_default_checkpoints
     )
+    # Durable merge marker — deliberately **independent** of both `stage`
+    # and `completion_checkpoints`: the append-only merge
+    # (`GenerateWorkflow.merge_draft_into_ontology`) is a workflow-level step,
+    # not a staged-agent substage, and its completion must be checked before
+    # ever calling it again — a crash between that merge persisting into the
+    # live ontology and `stage` flipping to `done` must not be mistaken for
+    # "merge never happened" and cause a duplicate merge on resume. See
+    # `GenerateWorkflow.run_completion`.
+    merge_checkpoint: Dict[str, Any] = field(default_factory=_default_merge_checkpoint)
 
     def __post_init__(self) -> None:
         if self.draft_revision < 0:
@@ -433,6 +458,7 @@ class GenerateDraft:
                 )
         self.selected_source_config = copy.deepcopy(self.selected_source_config or {})
         self.completion_checkpoints = _normalize_checkpoints(self.completion_checkpoints)
+        self.merge_checkpoint = _normalize_merge_checkpoint(self.merge_checkpoint)
         self._check_unique_labels()
         self._check_unique_ids()
 
@@ -468,6 +494,7 @@ class GenerateDraft:
             "completion_checkpoints": {
                 k: dict(v) for k, v in self.completion_checkpoints.items()
             },
+            "merge_checkpoint": dict(self.merge_checkpoint),
         }
 
     @classmethod
@@ -492,6 +519,7 @@ class GenerateDraft:
                 for c in (data.get("candidate_entities") or [])
             ],
             completion_checkpoints=data.get("completion_checkpoints") or {},
+            merge_checkpoint=data.get("merge_checkpoint") or {},
         )
 
     @classmethod
@@ -516,6 +544,7 @@ class GenerateDraft:
             existing_anchors=list(existing_anchors),
             candidate_entities=list(candidate_entities),
             completion_checkpoints=_default_checkpoints(),
+            merge_checkpoint=_default_merge_checkpoint(),
         )
 
     # -- staleness -----------------------------------------------------------
@@ -652,6 +681,27 @@ class GenerateDraft:
             if self.completion_checkpoints[substage]["status"] != CHECKPOINT_DONE:
                 return substage
         return None
+
+    def with_merge_checkpoint(
+        self, status: str, *, result: Any = None
+    ) -> "GenerateDraft":
+        """Return a copy with the durable merge checkpoint updated.
+
+        Independent of ``completion_checkpoints``/``stage`` (see the field's
+        docstring). Strict like :meth:`with_checkpoint`: a checkpoint already
+        ``done`` cannot be reopened — once the merge has been durably
+        recorded as committed, nothing may call it again, on purpose.
+        """
+        if status not in _VALID_CHECKPOINT_STATUSES:
+            raise DraftValidationError(f"Invalid checkpoint status: {status!r}")
+        if (
+            self.merge_checkpoint["status"] == CHECKPOINT_DONE
+            and status != CHECKPOINT_DONE
+        ):
+            raise DraftValidationError(
+                "merge checkpoint is already done and cannot be reopened."
+            )
+        return replace(self, merge_checkpoint={"status": status, "result": result})
 
 
 class GenerateDraftStore:

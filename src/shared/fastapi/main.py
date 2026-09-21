@@ -284,6 +284,17 @@ _STATUS_GATE_OPEN_SUFFIXES = (
 # Status values that allow editing the version content.
 _STATUS_EDITABLE = "DRAFT"
 
+# Wizard sub-routes that are the exception to the blanket "/wizard/"
+# exemption below: unlike the rest of the staged-Generate wizard (detect,
+# draft read/update/discard), which only stages a session-scoped draft and
+# never touches the persisted ontology, `.../generate/complete` runs the
+# deterministic append-only merge and calls `domain.save()` — a genuine
+# design mutation. It must be gated exactly like any other `/ontology/`
+# write, so it is checked (and matched) before the wizard exemption.
+_STATUS_GATE_WIZARD_EDIT_SUFFIXES = (
+    "/wizard/generate/complete",
+)
+
 
 def _is_status_gated_edit(path: str, method: str) -> bool:
     """True when *path*/*method* mutates the loaded version's content."""
@@ -291,6 +302,8 @@ def _is_status_gated_edit(path: str, method: str) -> bool:
         return False
     if any(path.endswith(suffix) for suffix in _STATUS_GATE_OPEN_SUFFIXES):
         return False
+    if any(path.endswith(suffix) for suffix in _STATUS_GATE_WIZARD_EDIT_SUFFIXES):
+        return True
     if "/wizard/" in path:
         return False
     if any(path.startswith(p) for p in _STATUS_GATE_EDIT_PREFIXES):

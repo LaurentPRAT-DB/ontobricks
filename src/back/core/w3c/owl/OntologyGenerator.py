@@ -4,7 +4,7 @@ import json
 import re
 from rdflib import BNode, Graph, Namespace, URIRef, Literal
 from rdflib.collection import Collection
-from rdflib.namespace import RDF, RDFS, OWL, XSD
+from rdflib.namespace import RDF, RDFS, OWL, SKOS, XSD
 from typing import List, Dict
 
 from back.core.logging import get_logger
@@ -516,6 +516,15 @@ class OntologyGenerator:
         label = cls.get("label", class_name)
         if label:
             self.graph.add((class_uri, RDFS.label, Literal(label)))
+
+        # Add synonyms (alternate labels) as first-class ontology data,
+        # using the standard SKOS altLabel vocabulary (design:
+        # docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md
+        # §Synonyms as first-class alternate labels; task 4 review finding #4).
+        for alt_label in cls.get("alternate_labels", []) or []:
+            alt_label = str(alt_label or "").strip()
+            if alt_label:
+                self.graph.add((class_uri, SKOS.altLabel, Literal(alt_label)))
 
         # Add comment/description
         comment = cls.get("comment", "") or cls.get("description", "")
