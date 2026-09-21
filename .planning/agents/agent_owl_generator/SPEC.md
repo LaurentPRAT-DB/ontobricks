@@ -287,6 +287,7 @@ this dimension table, and its transport-level follow-up).
 | **Entity injection.** A completion substage (`infer_relations`/`infer_attributes`/`infer_axioms`) references or introduces an entity id outside the locked anchors plus the validated Stage 2 set. | Server-side validation of every referenced id against the closed entity set before checkpointing (`_run_completion()` + `GenerateDraft.validate_references()`). | **Live as of Task 3**, with a second, workflow-level closure re-check added in Task 4 (`GenerateWorkflow.run_completion`, after each substage returns, before checkpointing — defense-in-depth even if the substage's own internal check is bypassed). Reject the substage output outright (`rejected=True`); mark that checkpoint `FAILED` and do not merge; surface a retryable failure for that substage only (resume re-runs only the failed/incomplete stage — see §3a checkpoint persistence, live as of Task 4). |
 | **Id-bracketing false rejection (live bug, this revision, reproduced live by the user — `relations: references unknown or excluded entity id(s): [Agent], [Call], [Claim], ...`).** `prompts._entity_catalog` rendered each entity as `  • [{entity.id}] {label}` and the closure rule said "reference entities ONLY by the ids listed above" — the model copied the *bracketed* token (e.g. `[Agent]`) verbatim as the `domain`/`range` value. `GenerateDraft.validate_references` compares against the **bare** id from `closed_entity_ids()`, so every reference was rejected — a prompt-format-induced id mismatch, not a real closure violation (the presence of `cand-*` ids in the error confirmed detection/inclusion worked correctly; only the id *format* was wrong). | Stage-3 completion (`infer_relations`/`infer_attributes`/`infer_axioms`) fails with `rejected=True` and a `rejection_reason` listing bracketed ids (`[Agent]`, `[cand-...]`, etc.) that otherwise exactly match a real anchor/candidate id once the brackets are stripped. | **Fixed this revision, two layers.** (1) Prompt-only, insufficient alone (same lesson as the Stage-1 reasoning-preamble entry below — a prompt cannot structurally stop a non-compliant model): `_entity_catalog` now renders `- id: <bare-id>\n  label: <label>` (never bracketed/quoted); `_CLOSURE_RULE` explicitly forbids brackets/quotes/label-substitution with a worked counter-example. (2) Structural, the actual fix: each completion substage now sends a strict `response_format` (`schemas.build_relations_response_format`/`build_attributes_response_format`/`build_axioms_response_format`) whose id-valued fields are a JSON Schema `enum` of exactly `closed_entity_ids()`, with `tools=None` always — a bracketed or invented id is structurally impossible on any endpoint honouring `response_format`. `validate_references` is unchanged and still runs unconditionally as defense in depth (now expected to always pass); an unsupported `response_format` degrades transparently to the prompt-only safety net via the existing per-endpoint ban-cache (`agents.engine_base.call_serving_endpoint`). No schema-repair/rewrite loop was added — reject-only unweakened. Tests: `tests/units/agents/test_owl_generator_staged.py` (bare-id catalog, closure-rule wording, `response_format` wiring per substage, bracketed-id-still-rejected, unsupported-`response_format` fallback), `tests/units/agents/test_owl_generator_schemas.py::Test{Relations,Attributes,Axioms}ResponseFormat`; dataset regression row `staged-bracketed-id-rejection-001` (`tests/eval/staged_contract.py`'s `rejects_bracketed_id_reference` check). |
 | **Stale draft resumed against a changed source.** The user (or a retry) continues a draft after the selected metadata, ready-document manifests, or existing ontology identities changed since detection. | Recomputed `source_fingerprint` mismatches the draft's stored value. | **Live (Task 2 draft layer, exercised by the staged contract).** Invalidate the draft for resume/update (`GenerateDraft.ensure_not_stale`); require an explicit re-run of `detect_entities`; never silently reuse stale candidates or silently reparse to "refresh" the fingerprint. |
+| **JSON double-encoding under `response_format` json_schema (residual bug, this revision — supersedes the prior wording-only "no lenient parsing added" framing recorded in §10's id-bracketing entry).** Under `response_format` json_schema, Claude Sonnet endpoints (`databricks-claude-sonnet-5`, and the user's own `benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`) intermittently return a list-typed field's value ENCODED AS A STRING instead of the raw JSON array (e.g. `{"attributes": "[{...}]"}"`), or the entire payload comes back as a JSON string holding the real object as its value (`content = "{\"attributes\": [...]}"`). The trailing-instruction reword documented in the id-bracketing entry below (`build_relations_user_prompt`/etc.) reduced but did not eliminate this — it is an endpoint/transport-level intermittency, not solely a prompt-wording trigger. | Stage-3 completion fails with `output must contain a '<key>' list` (field-level shape) or `structured output must be a JSON object` (whole-payload shape) even though the underlying answer is well-formed once unwrapped. In tests: `tests/units/agents/test_owl_generator_schemas.py::Test{WholePayload,FieldLevel}DoubleEncodingTolerance`. | **Fixed this revision — deterministic, reject-only preserved, NOT prose parsing.** `schemas._unwrap_double_encoded(value, expected)` undoes AT MOST ONE level of JSON-string double-encoding: only when *value* is itself a `str` is a single extra `json.loads` attempted, and the decoded result is used only if it is already `expected`'s type — otherwise *value* is returned unchanged and rejected by the caller's pre-existing type check exactly as before. Applied in two places: (a) `parse_json_object`, when the top-level decode yields a `str` (whole-payload shape) — accepted only if the one extra decode yields a `dict`; (b) `_require_list` and `parse_detection_payload`'s `candidate_entities` getter, when the field's value is a `str` (field-level shape) — accepted only if the one extra decode yields a `list`. No loop, no regex/prose extraction, `validate_references`/closure/ordering checks are unchanged. A shape still wrong after the one tolerated decode (a plain sentence, a number, triple-encoding) is rejected with the same clear message, with no second finalization/LLM call — `staged._run_completion`'s attempt loop only ever retries on `finish_reason == "length"`, never on `SchemaValidationError`, so this was already true and remains true. Tests: `tests/units/agents/test_owl_generator_schemas.py::Test{WholePayload,FieldLevel}DoubleEncodingTolerance` (whole-payload and field-level double-encoded acceptance for relations/attributes/axioms/detection, still-reject-after-one-decode for triple-encoding/plain-sentence/number/non-object-items, and normal-payload-unchanged); `tests/units/agents/test_owl_generator_staged.py::TestInferAttributes` (end-to-end acceptance through the real `infer_attributes` orchestrator, and a still-invalid-after-one-decode case rejected with exactly one LLM call). Dataset regression row `staged-double-encoded-payload-001` (`tests/eval/staged_contract.py`'s `accepts_double_encoded_list_field` check, built from the row's own `input.draft`); dataset floor raised `16` → `17` (`tests/eval/run_agent_owl_generator.py::_MIN_STAGED_EXAMPLES`). |
 | **Out-of-order or duplicated substage execution.** A retry or race starts `infer_axioms` before `infer_attributes` is checkpointed `done`, or re-runs a substage already `done`. | `completion_checkpoints` status inspected before every substage starts (`staged._ordering_error()`, fails before any LLM call). | **Live as of Task 3.** Refuse to start a substage unless its predecessor is `done`; skip any substage already `done` on resume (`GenerateDraft.next_pending_substage()`). |
 | **Replace instead of append.** The final merge deletes or renames a pre-existing entity instead of appending validated new entities and enriching anchors. | Merge diff shows a removed or renamed pre-existing entity id. | **Live as of Task 4** (`GenerateWorkflow.merge_draft_into_ontology`). Merge is append-only by construction: existing classes/properties/`dataProperties` are read and only ever appended to (new classes/properties/`dataProperties`/axioms added; an existing class's unset `parent` may be set from a `subClassOf` axiom) — no existing entity's `name`/content is ever removed or overwritten. New candidate entities are minted a fresh, collision-free class `name` from their `canonical_label`; their detection-time `id` is the merge-time join key only, not carried into the live ontology. Tested by `tests/units/ontology/test_generate_workflow.py::TestMergePreservesExistingEntities`. |
 | **Duplicate merge on crash/retry.** A crash or draft-revision conflict between the merge's own `domain.save()` and the draft store recording that fact causes a resumed `run_completion` to re-run the merge and duplicate every appended class/relation/axiom. | Retrying `POST /wizard/generate/complete` on an already-(partially)-merged draft adds a second `Carrier2`/duplicate relation/duplicate axiom instead of a no-op. | **Fixed in the Task 4 review pass** — two layers of defense: (1) a durable `GenerateDraft.merge_checkpoint`, independent of `stage`/`completion_checkpoints`, checked before ever calling the merge again — once `done`, `run_completion` trusts it and never re-merges, regardless of what `stage` says; (2) `merge_draft_into_ontology` is itself idempotent (defense in depth): every added class is tagged `generated_from=<candidate id>` and skipped on a repeat call, relations are deduped by `(domain, range, label)`, binary axioms (`disjointWith`/`equivalentClass`) by `(type, subject, sorted(objects))`, and an exact-repeat `subClassOf` is a no-op. Tested by `tests/units/ontology/test_generate_workflow.py::TestIdempotentMerge` (crash-window resume, checkpoint-done short-circuit, repeated-complete-call rejection). |
@@ -366,7 +367,14 @@ append-only merge is **live as of Task 4**:
   bracketed-id reference (the exact live-bug shape, e.g. `[cand-6]`) is
   still rejected reject-only with no second finalization call, even in the
   fallback path without transport-level enum enforcement — dataset floor
-  raised `15` → `16` (`_MIN_STAGED_EXAMPLES`). As of Task 3, the
+  raised `15` → `16` (`_MIN_STAGED_EXAMPLES`). Added this revision
+  (residual JSON double-encoding fix, §6), a completion-stage regression
+  case (`staged-double-encoded-payload-001`) proving a list-typed field
+  double-encoded as a JSON string (the exact residual-bug shape, e.g.
+  `{"attributes": "[{...}]"}"`) is accepted — unwrapped by exactly one
+  extra decode — end-to-end through the real `infer_attributes`
+  orchestrator, checkpointing a correctly-parsed result — dataset floor
+  raised `16` → `17` (`_MIN_STAGED_EXAMPLES`). As of Task 3, the
   `staged` cases are scored **behaviorally** by
   `tests/eval/run_agent_owl_generator.py` (via `tests/eval/staged_contract.py`):
   each constraint `kind` maps to a deterministic check that exercises the
@@ -901,4 +909,83 @@ planned)` sections; plan: `staged-ontology-generate`).
         unweakened either way. Regression test:
         `tests/units/agents/test_owl_generator_staged.py::
         test_completion_user_prompts_avoid_the_return_json_double_encoding_trigger`.
+- [x] **Residual JSON double-encoding fix (this revision — supersedes the
+      wording-only "no lenient/tolerant parsing was added" framing recorded
+      in the id-bracketing entry's "Secondary finding" above).** The
+      trailing-instruction reword there reduced but did not eliminate the
+      double-encoding intermittency: under `response_format` json_schema,
+      Claude Sonnet endpoints (`databricks-claude-sonnet-5`, and the user's
+      own `benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`) can still
+      return a list-typed field's value as a JSON-encoded STRING instead of
+      the raw array (e.g. `{"attributes": "[{...}]"}"`), or the entire
+      payload as a JSON string holding the real object as its value
+      (`content = "{\"attributes\": [...]}"`) — observed in
+      `infer_attributes` as `output must contain a 'attributes' list`. See
+      §6's new failure-mode row for full detail.
+      - **Fix (deterministic, reject-only preserved, NOT prose parsing):**
+        `schemas._unwrap_double_encoded(value, expected)` — exactly ONE
+        extra `json.loads` on a `str` value, accepted only if it yields
+        `expected`'s type; otherwise the value is returned unchanged and
+        rejected by the existing type check. Applied in `parse_json_object`
+        (whole-payload shape, `str` → `dict`) and in `_require_list` +
+        `parse_detection_payload`'s `candidate_entities` getter (field-level
+        shape, `str` → `list`). No loop, no regex/prose extraction;
+        `validate_references`/closure/ordering checks unchanged.
+      - **RED/GREEN:** `tests/units/agents/test_owl_generator_schemas.py`
+        (13 new tests: `TestWholePayloadDoubleEncodingTolerance` (5) +
+        `TestFieldLevelDoubleEncodingTolerance` (8)) — confirmed RED before
+        the fix (5 failures, exactly the whole-payload and field-level
+        acceptance cases; the still-reject/unchanged cases already passed,
+        as expected since those paths were untouched), GREEN after (47/47
+        in the file). `tests/units/agents/test_owl_generator_staged.py::
+        TestInferAttributes` (+3 tests: whole-payload double-encoded
+        accepted end-to-end, field-level double-encoded accepted
+        end-to-end, still-invalid-after-one-decode rejected with exactly
+        one LLM call — no second finalization call either way).
+      - New material-change regression row (§5/§7, byte-identical mirrors):
+        `staged-double-encoded-payload-001` — a `complete_attributes` row
+        whose scripted answer double-encodes the `attributes` field (the
+        exact residual-bug shape), asserting acceptance with the correct
+        `domain` parsed out, via the new `accepts_double_encoded_list_field`
+        constraint kind (`tests/eval/staged_contract.py`). Dataset floor
+        raised `16` → `17` (`tests/eval/run_agent_owl_generator.py::
+        _MIN_STAGED_EXAMPLES`).
+      - Deterministic/offline eval (unchanged gate, unweakened):
+        `uv run --frozen python tests/eval/run_agent_owl_generator.py` →
+        all 17 staged examples PASS, staged-contract aggregate `1.000`
+        (threshold `0.950`); all 10 parsed-corpus cases PASS, aggregate
+        `1.000` (threshold `0.900`).
+      - Full suite: `uv run --frozen pytest -q -m "not scenario"` → **6759
+        passed**, 304 skipped, 6 deselected, 1 xfailed, 32 warnings, no
+        failures.
+      - **Live verification (read-only, exactly ONE `infer_attributes`
+        call, against the user's own endpoint
+        `benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`):** a
+        COMPLETING-stage `GenerateDraft` was rebuilt from the live session
+        `fastapi_session/b3bd26a3fbe54f89895b0cfcfbff1feb`'s
+        `domain_data.ontology.classes` (15 real ontology classes, via
+        `build_locked_anchors_from_classes` — read-only, the session file
+        was never written to) as locked anchors, plus 2 dummy included
+        candidates, with the `relations` checkpoint marked `done` (a
+        minimal valid relations result referencing only closed ids) so the
+        ordering gate allowed `infer_attributes` to start. Result:
+        `success=True`, `rejected=False`, 105 attributes returned, every
+        returned `domain` id confirmed a member of `closed_entity_ids()`
+        (15 distinct anchor ids used; the 2 dummy candidates were not
+        grounded in any evidence, so the model reasonably did not attribute
+        them — not a defect). `infer_attributes` does not mutate the
+        ontology, so this call was read-only by construction. The
+        Databricks CLI token was fetched via `databricks auth token
+        --profile DEFAULT --output json` and never printed/logged.
+      - **Residual concern (not fully eliminated, matches the endpoint's
+        pre-existing intermittency profile documented earlier in this
+        SPEC):** the live call above did not itself trip the
+        double-encoding shape (the endpoint answered correctly-shaped JSON
+        on this attempt), so it is evidence that `infer_attributes` still
+        works end-to-end against this endpoint, not direct proof that a
+        double-encoded wire response was unwrapped live. The deterministic
+        unit/staged tests above are the actual reject-only-preserving gate
+        for the fix itself, per this task's own instruction to avoid
+        repeated paid live calls to force-reproduce an intermittent
+        endpoint quirk.
 - [ ] Reviewer waiver recorded in the PR, if used.

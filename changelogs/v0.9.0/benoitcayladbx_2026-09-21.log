@@ -2534,3 +2534,160 @@ Modified/added files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6743 passed,
 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 56.54s.
+
+## Fix residual JSON double-encoding under response_format json_schema in Stage-3 completion parsing
+
+### Context
+
+Flagged as the residual bug by the prior "id-bracketing" completion fix
+above: its "Secondary finding" only reworded a trailing prompt instruction
+("Return the `<X>` JSON." → "Now infer and provide the `<x>`."), which
+reduced but did not eliminate the underlying transport intermittency — the
+same fix's own informational live-scoring section already showed
+`infer_attributes` FAIL with `output must contain a 'attributes' list`
+on a real `databricks-claude-sonnet-5` run.
+
+Under `response_format` json_schema, Claude Sonnet endpoints
+(`databricks-claude-sonnet-5`, and the user's own
+`benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`) intermittently
+double-encode the structured answer in two possible shapes: (a) a
+list-typed field's value comes back as a JSON-encoded STRING instead of
+the raw array (e.g. `{"attributes": "[{...}]"}"`, tripping
+`_require_list`'s `'attributes' must be a list` check), or (b) the ENTIRE
+payload comes back as a JSON string holding the real object as its value
+(`content = "{\"attributes\": [...]}"`, tripping `parse_json_object`'s
+`structured output must be a JSON object` check).
+
+### Changes (deterministic, reject-only preserved — NOT prose parsing)
+
+1. `src/agents/agent_owl_generator/schemas.py`
+   Added `_unwrap_double_encoded(value, expected)`: undoes AT MOST ONE
+   level of JSON-string double-encoding. Only when *value* is itself a
+   `str` is a single extra `json.loads` attempted; the decoded result is
+   used only if it is already an instance of *expected* — otherwise
+   *value* is returned unchanged (no loop, no regex/prose extraction).
+   Applied in two places: `parse_json_object`, when the top-level decode
+   yields a `str` (whole-payload shape — accepted only if the one extra
+   decode yields a `dict`); and `_require_list` plus
+   `parse_detection_payload`'s `candidate_entities` getter, when the
+   field's value is a `str` (field-level shape — accepted only if the one
+   extra decode yields a `list`). A shape still wrong after the one
+   tolerated decode (a plain sentence, a number, triple-encoding, a
+   decoded list of non-dict items) is rejected with the same pre-existing
+   clear message, with no further decoding. `validate_references` and the
+   closure/ordering checks are entirely unchanged.
+2. `src/agents/agent_owl_generator/staged.py`
+   No code change required: `_run_completion`'s attempt loop already only
+   retries on `finish_reason == "length"` (output truncation), never on
+   `SchemaValidationError` — a still-invalid-after-one-decode answer was
+   already returned immediately as `rejected=True` with exactly one LLM
+   call, and remains so.
+3. `tests/units/agents/test_owl_generator_schemas.py`
+   Added `TestWholePayloadDoubleEncodingTolerance` (5 tests: whole-payload
+   double-encoded acceptance, still-rejects-triple-encoded,
+   still-rejects-a-plain-json-encoded-sentence, still-rejects-a-
+   json-encoded-number, normal-payload-unchanged) and
+   `TestFieldLevelDoubleEncodingTolerance` (8 tests: field-level
+   double-encoded acceptance for relations/attributes/axioms/detection
+   `candidate_entities`, still-rejects-triple-encoded,
+   still-rejects-a-non-json-string, still-rejects-a-json-string-decoding-
+   to-a-number, still-validates-item-shape-after-unwrap).
+4. `tests/units/agents/test_owl_generator_staged.py`
+   Added to `TestInferAttributes`: `test_double_encoded_attributes_field_
+   is_accepted`, `test_whole_payload_double_encoded_is_accepted` (both
+   end-to-end through the real orchestrator, `mock_llm.call_count == 1`),
+   and `test_still_invalid_after_one_decode_is_rejected_no_second_call`
+   (triple-encoded field, `rejected=True`, exactly one LLM call — no
+   second finalization call).
+5. `tests/eval/staged_contract.py`
+   Added `_c_accepts_double_encoded_list_field`, mapped to the new
+   `accepts_double_encoded_list_field` constraint kind — builds the
+   completion draft from the dataset row's own `input.draft` (never a
+   hand-picked literal), scripts a double-encoded `attributes` field
+   answer, and asserts `infer_attributes` succeeds with the correctly
+   unwrapped `domain` — a real behavioural check, never the neutral-1.0
+   "unmapped kind" default.
+6. `tests/eval/run_agent_owl_generator.py`
+   `_MIN_STAGED_EXAMPLES` raised `16` -> `17`.
+7. `tests/eval/datasets/agent_owl_generator/baseline.jsonl` and
+   `.planning/agents/agent_owl_generator/eval/dataset.jsonl`
+   (byte-identical mirrors)
+   Appended `staged-double-encoded-payload-001`: a `complete_attributes`
+   row (one locked anchor + one included candidate, `cand-6`) whose
+   scripted constraint (`accepts_double_encoded_list_field`) requires
+   acceptance of a double-encoded `attributes` field with the domain
+   correctly unwrapped to `cand-6`.
+8. `.planning/agents/agent_owl_generator/SPEC.md`
+   Added the "JSON double-encoding under `response_format` json_schema
+   (residual, this revision)" failure-mode row to §6 with full detail;
+   documented the dataset floor raise `16` -> `17` and the new regression
+   row in §7; appended the full sign-off entry to §10 with RED/GREEN
+   evidence, the deterministic/offline eval result, the full-suite result,
+   and the live verification result.
+
+### RED/GREEN evidence
+
+RED confirmed by running the 13 new `test_owl_generator_schemas.py` tests
+against the pre-fix source (no `_unwrap_double_encoded` in `schemas.py`):
+exactly 5 failures — `test_whole_payload_double_encoded_json_string_is_
+accepted`, and the 4 field-level `*_is_unwrapped` tests for
+attributes/relations/axioms/detection — all with the pre-fix rejection
+messages (`structured output must be a JSON object` /
+`output must contain a '<key>' list`); the 8 still-reject/unchanged tests
+in the same run already passed, as expected, since those code paths were
+untouched by the fix. GREEN after implementing `_unwrap_double_encoded`
+and wiring it into `parse_json_object`/`_require_list`/
+`parse_detection_payload`: all 47 tests in the file pass, plus the 3 new
+`test_owl_generator_staged.py::TestInferAttributes` integration tests.
+
+### Deterministic/offline eval (unchanged gate, unweakened)
+
+`uv run --frozen python tests/eval/run_agent_owl_generator.py` → all 17
+staged examples PASS (including the new `staged-double-encoded-payload-
+001` scoring `1.000`), staged-contract aggregate `1.000` (threshold
+`0.950`); all 10 parsed-corpus cases PASS, aggregate `1.000` (threshold
+`0.900`).
+
+### Live verification (read-only, exactly ONE `infer_attributes` call, against the user's own endpoint `benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`)
+
+Rebuilt a `COMPLETING`-stage `GenerateDraft` from the live session
+`fastapi_session/b3bd26a3fbe54f89895b0cfcfbff1feb`'s
+`domain_data.ontology.classes` (15 real ontology classes, via
+`GenerateDraft.build_locked_anchors_from_classes` — read-only, the session
+file was only read, never written) as locked anchors, plus 2 dummy
+included candidates, with the `relations` checkpoint marked `done` (a
+minimal valid relations result referencing only closed ids) so the
+ordering gate allowed `infer_attributes` to start. Called the production
+`staged.infer_attributes` directly with `databricks auth token --profile
+DEFAULT --output json` credentials (never printed/logged). Result:
+`success=True`, `rejected=False`, 105 attributes returned, every returned
+`domain` id confirmed a member of `closed_entity_ids()` (all 15 anchor
+ids used; the 2 dummy candidates were not grounded in any evidence, so the
+model reasonably did not attribute them). `infer_attributes` never
+mutates the ontology, so this call was read-only by construction.
+
+### Concerns (residual)
+
+The live call above did not itself trip the double-encoding shape (the
+endpoint answered correctly-shaped JSON on this attempt), so it is
+evidence that `infer_attributes` still works end-to-end against this
+endpoint, not direct proof that a double-encoded wire response was
+unwrapped live — per this task's own instruction, no repeated paid live
+calls were made to force-reproduce an intermittent endpoint quirk. The
+deterministic unit/staged tests above are the actual gate for the fix
+itself and cover every shape (whole-payload, field-level, still-reject
+after one decode) offline and deterministically.
+
+Modified/added files:
+- `src/agents/agent_owl_generator/schemas.py`
+- `tests/units/agents/test_owl_generator_schemas.py`
+- `tests/units/agents/test_owl_generator_staged.py`
+- `tests/eval/staged_contract.py`
+- `tests/eval/run_agent_owl_generator.py`
+- `tests/eval/datasets/agent_owl_generator/baseline.jsonl`
+- `.planning/agents/agent_owl_generator/eval/dataset.jsonl`
+- `.planning/agents/agent_owl_generator/SPEC.md`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6759 passed,
+304 skipped, 6 deselected, 1 xfailed, 32 warnings in 56.42s.

@@ -58,7 +58,13 @@ THRESHOLDS = ROOT / "tests/eval/thresholds.yaml"
 # tool-call traces. This check keeps the staged rows represented and
 # structurally executable now, without weakening the existing parsed-corpus
 # contract check above.
-_MIN_STAGED_EXAMPLES = 16
+#
+# Raised 16 -> 17 (this revision, residual JSON double-encoding fix): new
+# regression row `staged-double-encoded-payload-001` proves the
+# `schemas._unwrap_double_encoded` one-decode tolerance end-to-end through
+# the real `infer_attributes` orchestrator (`accepts_double_encoded_list_
+# field` constraint kind) — see SPEC.md §7/§10.
+_MIN_STAGED_EXAMPLES = 17
 _REQUIRED_STAGED_CONSTRAINT_FIELDS = {"kind", "value"}
 
 # Every required staged topic must be exercised by at least one staged

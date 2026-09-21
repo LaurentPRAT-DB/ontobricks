@@ -133,6 +133,42 @@ def _strip_fences(text: str) -> str:
     return match.group(1) if match else (text or "")
 
 
+# ---------------------------------------------------------------------------
+# Residual live-reliability bug (JSON double-encoding under
+# `response_format` json_schema): Claude Sonnet endpoints
+# (`databricks-claude-sonnet-5`, and the user's own
+# `benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`) intermittently
+# return a JSON-schema-constrained value ENCODED AS A STRING rather than the
+# raw JSON value the schema demands — e.g. a list-typed field comes back as
+# `"[{...}]"` instead of `[{...}]`, or the entire payload comes back as a
+# JSON string holding the real object as its value (`content =
+# "{\"attributes\": [...]}"`). This is an endpoint/transport quirk, not a
+# free-text/prose answer, so the tolerance below is narrow and
+# deterministic: exactly ONE extra `json.loads` is attempted on a `str`
+# value, and its result is used ONLY if it is already the expected type.
+# No loop, no regex/prose extraction — anything else (not a `str` to begin
+# with, a second decode that raises, or a second decode that still isn't
+# `expected`) falls through unchanged and is rejected by the caller's own
+# existing type check, exactly as before this fix.
+# ---------------------------------------------------------------------------
+
+
+def _unwrap_double_encoded(value: Any, *, expected: type) -> Any:
+    """Undo at most one level of JSON-string double-encoding.
+
+    Returns *value* unchanged unless it is a ``str`` that decodes (via a
+    single ``json.loads``) into an instance of *expected* — in which case
+    the decoded value is returned instead. Never attempts a second decode.
+    """
+    if not isinstance(value, str):
+        return value
+    try:
+        decoded = json.loads(value)
+    except (ValueError, TypeError):
+        return value
+    return decoded if isinstance(decoded, expected) else value
+
+
 def parse_json_object(text: str) -> Dict[str, Any]:
     """Parse *text* (fence-tolerant) into a JSON object or reject it."""
     stripped = _strip_fences(text).strip()
@@ -142,6 +178,11 @@ def parse_json_object(text: str) -> Dict[str, Any]:
         data = json.loads(stripped)
     except (ValueError, TypeError) as exc:
         raise SchemaValidationError(f"output is not valid JSON: {exc}") from exc
+    if isinstance(data, str):
+        # Whole-payload double-encoding quirk (see module note above): the
+        # wire content was itself a JSON string whose value is the real
+        # object. One extra decode; accepted only if it yields a dict.
+        data = _unwrap_double_encoded(data, expected=dict)
     if not isinstance(data, dict):
         raise SchemaValidationError("structured output must be a JSON object")
     return data
@@ -191,6 +232,11 @@ def parse_detection_payload(
     """
     data = parse_json_object(text)
     raw = data.get("candidate_entities")
+    if isinstance(raw, str):
+        # Field-level double-encoding quirk (see module note by
+        # `_unwrap_double_encoded` above): one extra decode, accepted only
+        # if it yields a list.
+        raw = _unwrap_double_encoded(raw, expected=list)
     if not isinstance(raw, list):
         raise SchemaValidationError(
             "detection output must contain a 'candidate_entities' list"
@@ -396,6 +442,12 @@ def build_axioms_response_format(closed_ids: Iterable[str]) -> Dict[str, Any]:
 
 def _require_list(data: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
     raw = data.get(key)
+    if isinstance(raw, str):
+        # Field-level double-encoding quirk (see module note above): the
+        # list-typed field came back as a JSON string holding the real
+        # array as its value. One extra decode; accepted only if it
+        # yields a list.
+        raw = _unwrap_double_encoded(raw, expected=list)
     if not isinstance(raw, list):
         raise SchemaValidationError(f"output must contain a '{key}' list")
     for item in raw:

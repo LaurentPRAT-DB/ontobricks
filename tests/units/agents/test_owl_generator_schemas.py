@@ -10,6 +10,8 @@ referenced-id extractors feed the Stage-3 entity-closure check.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from back.objects.ontology.GenerateDraft import (
@@ -299,6 +301,118 @@ class TestParseAxiomsPayload:
             schemas.parse_axioms_payload(
                 '{"axioms": [{"kind": "subClassOf", "object": "cls-Customer-a1"}]}'
             )
+
+
+# ---------------------------------------------------------------------------
+# Residual live-reliability bug: transport-level JSON double-encoding.
+#
+# Under `response_format` json_schema, Claude Sonnet endpoints
+# (`databricks-claude-sonnet-5`, and the user's own
+# `benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`) intermittently
+# double-encode the structured answer: a list-typed field's value comes
+# back as a JSON-encoded STRING instead of the raw JSON array (e.g.
+# `{"attributes": "[{...}]"}`), or the ENTIRE payload comes back as a
+# JSON-encoded string holding the real object as its value (e.g.
+# `content = "{\"attributes\": [...]}"`). This is an endpoint/transport
+# quirk, not free-text prose — the tolerance is exactly ONE extra
+# `json.loads`, accepted only if it yields the required type; anything
+# else (not a str, a second decode that still isn't the right shape, a
+# second decode that fails outright) is rejected exactly as before, with
+# no further decoding and no loop.
+# ---------------------------------------------------------------------------
+
+
+class TestWholePayloadDoubleEncodingTolerance:
+    def test_whole_payload_double_encoded_json_string_is_accepted(self):
+        # The wire content is a JSON string whose value IS the real object
+        # — exactly the reported shape (`content = "{\"attributes\": [...]}"`).
+        real = {
+            "attributes": [
+                {"label": "orderDate", "domain": "cand-6", "datatype": "xsd:date"}
+            ]
+        }
+        double_encoded = json.dumps(json.dumps(real))
+        result = schemas.parse_attributes_payload(double_encoded)
+        assert result["attributes"][0]["label"] == "orderDate"
+
+    def test_whole_payload_still_rejects_triple_encoded(self):
+        # A second level of encoding beyond the tolerated one still isn't a
+        # dict after the single extra decode — rejected, not decoded again.
+        real = {"attributes": []}
+        triple_encoded = json.dumps(json.dumps(json.dumps(real)))
+        with pytest.raises(schemas.SchemaValidationError):
+            schemas.parse_attributes_payload(triple_encoded)
+
+    def test_whole_payload_still_rejects_a_plain_json_encoded_sentence(self):
+        # After the one tolerated decode this is a plain string, not a
+        # dict — rejected with the same clear message, no further attempts.
+        payload = json.dumps("just a sentence, not an object")
+        with pytest.raises(schemas.SchemaValidationError):
+            schemas.parse_json_object(payload)
+
+    def test_whole_payload_rejects_a_json_encoded_number(self):
+        # Not a str in the first place (json.loads("42") == 42) — no decode
+        # tolerance applies; rejected immediately as before.
+        with pytest.raises(schemas.SchemaValidationError):
+            schemas.parse_json_object("42")
+
+    def test_normal_already_correct_payload_still_parses_unchanged(self):
+        payload = '{"attributes": [{"label": "x", "domain": "cand-6", "datatype": "xsd:string"}]}'
+        result = schemas.parse_attributes_payload(payload)
+        assert result["attributes"][0]["label"] == "x"
+
+
+class TestFieldLevelDoubleEncodingTolerance:
+    def test_attributes_field_double_encoded_string_is_unwrapped(self):
+        inner = [{"label": "orderDate", "domain": "cand-6", "datatype": "xsd:date"}]
+        payload = json.dumps({"attributes": json.dumps(inner)})
+        result = schemas.parse_attributes_payload(payload)
+        assert result["attributes"][0]["label"] == "orderDate"
+
+    def test_relations_field_double_encoded_string_is_unwrapped(self):
+        inner = [{"label": "placesOrder", "domain": "cls-Customer-a1", "range": "cand-6"}]
+        payload = json.dumps({"relations": json.dumps(inner)})
+        result = schemas.parse_relations_payload(payload)
+        assert result["relations"][0]["label"] == "placesOrder"
+
+    def test_axioms_field_double_encoded_string_is_unwrapped(self):
+        inner = [{"kind": "subClassOf", "subject": "cand-6", "object": "cls-Customer-a1"}]
+        payload = json.dumps({"axioms": json.dumps(inner)})
+        result = schemas.parse_axioms_payload(payload)
+        assert result["axioms"][0]["kind"] == "subClassOf"
+
+    def test_detection_candidate_entities_field_double_encoded_string_is_unwrapped(self):
+        inner = [{"canonical_label": "Carrier"}]
+        payload = json.dumps({"candidate_entities": json.dumps(inner)})
+        candidates = schemas.parse_detection_payload(payload)
+        assert [c.canonical_label for c in candidates] == ["Carrier"]
+
+    def test_field_level_still_rejects_triple_encoded(self):
+        # One extra decode of a triple-encoded field yields a STRING (the
+        # single-encoded form), not a list — rejected, not decoded again.
+        inner = [{"label": "x", "domain": "cand-6", "datatype": "xsd:string"}]
+        triple_encoded_field = json.dumps(json.dumps(inner))
+        payload = json.dumps({"attributes": triple_encoded_field})
+        with pytest.raises(schemas.SchemaValidationError):
+            schemas.parse_attributes_payload(payload)
+
+    def test_field_level_still_rejects_a_string_that_is_not_json_at_all(self):
+        payload = json.dumps({"attributes": "not json at all {{{"})
+        with pytest.raises(schemas.SchemaValidationError):
+            schemas.parse_attributes_payload(payload)
+
+    def test_field_level_still_rejects_a_json_string_decoding_to_a_number(self):
+        # Decodes fine but isn't a list — rejected exactly like before.
+        payload = json.dumps({"attributes": "42"})
+        with pytest.raises(schemas.SchemaValidationError):
+            schemas.parse_attributes_payload(payload)
+
+    def test_field_level_tolerance_still_validates_item_shape(self):
+        # The unwrapped list must still contain JSON objects — a decoded
+        # list of non-dict items is rejected exactly like a non-encoded one.
+        payload = json.dumps({"attributes": json.dumps(["not-an-object"])})
+        with pytest.raises(schemas.SchemaValidationError):
+            schemas.parse_attributes_payload(payload)
 
 
 # ---------------------------------------------------------------------------

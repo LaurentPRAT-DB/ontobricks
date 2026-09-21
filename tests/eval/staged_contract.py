@@ -624,6 +624,55 @@ def _c_rejects_bracketed_id_ref(example, constraint) -> bool:
     )
 
 
+def _c_accepts_double_encoded_list_field(example, constraint) -> bool:
+    """Residual live-reliability bug (JSON double-encoding under
+    ``response_format`` json_schema): Claude Sonnet endpoints
+    (``databricks-claude-sonnet-5``, and the user's own
+    ``benoit_cayla.ontobricks-todrop.monclaudesonnetamoi``) intermittently
+    return a list-typed field's value as a JSON-encoded STRING instead of
+    the raw array (e.g. ``{"attributes": "[{...}]"}"``) rather than the
+    array itself. Proves the one-decode tolerance
+    (``schemas._unwrap_double_encoded``) unwraps that exact shape and the
+    real ``infer_attributes`` orchestrator still succeeds with a correctly
+    parsed result — built from the example's own ``input.draft`` (never a
+    hand-picked literal), never a second finalization call."""
+    domain_id = str(constraint["value"])
+    draft_cfg = example.get("input", {}).get("draft", {})
+    anchors = [
+        _anchor(a["id"], a.get("canonical_label", a["id"]))
+        for a in draft_cfg.get("existing_anchors", [])
+    ]
+    candidates = [
+        _candidate(
+            c.get("canonical_label", c["id"]), c["id"], included=c.get("included", True)
+        )
+        for c in draft_cfg.get("candidate_entities", [])
+    ]
+    draft = GenerateDraft.new(
+        source_fingerprint="s", existing_anchors=anchors, candidate_entities=candidates
+    ).with_checkpoint("relations", CHECKPOINT_DONE, result={"relations": []})
+    inner = json.dumps(
+        [
+            {
+                "label": "orderDate",
+                "domain": domain_id,
+                "datatype": "xsd:date",
+                "evidence": None,
+            }
+        ]
+    )
+    payload = json.dumps({"attributes": inner})
+    with patch.object(staged, "call_serving_endpoint") as mock_llm:
+        mock_llm.side_effect = [_answer(payload)]
+        result = staged.infer_attributes(host="h", token="t", endpoint_name="e", draft=draft)
+    return (
+        result.success
+        and not result.rejected
+        and mock_llm.call_count == 1
+        and result.result.get("attributes", [{}])[0].get("domain") == domain_id
+    )
+
+
 def _c_does_not_merge_on_rejection(_e, _c) -> bool:
     # A rejected substage returns success=False and does not persist a result.
     draft = GenerateDraft.new(
@@ -730,6 +779,7 @@ _CHECKS: Dict[str, Callable[[dict, dict], bool]] = {
     "does_not_rerun": _c_does_not_rerun,
     "rejects_reference_to_excluded_entity": _c_rejects_excluded_ref,
     "rejects_bracketed_id_reference": _c_rejects_bracketed_id_ref,
+    "accepts_double_encoded_list_field": _c_accepts_double_encoded_list_field,
     "does_not_merge_on_rejection": _c_does_not_merge_on_rejection,
     "does_not_call_document_tools": _c_no_document_tools,
     "uses_persisted_evidence_only": _c_uses_persisted_evidence_only,

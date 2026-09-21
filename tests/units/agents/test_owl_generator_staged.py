@@ -24,6 +24,8 @@ endpoint is needed.
 
 from __future__ import annotations
 
+import json
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -544,6 +546,52 @@ class TestInferAttributes:
         rf = mock_llm.call_args_list[0].kwargs["response_format"]
         item = rf["json_schema"]["schema"]["properties"]["attributes"]["items"]
         assert set(item["properties"]["domain"]["enum"]) == draft.closed_entity_ids()
+
+    # -----------------------------------------------------------------
+    # Residual live-reliability bug: JSON double-encoding under
+    # `response_format` json_schema (see `schemas._unwrap_double_encoded`).
+    # Claude Sonnet endpoints intermittently return a list-typed field's
+    # value as a JSON-encoded STRING instead of the raw array. Proves the
+    # one-decode tolerance unwraps that shape end-to-end through the real
+    # `infer_attributes` orchestrator (schema parse + closure check both
+    # still run), and that a shape still wrong after the one tolerated
+    # decode is rejected reject-only with exactly one LLM call — no second
+    # finalization call either way.
+    # -----------------------------------------------------------------
+
+    def test_double_encoded_attributes_field_is_accepted(self):
+        draft = _draft(relations_done=True)
+        inner = [{"label": "orderDate", "domain": "cand-6", "datatype": "xsd:date"}]
+        payload = json.dumps({"attributes": json.dumps(inner)})
+        result, mock_llm = self._run([_answer(payload)], draft)
+        assert result.success is True
+        assert result.result["attributes"][0]["label"] == "orderDate"
+        assert mock_llm.call_count == 1
+
+    def test_whole_payload_double_encoded_is_accepted(self):
+        draft = _draft(relations_done=True)
+        real = {
+            "attributes": [
+                {"label": "orderDate", "domain": "cand-6", "datatype": "xsd:date"}
+            ]
+        }
+        payload = json.dumps(json.dumps(real))
+        result, mock_llm = self._run([_answer(payload)], draft)
+        assert result.success is True
+        assert result.result["attributes"][0]["label"] == "orderDate"
+        assert mock_llm.call_count == 1
+
+    def test_still_invalid_after_one_decode_is_rejected_no_second_call(self):
+        # Triple-encoded: one extra decode still yields a string, not a
+        # list — rejected reject-only, never a second finalization call.
+        draft = _draft(relations_done=True)
+        inner = [{"label": "x", "domain": "cand-6", "datatype": "xsd:string"}]
+        triple_encoded_field = json.dumps(json.dumps(inner))
+        payload = json.dumps({"attributes": triple_encoded_field})
+        result, mock_llm = self._run([_answer(payload)], draft)
+        assert result.success is False
+        assert result.rejected is True
+        assert mock_llm.call_count == 1
 
 
 # ---------------------------------------------------------------------------
