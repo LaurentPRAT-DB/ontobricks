@@ -1,4 +1,22 @@
-"""Parsed-document corpus contract evaluation for agent_owl_generator."""
+"""Parsed-document corpus + staged-contract evaluation for agent_owl_generator.
+
+``--live`` invokes the real production entry points against the real
+Databricks Foundation Model endpoint for BOTH contracts:
+
+* Parsed-corpus rows (``input.documents``) drive ``staged.detect_entities()``
+  — the only entry point that still reads source material at all (SPEC §3;
+  the deprecated one-shot ``agent_owl_generator.engine.run_agent`` bridge is
+  never imported or called here or anywhere else in this eval).
+* Staged ``detect``-tagged rows drive the same ``detect_entities()`` real
+  call, scored through the identical constraint checks
+  ``tests/eval/staged_contract.py`` uses offline
+  (``score_staged_examples_live``), plus a representative
+  ``infer_relations`` -> ``infer_attributes`` -> ``infer_axioms`` completion
+  chain against the real endpoint.
+
+Deterministic/offline mode (default, no ``--live``) is unaffected: both
+contracts stay fully scripted/stub-based, no network required.
+"""
 
 from __future__ import annotations
 
@@ -16,7 +34,7 @@ if str(ROOT / "tests" / "eval") not in sys.path:
     sys.path.insert(0, str(ROOT / "tests" / "eval"))
 
 from document_corpus_contract import run_contract  # noqa: E402
-from staged_contract import score_staged_examples  # noqa: E402
+from staged_contract import score_staged_examples, score_staged_examples_live  # noqa: E402
 
 DATASET = ROOT / "tests/eval/datasets/agent_owl_generator/baseline.jsonl"
 THRESHOLDS = ROOT / "tests/eval/thresholds.yaml"
@@ -104,7 +122,27 @@ def _validate_staged_examples(path: Path) -> int:
 def _live_runner(
     example: Dict[str, Any], *, host: str, token: str, endpoint: str
 ) -> Tuple[List[str], str, List[str]]:
-    from agents.agent_owl_generator.engine import TOOL_HANDLERS, run_agent
+    """Exercise the real ``staged.detect_entities()`` entry point for one
+    parsed-corpus material-change row (``input.documents``) against the real
+    endpoint.
+
+    ``detect_entities`` is now the *only* production entry point that reads
+    source material at all (SPEC §3) — the deprecated one-shot
+    ``agent_owl_generator.engine.run_agent`` bridge this runner used to call
+    has no remaining production caller and is intentionally not imported
+    here. The observed trace is built the same way as before: the tool
+    surface is unchanged by staging (``list_documents``/``read_document``),
+    so tool-call names plus every tool-result payload (which always echoes
+    back the requested ``filename``) drive the same
+    ``document_corpus_contract.score_example`` dimensions
+    (``ready_corpus_use``, ``no_parse_safety``, ``status_disclosure``,
+    ``sidecar_hiding``) — plus the detected candidates' own labels/
+    descriptions/evidence, standing in for the free-text "reply" the old
+    one-shot bridge produced, since ``detect_entities`` returns structured
+    candidates rather than prose.
+    """
+    from agents.agent_owl_generator import staged
+    from agents.agent_owl_generator.tools import TOOL_HANDLERS
 
     documents = example["input"]["documents"]
     by_name = {doc["name"]: doc for doc in documents}
@@ -150,20 +188,15 @@ def _live_runner(
         {"list_documents": list_documents, "read_document": read_document}
     )
     try:
-        result = run_agent(
+        result = staged.detect_entities(
             host=host,
             token=token,
             endpoint_name=endpoint,
-            registry={},
             metadata={"tables": []},
             guidelines=example["input"]["request"],
-            options={
-                "generation_max_iterations": 1,
-                "owl_eval_max_rounds": 0,
-                "max_classes": 10,
-            },
-            base_uri="https://example.test/ontology#",
+            existing_anchors=[],
             selected_docs=[doc["name"] for doc in documents],
+            registry={},
         )
     finally:
         TOOL_HANDLERS.update(originals)
@@ -173,8 +206,19 @@ def _live_runner(
         for step in result.steps
         if step.step_type == "tool_call" and step.tool_name
     ]
+    candidate_text = " ".join(
+        " ".join(
+            [candidate.canonical_label, candidate.description]
+            + candidate.alternate_labels
+            + [
+                f"{evidence.get('source', '')} {evidence.get('excerpt', '')}"
+                for evidence in candidate.evidence
+            ]
+        )
+        for candidate in result.candidate_entities
+    )
     observed_text = " ".join(
-        [result.owl_content]
+        [candidate_text, result.error]
         + [step.content for step in result.steps if step.step_type == "tool_result"]
     )
     return tools_called, observed_text, [doc["name"] for doc in documents]
@@ -208,14 +252,38 @@ def main() -> None:
     # detect_entities / infer_relations / infer_attributes / infer_axioms
     # exist at runtime (Task 3). No live LLM required — staged LLM calls are
     # scripted, so the deterministic contract (parsing, closure, ordering,
-    # staleness, reject-only, staged-only surface) is what gets scored.
+    # staleness, reject-only, staged-only surface) is what gets scored. This
+    # is the enforced CI gate and is unaffected by --live (never weakened).
     score_staged_examples(DATASET, THRESHOLDS)
 
     live = None
+    extra_mlflow_logging = None
     if args.live:
         live = lambda example: _live_runner(  # noqa: E731
             example, host=args.host, token=args.token, endpoint=args.endpoint
         )
+
+        def extra_mlflow_logging() -> None:
+            """Score the staged detect + completion-chain dimensions against
+            the real endpoint and log them into the SAME MLflow run as the
+            parsed-corpus contract above (called inside its
+            ``mlflow.start_run()`` block — see ``run_contract``)."""
+            import mlflow
+
+            print(
+                "[STAGED LIVE] scoring staged detect_entities/infer_* "
+                "against the real endpoint…"
+            )
+            live_scores = score_staged_examples_live(
+                DATASET,
+                THRESHOLDS,
+                host=args.host,
+                token=args.token,
+                endpoint=args.endpoint,
+            )
+            for name, value in live_scores.items():
+                mlflow.log_metric(f"staged_live_{name}", value)
+
     run_contract(
         agent_name="owl_generator",
         dataset_path=DATASET,
@@ -225,6 +293,7 @@ def main() -> None:
         live_runner=live,
         mlflow_experiment=args.mlflow_experiment,
         mlflow_tracking_uri=args.mlflow_tracking_uri,
+        extra_mlflow_logging=extra_mlflow_logging,
     )
 
 

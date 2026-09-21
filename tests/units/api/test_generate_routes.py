@@ -19,7 +19,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from back.core.errors import OntoBricksError, ValidationError
+from back.core.errors import GoneError, OntoBricksError, ValidationError
 from back.objects.ontology import GenerateWorkflow as wf
 from back.objects.ontology.GenerateDraft import GenerateDraft, GenerateEntity
 
@@ -373,3 +373,5 @@ class TestLegacyOneShotRouteGone:
             await routes.generate_ontology_async()
 
         assert exc_info.value.status_code == 410
+        # Typed subclass, not the raw base error (§4 minor closure).
+        assert isinstance(exc_info.value, GoneError)

@@ -159,8 +159,17 @@ def run_contract(
     ] | None = None,
     mlflow_experiment: str | None = None,
     mlflow_tracking_uri: str | None = None,
+    extra_mlflow_logging: Callable[[], None] | None = None,
 ) -> float:
-    """Run dry stub validation or live observations and return aggregate score."""
+    """Run dry stub validation or live observations and return aggregate score.
+
+    ``extra_mlflow_logging``, if given, is called once *inside* the same
+    ``mlflow.start_run()`` block used for this contract's own metrics (only
+    when ``not dry_run and mlflow_experiment``) — e.g. so a caller's staged
+    live-eval evidence lands in the same MLflow run as the parsed-corpus
+    contract's ``judge_score``/dimension metrics instead of a disconnected
+    second run.
+    """
     examples = load_examples(dataset_path)
     threshold = yaml.safe_load(thresholds_path.read_text(encoding="utf-8"))[
         agent_name
@@ -194,6 +203,8 @@ def run_contract(
                 mlflow.log_metric(dimension, value)
             mlflow.log_artifact(str(dataset_path))
             print(f"MLflow run: {run.info.run_id}")
+            if extra_mlflow_logging is not None:
+                extra_mlflow_logging()
 
     if aggregate < threshold:
         raise SystemExit(

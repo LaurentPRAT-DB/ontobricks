@@ -12,6 +12,7 @@ from fastapi import APIRouter, Request, Depends
 
 from api.routers.internal._helpers import map_route_errors
 from back.core.errors import (
+    GoneError,
     InfrastructureError,
     NotFoundError,
     OntoBricksError,
@@ -1844,12 +1845,11 @@ async def generate_ontology_async():
     * ``POST /ontology/wizard/generate/draft/discard`` — Stage 2 (discard)
     * ``POST /ontology/wizard/generate/complete`` — Stage 3 (complete + merge)
     """
-    raise OntoBricksError(
+    raise GoneError(
         "This one-shot Generate route has been removed. Use the staged "
         "workflow: POST /ontology/wizard/generate/detect, "
         "GET/POST /ontology/wizard/generate/draft(/update|/discard), "
-        "POST /ontology/wizard/generate/complete.",
-        status_code=410,
+        "POST /ontology/wizard/generate/complete."
     )
 
 

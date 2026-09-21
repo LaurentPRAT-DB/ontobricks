@@ -37,6 +37,11 @@
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: back.core.errors.GoneError
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 .. automodule:: back.core.errors.ErrorResponse
    :members:
    :undoc-members:

@@ -15,13 +15,30 @@ scripted so the deterministic contract is what gets scored.
 Every check returns a 1.0/0.0 score; an example's score is the mean over its
 declared constraints; the aggregate is the mean over staged examples and is
 gated by ``thresholds.yaml``'s ``owl_generator.staged_contract``.
+
+**Live mode** (``score_staged_examples_live``, used by
+``tests/eval/run_agent_owl_generator.py --live``): the module-level
+``live_endpoint()`` context manager retargets ``_run_detection_for_example``
+— and therefore every ``detect``-tagged check above (``_c_all_included``,
+``_c_excludes_anchor``, ``_c_excludes_anchor_alt``, ``_c_min_new_candidates``,
+``_c_synonyms_as_alt``, ``_c_no_separate_synonym``, ``_c_does_not_parse``) —
+from the scripted mock to the real Databricks Foundation Model endpoint, so
+the *same* constraint dimensions above are scored against real
+``detect_entities()`` output instead of a canned answer. A representative
+``infer_relations`` -> ``infer_attributes`` -> ``infer_axioms`` completion
+chain is additionally run live end-to-end (Stage 3's changed prompt/tool
+paths have no ``staged``-tagged "happy path" row of their own — every
+completion-tagged row is deliberately adversarial/scripted-invalid, which a
+real endpoint cannot be made to reproduce on demand) and scored for entity
+closure and no-document-tool-access, the same properties the deterministic
+adversarial checks assert.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 from unittest.mock import patch
 
 import yaml
@@ -36,6 +53,7 @@ from back.objects.ontology.GenerateDraft import (
     _SUBSTAGE_ORDER,
 )
 from agents.agent_owl_generator import schemas, staged
+from agents.agent_owl_generator.tools import TOOL_HANDLERS
 
 
 # ---------------------------------------------------------------------------
@@ -134,17 +152,149 @@ def _build_scripted_detection_payload(example: dict) -> dict:
     return {"candidate_entities": candidates}
 
 
-def _run_detection_for_example(example: dict):
+# ---------------------------------------------------------------------------
+# Live-endpoint plumbing (real Databricks Foundation Model calls)
+# ---------------------------------------------------------------------------
+#
+# `_LIVE_ENDPOINT` retargets `_run_detection_for_example` — and therefore
+# every detect-tagged `_c_*` check — from the scripted mock to a real
+# endpoint for the duration of a `with live_endpoint(...):` block, with no
+# change to the check functions themselves. `_LIVE_DETECTION_CACHE` caches
+# one real detection call per dataset row (keyed by example id) so a row with
+# N constraints costs one live LLM round-trip, not N.
+
+_LIVE_ENDPOINT: Optional[Dict[str, str]] = None
+_LIVE_DETECTION_CACHE: Dict[str, Any] = {}
+
+
+class _LiveEndpointContext:
+    def __init__(self, host: str, token: str, endpoint: str) -> None:
+        self._config = {"host": host, "token": token, "endpoint": endpoint}
+        self._previous: Optional[Dict[str, str]] = None
+
+    def __enter__(self) -> "_LiveEndpointContext":
+        global _LIVE_ENDPOINT
+        self._previous = _LIVE_ENDPOINT
+        _LIVE_ENDPOINT = self._config
+        _LIVE_DETECTION_CACHE.clear()
+        return self
+
+    def __exit__(self, *exc_info: Any) -> None:
+        global _LIVE_ENDPOINT
+        _LIVE_ENDPOINT = self._previous
+        _LIVE_DETECTION_CACHE.clear()
+
+
+def live_endpoint(host: str, token: str, endpoint: str) -> _LiveEndpointContext:
+    """Context manager routing ``_run_detection_for_example``'s orchestrator
+    call at the real Databricks endpoint instead of the scripted mock, for
+    the duration of the ``with`` block. Used by ``score_staged_examples_live``."""
+    return _LiveEndpointContext(host, token, endpoint)
+
+
+def _live_document_tools(corpus: List[Dict[str, Any]]):
+    """Build real ``list_documents``/``read_document`` handlers backed by one
+    dataset row's own ``input.corpus`` — mirrors the parsed-corpus contract's
+    live wiring (``tests/eval/run_agent_owl_generator.py``) so a live
+    detection run reads the row's actual documents through the same no-
+    reparse tool surface production traffic uses, not a network document
+    store."""
+    by_name = {doc["name"]: doc for doc in corpus if doc.get("name")}
+
+    def list_documents(_ctx, **_kwargs):
+        files = [
+            {
+                "name": doc["name"],
+                "size": len(doc.get("content", "")),
+                "parse_status": doc.get("parse_status", "ready"),
+            }
+            for doc in corpus
+        ]
+        return json.dumps({"files": files, "count": len(files)})
+
+    def read_document(_ctx, *, filename: str = "", **_kwargs):
+        doc = by_name.get(filename)
+        if doc is None:
+            return json.dumps({"filename": filename, "error": "Document not found"})
+        if doc.get("parse_status", "ready") != "ready":
+            return json.dumps(
+                {
+                    "filename": filename,
+                    "parse_status": doc["parse_status"],
+                    "error": doc.get("error") or "Document parsing is not ready",
+                }
+            )
+        return json.dumps(
+            {
+                "filename": filename,
+                "parse_status": "ready",
+                "content": doc.get("content", ""),
+                "size": len(doc.get("content", "")),
+                "truncated": bool(doc.get("truncated")),
+            }
+        )
+
+    return list_documents, read_document
+
+
+def _run_detection_live(example: dict):
     """Run the REAL ``staged.detect_entities()`` orchestrator for one
+    detection dataset row against the real endpoint in ``_LIVE_ENDPOINT`` —
+    no LLM call is scripted; ``call_serving_endpoint`` is only spied on
+    (``wraps=``) so its ``tools=``/``trace_name=`` kwargs stay inspectable."""
+    anchors = _existing_anchors_from_example(example)
+    metadata = example.get("input", {}).get("metadata") or {"tables": []}
+    corpus = example.get("input", {}).get("corpus") or []
+    selected_docs = [d.get("name") for d in corpus if d.get("name")]
+    list_documents, read_document = _live_document_tools(corpus)
+
+    originals = {
+        "list_documents": TOOL_HANDLERS["list_documents"],
+        "read_document": TOOL_HANDLERS["read_document"],
+    }
+    TOOL_HANDLERS.update({"list_documents": list_documents, "read_document": read_document})
+    try:
+        with patch.object(
+            staged, "call_serving_endpoint", wraps=staged.call_serving_endpoint
+        ) as spy_llm:
+            result = staged.detect_entities(
+                host=_LIVE_ENDPOINT["host"],
+                token=_LIVE_ENDPOINT["token"],
+                endpoint_name=_LIVE_ENDPOINT["endpoint"],
+                metadata=metadata,
+                guidelines="Detect the core entities of the domain.",
+                existing_anchors=anchors,
+                selected_docs=selected_docs,
+                registry={},
+            )
+    finally:
+        TOOL_HANDLERS.update(originals)
+    return result, spy_llm
+
+
+def _run_detection_for_example(example: dict):
+    """Run the real ``staged.detect_entities()`` orchestrator for one
     detection dataset row.
 
-    Existing anchors, metadata, and selected docs come from the example's own
-    ``input`` — only ``staged.call_serving_endpoint`` is scripted (offline,
-    deterministic). A ``get_metadata`` tool round-trip is dispatched for real
-    first (offline-safe: it only reads ``ctx.metadata``, no network) so the
-    tool surface/dispatch asserted by callers reflects what the production
-    code path actually offered/ran, not a hand-picked static list.
+    Offline (default): existing anchors, metadata, and selected docs come
+    from the example's own ``input`` — only ``staged.call_serving_endpoint``
+    is scripted (deterministic, no network). A ``get_metadata`` tool
+    round-trip is dispatched for real first (offline-safe: it only reads
+    ``ctx.metadata``, no network) so the tool surface/dispatch asserted by
+    callers reflects what the production code path actually offered/ran,
+    not a hand-picked static list.
+
+    Live (inside a ``with live_endpoint(...):`` block): delegates to
+    ``_run_detection_live`` — the real Foundation Model endpoint answers for
+    real, cached per example id so repeated constraint checks on the same
+    row cost one live call, not one per constraint.
     """
+    if _LIVE_ENDPOINT is not None:
+        cache_key = str(example.get("id", ""))
+        if cache_key not in _LIVE_DETECTION_CACHE:
+            _LIVE_DETECTION_CACHE[cache_key] = _run_detection_live(example)
+        return _LIVE_DETECTION_CACHE[cache_key]
+
     anchors = _existing_anchors_from_example(example)
     metadata = example.get("input", {}).get("metadata") or {"tables": []}
     corpus = example.get("input", {}).get("corpus") or []
@@ -550,3 +700,135 @@ def score_staged_examples(dataset_path: Path, thresholds_path: Path) -> float:
             f"Staged contract {aggregate:.3f} is below {threshold:.3f}"
         )
     return aggregate
+
+
+# ---------------------------------------------------------------------------
+# Live scoring (real Foundation Model endpoint) — evidence, not a CI gate.
+# ---------------------------------------------------------------------------
+
+
+def _run_live_completion_chain(
+    *, host: str, token: str, endpoint: str
+) -> Dict[str, Dict[str, Any]]:
+    """Exercise ``infer_relations`` -> ``infer_attributes`` -> ``infer_axioms``
+    end-to-end against the real endpoint for one representative, non-
+    adversarial closed entity set (one locked anchor + one included
+    candidate — the same shape as ``_closed_draft()``), chaining each real
+    structured output into the next substage's checkpoint exactly as
+    ``GenerateWorkflow.run_completion`` does in production. Stops at the
+    first substage that does not succeed (ordering is strict — see
+    ``staged._ordering_error``), so a real endpoint hiccup does not throw
+    away already-collected evidence for the earlier substages.
+
+    Returns one entry per substage actually attempted:
+    ``{"success", "rejected", "error", "tools_kwarg"}`` — ``tools_kwarg`` is
+    the real ``tools=`` kwarg observed on that substage's (spied, not
+    scripted) LLM call, so ``does_not_call_document_tools`` is checkable
+    against a real call the same way the deterministic ``_c_no_document_tools``
+    check verifies it against a scripted one.
+    """
+    draft = GenerateDraft.new(
+        source_fingerprint="sha256:live-completion-chain",
+        existing_anchors=[_anchor("cls-Customer-a1", "Customer")],
+        candidate_entities=[_candidate("Carrier", "cand-live-carrier")],
+    )
+    stages = (
+        ("relations", staged.infer_relations),
+        ("attributes", staged.infer_attributes),
+        ("axioms", staged.infer_axioms),
+    )
+    outcomes: Dict[str, Dict[str, Any]] = {}
+    for substage, fn in stages:
+        with patch.object(
+            staged, "call_serving_endpoint", wraps=staged.call_serving_endpoint
+        ) as spy_llm:
+            result = fn(host=host, token=token, endpoint_name=endpoint, draft=draft)
+        tools_kwarg = (
+            spy_llm.call_args_list[0].kwargs.get("tools")
+            if spy_llm.call_args_list
+            else "not_called"
+        )
+        outcomes[substage] = {
+            "success": result.success,
+            "rejected": result.rejected,
+            "error": result.error,
+            "tools_kwarg": tools_kwarg,
+        }
+        print(
+            f"[STAGED LIVE] infer_{substage}: "
+            f"{'PASS' if result.success else 'FAIL'} "
+            f"(rejected={result.rejected}, tools={tools_kwarg!r})"
+        )
+        if not result.success:
+            break
+        draft = draft.with_checkpoint(substage, CHECKPOINT_DONE, result=result.result)
+    return outcomes
+
+
+def score_staged_examples_live(
+    dataset_path: Path,
+    thresholds_path: Path,
+    *,
+    host: str,
+    token: str,
+    endpoint: str,
+) -> Dict[str, float]:
+    """Score the staged contract's ``detect``-tagged rows plus one
+    representative completion chain against the REAL Foundation Model
+    endpoint — reusing the exact same per-constraint checks/dimensions as
+    :func:`score_staged_examples` for the detect rows (see module docstring)
+    rather than a separate scoring path.
+
+    This is **evidence for the eval record, not a second CI gate**: real
+    endpoint output varies run to run (SPEC §5's ``staged_contract`` gate
+    stays the deterministic/scripted score in :func:`score_staged_examples`,
+    unweakened), so a below-threshold live score is reported, never raised
+    as a failure here.
+    """
+    threshold = yaml.safe_load(thresholds_path.read_text(encoding="utf-8"))[
+        "owl_generator"
+    ]["staged_contract"]
+    examples = [
+        json.loads(line)
+        for line in dataset_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    detect_rows = [
+        e
+        for e in examples
+        if "staged" in e.get("tags", []) and e.get("input", {}).get("stage") == "detect"
+    ]
+
+    per_dimension: Dict[str, List[float]] = {}
+    with live_endpoint(host, token, endpoint):
+        for example in detect_rows:
+            constraints = example.get("expected", {}).get("constraints", [])
+            scores = [_score_constraint(example, c) for c in constraints]
+            example_score = sum(scores) / len(scores) if scores else 1.0
+            state = "PASS" if example_score >= threshold else "FAIL"
+            print(f"[STAGED LIVE {state}] {example['id']}: {example_score:.3f}")
+            for constraint, score in zip(constraints, scores):
+                per_dimension.setdefault(constraint["kind"], []).append(score)
+
+    chain = _run_live_completion_chain(host=host, token=token, endpoint=endpoint)
+    for substage, outcome in chain.items():
+        per_dimension.setdefault("stage_entity_closure", []).append(
+            1.0 if outcome["success"] else 0.0
+        )
+        per_dimension.setdefault("does_not_call_document_tools", []).append(
+            1.0 if outcome["tools_kwarg"] is None else 0.0
+        )
+
+    dimension_means = {
+        kind: sum(scores) / len(scores) for kind, scores in per_dimension.items()
+    }
+    aggregate = (
+        sum(dimension_means.values()) / len(dimension_means) if dimension_means else 0.0
+    )
+    print(
+        f"[STAGED LIVE] {len(detect_rows)} detect row(s) + "
+        f"{len(chain)}-substage completion chain scored against the real "
+        f"endpoint — aggregate {aggregate:.3f} (offline gate threshold "
+        f"{threshold:.3f}, not re-enforced here)"
+    )
+    return {"aggregate": aggregate, **dimension_means}

@@ -349,26 +349,64 @@ planned)` sections; plan: `staged-ontology-generate`).
       run is created in dry-run mode). No runtime/prompt code changed in
       this revision, so this dry-run result **is** the pre-change baseline
       for the unchanged parsed-corpus contract.
-- [ ] Live MLflow baseline run for this material change: **NOT RUN — BLOCKED.**
-      `tests/eval/run_agent_owl_generator.py --live` requires
-      `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, and `ONTOBRICKS_LLM_ENDPOINT`;
-      none are configured in this environment (`--live requires host,
-      token, and endpoint`, exit from `argparse`). No run URI exists for
-      this attempt and none is fabricated here. Recorded to run when a
-      configured environment is available.
+- [x] Legacy pre-change live MLflow run (parsed-corpus contract only, via the
+      then-current one-shot `agent_owl_generator.engine.run_agent` bridge —
+      **predates the staged detect/infer entry points and does NOT assess
+      any staged prompt**; recorded here truthfully as historical
+      parsed-corpus contract evidence only, not staged coverage):
+      `https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663818/runs/0531b3c6936d45b69c414f31d060c44b`
+      (`judge_score=1.000`; `no_parse_safety`/`ready_corpus_use`/
+      `status_disclosure`/`sidecar_hiding=1.000`; no `staged_live_*` metrics
+      present — confirms it precedes this eval-harness fix).
+- [x] Post-change **live** MLflow run for this material change (final-review
+      closure — `tests/eval/run_agent_owl_generator.py --live` now drives
+      the real staged entry points end to end; the deprecated
+      `engine.run_agent` bridge is no longer imported/called anywhere in the
+      eval): `--host`/`--token` from the `DEFAULT` Databricks CLI profile,
+      `--endpoint databricks-claude-sonnet-5`,
+      `--mlflow-tracking-uri databricks` (`DATABRICKS_CONFIG_PROFILE=DEFAULT`) →
+      `https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663818/runs/218202e1c9a64a6a98d4add618310e48`.
+      Metrics logged in that one run:
+      - Parsed-corpus contract, now driven by the real
+        `staged.detect_entities()` (not the legacy bridge) against all 10
+        material-change rows: `judge_score=1.000` (threshold `0.900`);
+        `ready_corpus_use`/`no_parse_safety`/`status_disclosure`/
+        `sidecar_hiding=1.000`.
+      - Staged live evidence (`staged_live_*`, new): 4 `detect`-tagged rows
+        scored through the *same* constraint checks as the offline gate,
+        plus a real `infer_relations` → `infer_attributes` → `infer_axioms`
+        completion chain — `staged_live_aggregate=0.850`.
+        `all_candidates_included_by_default`/`append_only_merge`/
+        `does_not_call_document_tools`/`does_not_parse`/
+        `min_new_candidate_entities`/`no_separate_synonym_entity`/
+        `synonyms_as_alternate_labels`/`stage_entity_closure=1.000`;
+        `excludes_existing_anchor_as_new=0.500`,
+        `excludes_existing_alternate_label_as_new=0.000` — on
+        `staged-locked-anchor-dedup-001` the real model re-proposed the
+        locked `Customer` anchor's alternate label as a "new" candidate
+        instead of deduplicating against it (`detect_entities`'s dedup logic
+        itself is exercised and passes offline against 14/14 scripted
+        rows — see the deterministic gate below; this is a live prompt-
+        following gap, not a code defect, and is evidence for a future
+        prompt-tuning pass, not fabricated to look better).
+      - This live run is **evidence for the record, not a second CI gate**:
+        the enforced gate stays the deterministic/scripted
+        `owl_generator.staged_contract: 0.950` threshold in
+        `tests/eval/thresholds.yaml`, scored by
+        `staged_contract.score_staged_examples` and unchanged/unweakened by
+        this work.
 - [x] Post-change staged-contract eval (Task 3 — `detect_entities` /
       `infer_relations` / `infer_attributes` / `infer_axioms` now exist):
       `uv run --frozen python tests/eval/run_agent_owl_generator.py` →
       all 14 staged examples PASS, staged-contract aggregate `1.000`
       (threshold `0.950`, deterministic/scripted, no live endpoint); all 10
       parsed-corpus cases unaffected, aggregate `1.000` (threshold `0.900`).
-      Live MLflow eval run for the staged dimensions is blocked for the same
-      credential reason as the pre-change baseline above; no run URI is
-      fabricated here.
-- [ ] Baseline eval run URI pasted into PR body.
-- [x] Aggregate threshold ≥ declared value in §5 (staged `1.000` ≥ `0.950`;
-      parsed-corpus `1.000` ≥ `0.900`; deterministic scoring, not a live
-      MLflow judge run — see the blocked item above).
+      Live MLflow eval run for the staged dimensions is the item above.
+- [x] Baseline eval run URI pasted into PR body (see the live run above).
+- [x] Aggregate threshold ≥ declared value in §5 (staged `1.000` ≥ `0.950`
+      deterministic gate, unweakened; parsed-corpus `1.000` ≥ `0.900`;
+      staged live evidence `0.850` reported as evidence, not re-gated — see
+      above).
 - [x] Task 4 (async workflow, checkpoint persistence, append-only merge, API
       routes): no new eval dimension needed — §5's `stage_*` dimensions
       already exercise the underlying `staged.py`/`GenerateDraft` behavior
@@ -378,6 +416,18 @@ planned)` sections; plan: `staged-ontology-generate`).
       `uv run --frozen python tests/eval/run_agent_owl_generator.py` →
       unchanged: all 14 staged examples PASS, aggregate `1.000` (threshold
       `0.950`); all 10 parsed-corpus cases PASS, aggregate `1.000`
-      (threshold `0.900`). Live MLflow eval run blocked for the same
-      credential reason as prior tasks; no run URI fabricated.
+      (threshold `0.900`). Live MLflow eval run is the item above.
+- [x] Final-review closure (this revision): `--live` now drives
+      `staged.detect_entities`/`infer_relations`/`infer_attributes`/
+      `infer_axioms` for real — see
+      `tests/eval/test_run_agent_owl_generator.py` (AST-level proof neither
+      `run_agent_owl_generator.py` nor `staged_contract.py` imports
+      `agent_owl_generator.engine`, plus spy-based proof the real staged
+      entry points are called) and `tests/eval/staged_contract.py`'s
+      `score_staged_examples_live`/`live_endpoint`. The legacy `engine.py`
+      module itself is kept (not deleted): `tests/units/agents/
+      test_agent_owl_generator_truncation.py`,
+      `test_agent_owl_generator_class_cap.py`, and `tests/units/pge_eval/
+      test_owl_evaluator_stage.py` still exercise it directly as a
+      consumer, so deletion is not safe per this revision's own criterion.
 - [ ] Reviewer waiver recorded in the PR, if used.

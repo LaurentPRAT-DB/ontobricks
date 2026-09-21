@@ -89,6 +89,14 @@ R4/R4B/R5) and your own OWL/RDFS. A floating **AI Assistant** edits your
 ontology through natural language. Catch design issues early with the built-in
 **Ontology Pitfalls Detector** (19 structural, logical and semantic checks).
 
+**Generate** drives that AI design through a resumable, human-in-the-loop
+wizard — **Detect** candidate entities from metadata and your parsed document
+corpus, **Review** them (include/exclude, edit labels, add your own), then
+**Complete** relations, attributes, and axioms in that order. Every run
+**appends** to your existing ontology — locked entities are never renamed or
+removed — and a stale draft (source changed since detection) is flagged with
+a one-click **Re-detect** instead of silently reusing outdated candidates.
+
 ### Map to your data — automatically
 Let the LLM generate SQL and column mappings for every entity and relationship,
 then refine with live data preview. Mappings compile to W3C-compliant **R2RML**

@@ -86,7 +86,21 @@ OWL Generator Agent
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: agents.agent_owl_generator.engine
+Staged Generate — detect / relations / attributes / axioms (public entry
+points; see ``back.objects.ontology.GenerateDraft``/``GenerateWorkflow`` for
+the durable draft contract and async workflow that consume them):
+
+.. automodule:: agents.agent_owl_generator.staged
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: agents.agent_owl_generator.schemas
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: agents.agent_owl_generator.prompts
    :members:
    :undoc-members:
    :show-inheritance:
@@ -96,6 +110,15 @@ OWL Generator Agent
    :undoc-members:
    :show-inheritance:
    :exclude-members: ToolContext
+
+Legacy one-shot bridge (deprecated — not re-exported from the package root,
+never called by the staged module above, and has no remaining production
+caller; kept only for direct/ad-hoc use and its own existing unit tests):
+
+.. automodule:: agents.agent_owl_generator.engine
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 Cohort Discovery Agent
 ----------------------

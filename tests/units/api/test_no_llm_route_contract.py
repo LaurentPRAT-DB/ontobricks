@@ -32,4 +32,8 @@ def test_legacy_one_shot_generate_route_never_calls_require_domain_llm():
     source = inspect.getsource(ontology.generate_ontology_async)
     assert "require_domain_llm(" not in source
     assert "create_task(" not in source
-    assert "status_code=410" in source
+    # Typed 410 subclass (§4 minor closure), not a raw base-error status_code kwarg.
+    assert "GoneError(" in source
+    assert ontology.GoneError.__name__ == "GoneError" and ontology.GoneError(
+        "x"
+    ).status_code == 410

@@ -1552,3 +1552,245 @@ Local browser retest instructions:
   console), run detection and confirm focus lands on "Review Entities"
   once the Review pane appears (not on page load/resume), then click
   Continue and confirm focus lands on "Completing Ontology Generate".
+
+---
+
+## Close final-review gaps for the staged ontology Generate change
+
+Context: Closes every actionable gap from the final review of the
+`staged-ontology-generate` plan (base `0fc3532d`, all five tasks + fixes
+landed). The one "Important" gap — the eval harness's `--live` mode never
+actually exercised the staged entry points and still imported the
+deprecated one-shot `agent_owl_generator.engine.run_agent` bridge — is
+fixed, a real live eval was run against the `DEFAULT` Databricks profile
+and `databricks-claude-sonnet-5`, Sphinx docs were extended for the new
+modules, and three minor closures (task-tracker deep link, README, typed
+410 error) were applied. The attached implementation plan was not edited.
+Followed TDD for every executable change: each fix has a new focused test
+observed to exercise the change (RED before the fix where a prior behavior
+existed to contrast against; new capability tests written test-first).
+
+Changes:
+
+1. tests/eval/staged_contract.py (Important — live staged eval truthfulness)
+   Added a live-endpoint mode that retargets the *existing* detect-tagged
+   constraint checks (`_c_all_included`, `_c_excludes_anchor`,
+   `_c_excludes_anchor_alt`, `_c_min_new_candidates`, `_c_synonyms_as_alt`,
+   `_c_no_separate_synonym`, `_c_does_not_parse`) from the scripted mock to
+   the real Databricks Foundation Model endpoint, with zero duplicated
+   scoring logic: `live_endpoint(host, token, endpoint)` (context manager)
+   + `_run_detection_live()` (real `staged.detect_entities()` call, tool
+   surface wired to each row's own `input.corpus`, `call_serving_endpoint`
+   only *spied* — `wraps=`, not scripted) + a per-example-id cache so a row
+   with N constraints costs one live call, not N. Added
+   `_run_live_completion_chain()` — runs `infer_relations` ->
+   `infer_attributes` -> `infer_axioms` end to end against the real
+   endpoint for one representative (non-adversarial) closed entity set,
+   chaining each real structured output into the next substage's
+   checkpoint exactly like `GenerateWorkflow.run_completion` does in
+   production, and scoring entity closure (`success`) and no-document-tool
+   access (the real `tools=` kwarg observed via the same spy technique) —
+   the completion-tagged dataset rows are all deliberately adversarial/
+   scripted-invalid (testing rejection of a bad LLM answer), which a real
+   endpoint cannot be made to reproduce on demand, so this chain is the
+   representative live substitute. `score_staged_examples_live()` runs both
+   and returns per-dimension + aggregate scores as **evidence for the
+   record, not a second CI gate** — the enforced
+   `owl_generator.staged_contract: 0.95` gate stays the deterministic/
+   scripted `score_staged_examples()`, unweakened and unchanged.
+2. tests/eval/run_agent_owl_generator.py (Important)
+   `_live_runner` (parsed-corpus contract, `--live`) rewritten to call the
+   real `staged.detect_entities()` instead of the deprecated
+   `agents.agent_owl_generator.engine.run_agent` — `detect_entities` is now
+   the *only* production entry point that reads source material at all
+   (SPEC §3), so it is what the parsed-corpus document-reading contract
+   (`ready_corpus_use`/`no_parse_safety`/`status_disclosure`/
+   `sidecar_hiding`) actually needs verified live. The observed trace is
+   built the same way as before (tool-call names + every tool-result
+   payload, which always echoes back the requested filename) plus the
+   detected candidates' own labels/descriptions/evidence standing in for
+   the free-text "reply" the removed one-shot bridge produced. `main()`
+   now also calls `staged_contract.score_staged_examples_live()` under
+   `--live`, logging its metrics (`staged_live_*`) into the *same* MLflow
+   run as the parsed-corpus contract via a new `extra_mlflow_logging`
+   callback (see #3) rather than a disconnected second run. This closes
+   the **last** eval dependency on the legacy engine — `engine.py` itself
+   is intentionally **not deleted**: `tests/units/agents/
+   test_agent_owl_generator_truncation.py`,
+   `test_agent_owl_generator_class_cap.py`, and `tests/units/pge_eval/
+   test_owl_evaluator_stage.py` still exercise it directly as real
+   consumers, so deletion is not safe per this change's own "only if no
+   consumers remain" criterion.
+3. tests/eval/document_corpus_contract.py
+   `run_contract()` gained an optional `extra_mlflow_logging: Callable[[],
+   None] | None` parameter, invoked once inside the existing
+   `mlflow.start_run()` block (only when `not dry_run and
+   mlflow_experiment`) — purely additive, default `None`, so
+   `tests/eval/run_agent_mapping_pge.py`'s existing call site is unaffected
+   (verified by rerunning it offline).
+4. tests/eval/test_run_agent_owl_generator.py (new, 8 tests)
+   AST-level proof neither `run_agent_owl_generator.py` nor
+   `staged_contract.py` imports `agents.agent_owl_generator.engine` (same
+   technique as `test_owl_generator_staged.py`'s existing
+   `test_staged_module_never_imports_legacy_engine`); spy-based proof
+   `_live_runner` and `score_staged_examples_live` really call
+   `staged.detect_entities`/`infer_relations`/`infer_attributes`/
+   `infer_axioms` (never the legacy bridge, patched to raise if called);
+   proof the live-endpoint context manager fully restores offline/scripted
+   scoring afterward (no cross-run leakage in the same process).
+5. .planning/agents/agent_owl_generator/SPEC.md §10
+   Recorded the real live MLflow run (see Tests below) with its full
+   metric breakdown, including the one imperfect live dimension
+   (`excludes_existing_alternate_label_as_new=0.000` on
+   `staged-locked-anchor-dedup-001` — the real model re-proposed a locked
+   anchor's alternate label as "new"; the code path's own dedup logic
+   passes 14/14 offline, so this is live prompt-following variance, not a
+   defect, and not smoothed over). Recorded the legacy pre-change run
+   `0531b3c6936d45b69c414f31d060c44b` truthfully as historical
+   parsed-corpus-only evidence (confirmed via `mlflow.get_run` to predate
+   the `staged_live_*` metrics, i.e. it never assessed a staged prompt).
+   Corrected the two "BLOCKED — NOT RUN" sign-off bullets now that a live
+   run exists; did not alter or weaken the declared §5 thresholds.
+6. docs/sphinx/api/agents.rst (Sphinx — Important)
+   Added `agents.agent_owl_generator.{staged,schemas,prompts}` automodule
+   entries (public staged surface, documented before `.tools`), and moved
+   `.engine` to a dedicated "Legacy one-shot bridge (deprecated)" heading
+   below it explaining it is not re-exported, not called by the staged
+   module, and has no remaining production caller — de-emphasized in
+   position/framing without deleting the entry (the module itself is kept
+   for the reason in #2).
+7. docs/sphinx/api/app.objects.ontology.rst (Sphinx — Important)
+   Added `back.objects.ontology.GenerateDraft` (draft/entity/fingerprint
+   contract) and `back.objects.ontology.GenerateWorkflow` (async
+   orchestration + append-only merge) automodule sections, each with a
+   short framing paragraph.
+8. docs/sphinx/api/app.core.errors.rst
+   Added the new `GoneError` automodule entry (see #11).
+9. src/front/static/global/js/task-tracker.js (minor closure)
+   `TASK_TYPE_URLS`'s `'ontology_generation'` key never matched a real
+   backend `task_type` — the staged Generate workflow creates
+   `'ontology_generate_detect'`/`'ontology_generate_complete'`
+   (`src/api/routers/internal/ontology.py`'s `/wizard/generate/detect` and
+   `/wizard/generate/complete` routes). Replaced with both real task types,
+   both mapping to `/ontology#wizard` — `initOntologyWizard()` resumes at
+   the right step from the persisted draft's own `stage`, so one URL
+   correctly covers both.
+10. README.md (minor closure)
+    Added a paragraph under "Design ontologies visually or with AI"
+    describing the staged, resumable, human-in-the-loop Generate wizard
+    (Detect -> Review -> Complete) and its append-only merge/stale-draft
+    re-detect behavior — previously undocumented at the README level (the
+    full flow was already documented in `docs/user-guide.md`).
+11. src/back/core/errors/GoneError.py (new) + src/back/core/errors/__init__.py
+    (minor closure — typed 410 error)
+    Added `GoneError(OntoBricksError)` (status 410), following the exact
+    pattern of `ConflictError`/`NotFoundError`. `src/api/routers/internal/
+    ontology.py`'s `/wizard/generate-async` route now raises `GoneError`
+    instead of the raw base `OntoBricksError(..., status_code=410)`.
+12. tests/back/core/errors/test_errors.py /
+    tests/units/api/test_generate_routes.py
+    Added `GoneError` to the error-code-derivation, subclass-defaults, and
+    subclass-polymorphism parametrized tests; strengthened
+    `test_wizard_generate_async_always_returns_410` to assert
+    `isinstance(exc_info.value, GoneError)`, not just the status code.
+13. tests/units/api/test_no_llm_route_contract.py
+    `test_legacy_one_shot_generate_route_never_calls_require_domain_llm`
+    asserted the literal `"status_code=410"` substring in
+    `generate_ontology_async`'s source — broken by #11's switch to the
+    typed `GoneError()` (410 is now a default on the class, not a call-site
+    kwarg). Full-suite run (below) caught this as a real regression; fixed
+    by asserting `"GoneError(" in source` plus that `GoneError` really
+    defaults to 410, preserving the test's original intent (a typed 410,
+    reached without ever touching the LLM guard) with the new call shape.
+
+Modified/added files:
+- tests/eval/staged_contract.py
+- tests/eval/run_agent_owl_generator.py
+- tests/eval/document_corpus_contract.py
+- tests/eval/test_run_agent_owl_generator.py (new)
+- .planning/agents/agent_owl_generator/SPEC.md
+- docs/sphinx/api/agents.rst
+- docs/sphinx/api/app.objects.ontology.rst
+- docs/sphinx/api/app.core.errors.rst
+- src/front/static/global/js/task-tracker.js
+- README.md
+- src/back/core/errors/GoneError.py (new)
+- src/back/core/errors/__init__.py
+- src/api/routers/internal/ontology.py
+- tests/back/core/errors/test_errors.py
+- tests/units/api/test_generate_routes.py
+- tests/units/api/test_no_llm_route_contract.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- Focused RED/GREEN: `test_run_agent_owl_generator.py` and the `GoneError`
+  additions to `test_errors.py`/`test_generate_routes.py` were written
+  test-first against the pre-fix code (legacy-engine import present /
+  `--live` not wired to staged entry points / no `GoneError`) and observed
+  to characterize the change before it landed; then implemented to GREEN.
+- Focused GREEN: `uv run --frozen pytest -q tests/eval/
+  tests/units/agents/test_owl_generator_staged.py
+  tests/units/agents/test_owl_generator_schemas.py
+  tests/back/core/errors/test_errors.py
+  tests/units/api/test_generate_routes.py` → 120 passed.
+- Offline eval (unweakened, unchanged): `uv run --frozen python
+  tests/eval/run_agent_owl_generator.py` → all 14 staged examples PASS,
+  staged-contract aggregate `1.000` (threshold `0.950`); all 10
+  parsed-corpus cases PASS, aggregate `1.000` (threshold `0.900`).
+- **Live eval (real Databricks endpoint, no credentials printed)**:
+  ```
+  export ONTO_DBX_HOST=$(databricks auth env --profile DEFAULT | jq -r '.env.DATABRICKS_HOST')
+  export ONTO_DBX_TOKEN=$(databricks auth token DEFAULT -o json | jq -r '.access_token')
+  DATABRICKS_CONFIG_PROFILE=DEFAULT uv run --frozen python tests/eval/run_agent_owl_generator.py \
+    --live --host "$ONTO_DBX_HOST" --token "$ONTO_DBX_TOKEN" \
+    --endpoint databricks-claude-sonnet-5 --mlflow-tracking-uri databricks
+  ```
+  → MLflow run
+  `https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663818/runs/218202e1c9a64a6a98d4add618310e48`
+  (experiment `1426639566663818`, run name `parsed-corpus-baseline`).
+  Parsed-corpus contract (now via real `staged.detect_entities()`, not the
+  legacy bridge): `judge_score=1.000` (threshold `0.900`);
+  `ready_corpus_use`/`no_parse_safety`/`status_disclosure`/
+  `sidecar_hiding=1.000`. Staged live evidence (new `staged_live_*`
+  metrics, not a gate): `staged_live_aggregate=0.850` over 4 `detect`-tagged
+  rows + the 3-substage `infer_relations`/`infer_attributes`/`infer_axioms`
+  completion chain — 7 of 9 scored dimensions `1.000`
+  (`all_candidates_included_by_default`, `append_only_merge`,
+  `does_not_call_document_tools`, `does_not_parse`,
+  `min_new_candidate_entities`, `no_separate_synonym_entity`,
+  `synonyms_as_alternate_labels`, `stage_entity_closure`); two below 1.0 —
+  `excludes_existing_anchor_as_new=0.500`,
+  `excludes_existing_alternate_label_as_new=0.000` (the real model
+  re-proposed a locked anchor's alternate label as "new" on one row — an
+  honest live result, not fabricated or smoothed; the deterministic gate
+  covering the same dedup code path passes 14/14 — see SPEC §10 for detail).
+  The deterministic `owl_generator.staged_contract: 0.950` CI gate is
+  unaffected and unweakened.
+- Docs build: `ci/build_docs.sh` → built clean; only 2 pre-existing
+  warnings unrelated to this change (`agent_dtwin_chat`'s ambiguous
+  `object` cross-reference, a stale `../LICENSE.txt` myst link in
+  `docs/development.md`) — zero new warnings from the `agents.rst`/
+  `app.objects.ontology.rst`/`app.core.errors.rst` additions (verified the
+  built HTML actually renders `staged`/`schemas`/`prompts`/`GenerateDraft`/
+  `GenerateWorkflow`/`GoneError`).
+- JS syntax: `node --check src/front/static/global/js/task-tracker.js` → OK.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → **6670 passed**,
+  304 skipped, 6 deselected, 1 xfailed, 32 warnings in ~44-53s — first full
+  run caught one real regression from #11/#12 (`test_no_llm_route_contract
+  .py` asserted the literal `status_code=410` call-site kwarg text, which
+  `GoneError()` no longer has), fixed per #13, rerun to a clean pass with
+  no failures.
+
+Concerns:
+- The live `excludes_existing_alternate_label_as_new`/
+  `excludes_existing_anchor_as_new` gap above is real model behavior on a
+  single live sample, not a code defect — a candidate for a future
+  detection-prompt tuning pass (e.g. more explicit "never re-propose an
+  anchor's alternate label" wording in
+  `prompts.build_detection_system_prompt`), tracked as SPEC evidence, not
+  fixed here (no prompt/threshold change was made to make this run look
+  better).
+- `agent_owl_generator/engine.py` remains in the codebase, still reachable
+  for direct/ad-hoc use and still covered by its own three existing unit
+  test modules; no removal plan is proposed here beyond what SPEC.md
+  already documents (no remaining production caller).

@@ -12,8 +12,18 @@ const POLL_INTERVAL_IDLE = 30000;   // 30s when idle
 let lastFetchErrorAt = 0;
 
 // Task type to URL mapping
+//
+// 'ontology_generation' never matched a real backend task_type (the staged
+// Generate workflow creates 'ontology_generate_detect' and
+// 'ontology_generate_complete' — see
+// `src/api/routers/internal/ontology.py`'s `/wizard/generate/detect` and
+// `/wizard/generate/complete` routes) — every "Open task" click on a
+// Generate task silently fell through to no deep link. Both stages resume
+// into the same wizard panel: `initOntologyWizard()` reads the persisted
+// draft's stage and resumes at the right step, so one URL covers both.
 const TASK_TYPE_URLS = {
-    'ontology_generation': '/ontology#wizard',
+    'ontology_generate_detect': '/ontology#wizard',
+    'ontology_generate_complete': '/ontology#wizard',
     'auto_assign': '/mapping#autoassign',
     'metadata_load': '/domain#metadata',
     'metadata_update': '/domain#metadata',
