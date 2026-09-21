@@ -132,3 +132,129 @@ Tests:
 - `uv run --frozen python tests/eval/run_agent_owl_generator.py` → `[STAGED] validated 14 staged contract examples`; all 10 parsed-corpus cases PASS; aggregate `1.000` (threshold `0.900`).
 - Negative-control check: temporarily dropped `staged-no-one-shot-default-001` → runner correctly raised `ValueError: ... has 13 staged examples; minimum is 14`; restored the file and re-confirmed mirrors byte-identical and the harness passes again.
 - `uv run --frozen pytest -q -m "not scenario"` → 6329 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 52.18s.
+
+## Durable Generate draft/contract layer (task 2 of staged ontology generate)
+
+Context: Task 2 of the `staged-ontology-generate` plan (design:
+`docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md`).
+Implements the draft/contract layer only — stable entity identity, the
+durable versioned draft, source fingerprinting/invalidation, and the
+optimistic-concurrency persistence and validation primitives that Task 3
+(staged agent entry points) and Task 4 (async workflow routes) will build
+on. No agent, API, or UI code was touched; `agent_owl_generator` still only
+exposes the one-shot `run_agent` entry point. The attached implementation
+plan (`/Users/benoit.cayla/.cursor/plans/staged-ontology-generate_6fc7e158.plan.md`)
+was not edited. Followed strict TDD: focused tests were written and run to
+an observed RED (module import error) before any production code existed,
+then the model was implemented to GREEN.
+
+Changes:
+
+1. src/back/objects/ontology/GenerateDraft.py (new)
+   New, focused module — kept separate from the 2,500-line `Ontology.py`
+   per the plan's explicit instruction. Defines:
+   - `GenerateEntity` — one dataclass for both the design's `locked_anchor`
+     and `candidate_entity` shapes (`id`, `canonical_label`, `description`,
+     `type_hint`, `evidence`, `alternate_labels`, `origin`, `included`,
+     `locked`). `id` is assigned once (`cand-<hex12>` for new candidates,
+     the existing class `name` for anchors — existing classes have no
+     assigned UUID and `name` is already the stable identity used
+     everywhere else in the ontology) and never changes; `with_updates()`
+     rejects any attempt to change `id`/`locked`/`origin` and rejects any
+     edit at all on a locked anchor (matching the design's read-only
+     Stage-2 anchor rendering).
+   - `GenerateDraft` — the durable draft (`draft_revision`, `stage`,
+     `source_fingerprint`, `selected_source_config`, `existing_anchors`,
+     `candidate_entities`, `completion_checkpoints`). Constructor enforces
+     that anchors are all locked, candidates are never locked, entity ids
+     are unique, and normalized canonical/alternate labels are unique
+     across the whole entity set (anchors + candidates, including excluded
+     ones). Review-stage mutation helpers (`with_candidate_added/
+     _removed/_updated`) re-run the same invariants on every edit.
+     `ensure_ready_for_completion()` enforces the at-least-one-entity
+     invariant (anchors always count). `closed_entity_ids()` /
+     `validate_references()` implement the Stage-3 entity-closure check
+     (excluded candidates are simply absent from the closed set — "excluded
+     entities unavailable to completion"). `with_checkpoint()` /
+     `next_pending_substage()` enforce the strict relations→attributes→
+     axioms order and refuse to reopen a substage already `done`.
+     `to_dict()`/`from_dict()` round-trip exactly; `from_dict()` is the
+     dedicated migration boundary — it self-heals unknown/missing `stage`,
+     `type_hint`, `origin`, and checkpoint `status` values instead of
+     raising, so an older persisted schema never crashes a resume.
+   - `compute_source_fingerprint()` — deterministic `sha256:`-prefixed hash
+     over selected metadata, ready-document manifest identity, and current
+     ontology entity identity, list-order independent. One documented
+     field-name adjustment from the design doc's illustrative JSON: ready
+     documents are hashed by `filename`/`source_hash` (the real
+     parsed-corpus manifest contract in
+     `docs/superpowers/specs/2026-09-18-parsed-document-corpus-design.md`),
+     not the design doc's placeholder `name`/content-hash wording, so
+     manifests can be fed in directly without a translation layer.
+     `GenerateDraft.is_stale()`/`ensure_not_stale()` compare a draft's
+     stored fingerprint against a freshly recomputed one.
+   - `GenerateDraftStore` — the `DomainSession`-backed persistence
+     boundary. `save()` enforces optimistic concurrency: the submitted
+     draft's `draft_revision` must equal the currently-persisted revision
+     (`0` when no draft exists yet); on success the persisted revision is
+     bumped by 1. A mismatch raises `DraftRevisionConflict` (409). `load()`
+     returns `None` when no draft is persisted; `reset()` discards it.
+   - `DraftValidationError` (400, business/structural invariant),
+     `DraftRevisionConflict` and `DraftStaleError` (409, optimistic
+     concurrency / stale source) — all thin subclasses of the existing
+     `back.core.errors.ValidationError`/`ConflictError` hierarchy so the
+     global FastAPI error handler needs no new wiring in later tasks.
+2. src/back/objects/session/DomainSession.py
+   Added a `"generate_draft"` key (default `None`) to `get_empty_domain()`
+   — the same "sibling durable session state" mechanism as `ontology`/
+   `assignment`/`design_layout`, so a draft survives modal close, page
+   reload, and backend process restart exactly like the rest of the
+   session (the existing `_fill_default_top_level_keys()` migration step
+   already backfills the key for old sessions with no code change needed).
+   Added a lazily-imported `generate_draft_store` property returning a
+   `GenerateDraftStore` bound to `self` — avoids a module-load cycle with
+   the same pattern `Ontology.py` already uses for its own lazy imports.
+   No other `DomainSession` method was touched; `export_for_save()` /
+   `import_from_file()` / `reset_ontology()` are intentionally left alone —
+   the draft is workflow-in-progress session state, not versioned domain
+   content, and any ontology/metadata change that would invalidate it is
+   already caught generically by fingerprint staleness rather than a
+   special-cased clear.
+3. src/back/objects/ontology/__init__.py
+   Re-exported `GenerateDraft`, `GenerateDraftStore`, `GenerateEntity`, and
+   `compute_source_fingerprint` alongside the existing `Ontology` exports.
+4. tests/units/ontology/test_generate_draft.py (new)
+   131 focused tests: entity construction/validation, serialization round
+   trip, migration self-healing (unknown stage/type_hint/origin/checkpoint
+   status, missing keys), locked-anchor snapshotting from ontology classes,
+   deterministic/order-independent fingerprinting and staleness, draft
+   construction invariants (locked/unlocked placement, unique ids, unique
+   normalized labels including excluded candidates and anchor-vs-candidate
+   collisions), rename identity stability, manual add/remove/exclude/
+   re-include, the minimum-included-entity gate, entity-closure reference
+   validation (including excluded-id rejection), strict checkpoint
+   ordering (including failed-substage retry and reopening a done
+   substage), the `DraftValidationError`/`DraftRevisionConflict` error
+   hierarchy, and `GenerateDraftStore` revision-conflict + durable-resume
+   behavior (a second `DomainSession` over the same session store resumes
+   the same persisted draft, simulating a page reload/process restart).
+5. tests/units/domain/test_domain_session.py
+   Added a `TestGenerateDraftIntegration` class covering the
+   `DomainSession` wiring only (empty-domain default, the
+   `generate_draft_store` property, persistence under the
+   `"generate_draft"` session key, and that `reset()` clears it) — model
+   behavior itself is covered in `test_generate_draft.py`.
+
+Modified files:
+- src/back/objects/ontology/GenerateDraft.py (new)
+- src/back/objects/ontology/__init__.py
+- src/back/objects/session/DomainSession.py
+- tests/units/ontology/test_generate_draft.py (new)
+- tests/units/domain/test_domain_session.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- RED (module absent): `uv run --frozen pytest -q tests/units/ontology/test_generate_draft.py tests/units/domain/test_domain_session.py -k "GenerateDraft or generate_draft"` → collection error, `ModuleNotFoundError: No module named 'back.objects.ontology.GenerateDraft'`.
+- GREEN (focused): `uv run --frozen pytest -q tests/units/ontology/test_generate_draft.py tests/units/domain/test_domain_session.py` → 131 passed.
+- Regression (ontology/domain/agents): `uv run --frozen pytest -q tests/units/ontology/ tests/units/domain/ tests/units/agents/` → 1135 passed.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6421 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.90s.

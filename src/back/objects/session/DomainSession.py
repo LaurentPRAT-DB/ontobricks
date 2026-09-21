@@ -126,6 +126,14 @@ def get_empty_domain() -> Dict[str, Any]:
         },
         "assignment": {"entities": [], "relationships": []},
         "design_layout": {"current_view": "default", "views": {}, "map": {}},
+        # Durable three-stage ontology Generate draft (detect → review →
+        # complete), or None when no draft exists. See
+        # ``back.objects.ontology.GenerateDraft`` for the typed model and
+        # ``docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md``
+        # for the full contract. Persisted as a plain dict here (like every
+        # other DomainSession section); GenerateDraftStore is the typed
+        # read/write boundary with optimistic-concurrency revision checks.
+        "generate_draft": None,
         # Buffered ontology/mapping change-audit events (who/what/when).
         # Appended as edits happen; flushed to the registry on save-to-uc.
         # Kept out of _config_snapshot() and export_for_save() so it never
@@ -1209,6 +1217,20 @@ class DomainSession:
         if "generated" not in self._data:
             self._data["generated"] = {"owl": "", "sql": "", "r2rml": ""}
         return self._data["generated"]
+
+    @property
+    def generate_draft_store(self) -> "GenerateDraftStore":
+        """Typed read/write boundary for the durable Generate draft.
+
+        See ``back.objects.ontology.GenerateDraft`` for
+        :class:`GenerateDraftStore`, :class:`GenerateDraft`, and the
+        optimistic-concurrency revision-check contract. Lazily imported to
+        avoid a module-load cycle (``Ontology`` sub-package already lazily
+        imports from ``DomainSession`` for the same reason).
+        """
+        from back.objects.ontology.GenerateDraft import GenerateDraftStore
+
+        return GenerateDraftStore(self)
 
     # ===========================================
     # Convenience Methods

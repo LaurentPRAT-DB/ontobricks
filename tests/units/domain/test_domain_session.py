@@ -296,6 +296,44 @@ class TestSaveAndReset:
         assert domain_session.info["name"] == "NewDomain"
 
 
+class TestGenerateDraftIntegration:
+    """DomainSession is the durable persistence boundary for the Generate
+    draft (see ``back.objects.ontology.GenerateDraft``); see
+    ``tests/units/ontology/test_generate_draft.py`` for the model's own
+    behavior tests. These only cover the DomainSession wiring itself.
+    """
+
+    def test_empty_domain_has_no_draft(self):
+        data = get_empty_domain()
+        assert data.get("generate_draft") is None
+
+    def test_generate_draft_store_property_returns_store(self, domain_session):
+        from back.objects.ontology.GenerateDraft import GenerateDraftStore
+
+        assert isinstance(domain_session.generate_draft_store, GenerateDraftStore)
+
+    def test_new_session_has_no_persisted_draft(self, domain_session):
+        assert domain_session.generate_draft_store.load() is None
+
+    def test_save_persists_under_generate_draft_key(self, mock_session_mgr, domain_session):
+        from back.objects.ontology.GenerateDraft import GenerateDraft
+
+        draft = GenerateDraft.new(source_fingerprint="sha256:abc")
+        domain_session.generate_draft_store.save(draft)
+        raw = mock_session_mgr.get("domain_data")
+        assert raw["generate_draft"]["source_fingerprint"] == "sha256:abc"
+        assert raw["generate_draft"]["draft_revision"] == 1
+
+    def test_reset_clears_persisted_draft(self, domain_session):
+        from back.objects.ontology.GenerateDraft import GenerateDraft
+
+        domain_session.generate_draft_store.save(
+            GenerateDraft.new(source_fingerprint="sha256:abc")
+        )
+        domain_session.reset()
+        assert domain_session.generate_draft_store.load() is None
+
+
 class TestExportImport:
     def test_export_for_save(self, domain_session):
         domain_session.info["name"] = "Export Test"
