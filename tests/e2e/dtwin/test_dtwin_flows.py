@@ -76,3 +76,36 @@ class TestDigitalTwinSidebarParity:
         assert panel.is_visible()
         interactable = panel.locator("textarea, input[type='text'], [contenteditable]")
         assert interactable.count() >= 1, "Chat section has no input field"
+
+
+class TestQueryPlayground:
+    def test_query_section_has_both_language_tabs(self, page, live_server):
+        page.goto(f"{live_server}/dtwin/?section=graphql")
+        page.wait_for_load_state("domcontentloaded")
+        page.locator("#queryGraphqlTab").wait_for()
+        assert page.locator("#queryGraphqlTab").is_visible()
+        assert page.locator("#querySparqlTab").is_visible()
+
+    def test_sparql_deep_link_selects_tab_and_loads_default_query(
+        self, page, live_server
+    ):
+        page.goto(f"{live_server}/dtwin/?section=graphql&tab=sparql")
+        page.wait_for_load_state("domcontentloaded")
+        page.locator("#sparqlPlaygroundQuery").wait_for(state="visible")
+        query = page.locator("#sparqlPlaygroundQuery").input_value()
+        assert "SELECT ?subject ?predicate ?object" in query
+        assert "LIMIT 100" in query
+
+    def test_triple_projection_detection(self, page, live_server):
+        page.goto(f"{live_server}/dtwin/?section=graphql&tab=sparql")
+        page.wait_for_load_state("domcontentloaded")
+        page.locator("#sparqlPlaygroundQuery").wait_for(state="visible")
+        assert page.evaluate(
+            "SPARQLPlayground.isTripleProjection(['subject','predicate','object'])"
+        )
+        assert page.evaluate(
+            "SPARQLPlayground.isTripleProjection(['s','p','o'])"
+        )
+        assert not page.evaluate(
+            "SPARQLPlayground.isTripleProjection(['type','count'])"
+        )

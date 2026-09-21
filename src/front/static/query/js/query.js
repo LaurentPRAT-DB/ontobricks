@@ -141,20 +141,61 @@ function _bindQueryShellActions() {
 document.addEventListener('DOMContentLoaded', function() {
     const urlParams = new URLSearchParams(window.location.search);
     const initialSection = urlParams.get('section');
+    const initialQueryTab = urlParams.get('tab');
     const focusEntityUri = urlParams.get('focus');
     const bridgeDomain = urlParams.get('domain') || urlParams.get('project');
 
     _bindQueryShellActions();
-    _initQueryPage(initialSection, focusEntityUri, bridgeDomain);
+    _bindQueryLanguageTabs();
+    _initQueryPage(initialSection, focusEntityUri, bridgeDomain, initialQueryTab);
 });
 
-async function _initQueryPage(initialSection, focusEntityUri, bridgeDomain) {
+function _bindQueryLanguageTabs() {
+    if (window.__obQueryLanguageTabsBound) return;
+    window.__obQueryLanguageTabsBound = true;
+
+    document.getElementById('queryGraphqlTab')?.addEventListener(
+        'shown.bs.tab',
+        function () {
+            if (typeof GraphQLPlayground !== 'undefined') {
+                GraphQLPlayground.init();
+            }
+        }
+    );
+    document.getElementById('querySparqlTab')?.addEventListener(
+        'shown.bs.tab',
+        function () {
+            if (typeof SPARQLPlayground !== 'undefined') {
+                SPARQLPlayground.init();
+            }
+        }
+    );
+}
+
+function initQueryPlayground(tabName) {
+    const useSparql = tabName === 'sparql';
+    const tabId = useSparql ? 'querySparqlTab' : 'queryGraphqlTab';
+    const tab = document.getElementById(tabId);
+    if (tab && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+        bootstrap.Tab.getOrCreateInstance(tab).show();
+    }
+    if (useSparql) {
+        if (typeof SPARQLPlayground !== 'undefined') {
+            SPARQLPlayground.init();
+        }
+    } else if (typeof GraphQLPlayground !== 'undefined') {
+        GraphQLPlayground.init();
+    }
+}
+
+async function _initQueryPage(initialSection, focusEntityUri, bridgeDomain, initialQueryTab) {
     if (bridgeDomain) {
         await _switchDomainForBridge(bridgeDomain, focusEntityUri);
         return;
     }
 
     var pendingFocus = focusEntityUri;
+    var pendingQueryTab = initialQueryTab;
 
     SidebarNav.init({
         onSectionChange: async function(section, targetSection) {
@@ -167,9 +208,10 @@ async function _initQueryPage(initialSection, focusEntityUri, bridgeDomain) {
                 }
             }
             if (section === 'graphql') {
-                if (typeof GraphQLPlayground !== 'undefined') {
-                    setTimeout(function () { GraphQLPlayground.init(); }, 100);
-                }
+                setTimeout(function () {
+                    initQueryPlayground(pendingQueryTab);
+                    pendingQueryTab = null;
+                }, 100);
             }
             if (section === 'dataquality') {
                 if (typeof DQExecModule !== 'undefined') {

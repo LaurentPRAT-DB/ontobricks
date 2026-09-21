@@ -14,6 +14,7 @@ SPARQL = ROOT / "src/front/templates/partials/dtwin/_query_sparql.html"
 CSS = ROOT / "src/front/static/query/css/query-sparql.css"
 GLOBAL_QUERY_CSS = ROOT / "src/front/static/global/css/query.css"
 QUERY_JS = ROOT / "src/front/static/query/js/query.js"
+JS = ROOT / "src/front/static/query/js/query-execute.js"
 MENU = ROOT / "src/front/config/menu_config.json"
 
 
@@ -131,3 +132,22 @@ def test_query_shell_action_mappings_are_wired_in_js():
     assert "OntologyViewer.open" in js
     assert "discussion" in js
     assert "openTwinDiscussion" in js
+
+
+def test_sparql_controller_has_samples_and_no_automatic_explorer_switch():
+    js = read(JS)
+    assert "const SPARQLPlayground" in js
+    assert "async function init()" in js
+    assert "async function execute()" in js
+    assert "function applySample(" in js
+    assert "function isTripleProjection(" in js
+    execute_body = js[js.index("async function execute()") :]
+    execute_body = execute_body[: execute_body.index("function displayResults(")]
+    assert "SidebarNav.switchTo('sigmagraph')" not in execute_body
+
+
+def test_query_page_initializes_only_the_selected_language_tab():
+    js = read(QUERY_JS)
+    assert "initQueryPlayground" in js
+    assert "GraphQLPlayground.init()" in js
+    assert "SPARQLPlayground.init()" in js

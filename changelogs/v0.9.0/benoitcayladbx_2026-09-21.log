@@ -3068,3 +3068,42 @@ Modified files:
 - .cursor/11-frontend-design.mdc
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6800 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 50.81s
+
+## Add SPARQL playground runtime lifecycle
+
+Context: Implement Task 3 for the Knowledge Graph SPARQL playground by adding
+sample loading, SPARQL execution, result rendering, generated SQL display, CSV
+download, and query tab/deep-link lifecycle while preserving the existing
+delegated query-shell action map and GraphiQL lazy init IDs.
+
+Changes:
+
+1. `src/front/static/query/js/query-execute.js`
+   Replace legacy query executor with `SPARQLPlayground` controller (`init`,
+   `execute`, `applySample`, `isTripleProjection`, `showInExplorer` guard),
+   limit clamping (1..5000, default 100), status/error handling, Grid.js/fallback
+   results rendering on `sparql*` IDs, generated SQL `textContent`, and CSV export.
+2. `src/front/static/query/js/query.js`
+   Add query language tab lifecycle (`initQueryPlayground`), URL deep-link tab
+   support (`?tab=sparql`), and one-time `shown.bs.tab` listeners without changing
+   `_QUERY_SHELL_ACTION_MAP` / `_bindQueryShellActions()`.
+3. `src/front/static/query/js/query-graphql.js`
+   Align `_hide` with no-inline-style markup by adding `d-none` and `display:none`.
+4. `tests/units/front/test_sparql_playground_contract.py`
+   Add static contract checks for `SPARQLPlayground` interfaces and no automatic
+   Explorer switch from `execute()`, plus selected-tab initialization assertions.
+5. `tests/e2e/dtwin/test_dtwin_flows.py`
+   Add Query-shell tab visibility, SPARQL deep-link default query, and triple
+   projection detection checks.
+
+Modified files:
+- `src/front/static/query/js/query-execute.js`
+- `src/front/static/query/js/query.js`
+- `src/front/static/query/js/query-graphql.js`
+- `tests/units/front/test_sparql_playground_contract.py`
+- `tests/e2e/dtwin/test_dtwin_flows.py`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests:
+- `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py tests/e2e/dtwin/test_dtwin_flows.py` → 10 passed, 12 skipped, 1 warning in 0.26s
+- `uv run --frozen pytest -q -m "not scenario"` → 3 failed, 6826 passed, 307 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.87s (failures in existing `_query_graphql.html` contracts unrelated to Task 3 JS/test scope)
