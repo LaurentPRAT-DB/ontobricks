@@ -289,19 +289,20 @@
 
 /* Primary is the only filled action variant */
 .btn-primary {
-    background-color: var(--db-primary);
+    background: var(--db-gradient-primary);
     border-color: var(--db-primary);
     color: var(--db-on-primary);
+    box-shadow: var(--db-shadow-primary);
 }
 
 .btn-primary:hover {
-    background-color: var(--db-primary-dark);
+    background: var(--db-primary-dark);
     border-color: var(--db-primary-dark);
     color: var(--db-on-primary);
 }
 
 .btn-primary:focus {
-    background-color: var(--db-primary-dark);
+    background: var(--db-primary-dark);
     border-color: var(--db-primary-dark);
     color: var(--db-on-primary);
     box-shadow: var(--db-focus-ring);

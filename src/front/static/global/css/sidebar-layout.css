@@ -129,7 +129,7 @@ body.full-width-layout {
     bottom: 5px;
     width: 3px;
     border-radius: 0 3px 3px 0;
-    background: var(--db-primary);
+    background: var(--db-gradient-rail);
 }
 
 .sidebar-nav .nav-link.active i {

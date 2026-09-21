@@ -211,7 +211,10 @@ def test_components_css_keeps_only_primary_button_filled():
 
     assert primary_blocks, "No CSS rule targets .btn-primary"
     assert _any_block_has_declaration(
-        primary_blocks, r"(?:background|background-color)", r"var\(--db-primary\)"
+        primary_blocks, r"(?:background|background-color)", r"var\(--db-gradient-primary\)"
+    )
+    assert _any_block_has_declaration(
+        primary_blocks, r"box-shadow", r"var\(--db-shadow-primary\)"
     )
     assert _any_block_has_declaration(
         primary_blocks, r"color", r"var\(--db-on-primary\)"
@@ -528,6 +531,15 @@ def test_resting_cards_now_carry_the_soft_shadow():
     css = _read(MAIN_CSS)
     card_blocks = _rule_blocks_for_exact_class(css, ".card")
     assert _any_block_has_declaration(card_blocks, r"box-shadow", r"var\(--db-shadow-sm\)")
+
+
+def test_sidebar_active_rail_uses_the_aurora_gradient():
+    css = _read(SIDEBAR_LAYOUT_CSS)
+    before_block = _rule_blocks_for_exact_class(css, ".sidebar-nav .nav-link.active::before")
+    assert _any_block_has_declaration(before_block, r"background", r"var\(--db-gradient-rail\)")
+    # The well behind the bar is unchanged — still the soft primary tint.
+    active_block = _rule_blocks_for_exact_class(css, ".sidebar-nav .nav-link.active")
+    assert _any_block_has_declaration(active_block, r"background", r"var\(--db-primary-light\)")
 
 
 def test_nav_hover_indigo_token_is_lighter_than_active_fill():
