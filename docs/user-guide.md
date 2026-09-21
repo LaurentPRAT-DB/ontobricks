@@ -418,16 +418,41 @@ alone.
 
 ### Option C: AI-Powered Wizard
 
-Click **Generate** in the sidebar to generate an ontology automatically from your database schema using an LLM.
+Click **Generate** in the sidebar to generate an ontology automatically from
+your database schema using an LLM. The Wizard is a resumable three-step
+process — you can navigate away and come back at any point, and every step
+in progress survives a page reload:
 
-1. Choose which **catalog/schema** metadata to include
-2. (Optional) Select uploaded **Documents** to enrich the generation
-3. Write custom **Guidelines** or pick a **Quick Template**
-4. Click **Generate** to create the ontology
+1. **Configure & Detect** — choose which **catalog/schema** metadata to
+   include, (optionally) select uploaded **Documents**, write custom
+   **Guidelines** or pick a **Quick Template**, then click **Detect
+   Entities**. This runs as a background task; a progress overlay tracks
+   it and you can navigate to another section while it runs.
+2. **Review Entities** — once detection finishes, review every candidate
+   entity before anything touches your ontology. Entities already in your
+   ontology are shown as locked, read-only rows (their identity can't be
+   changed here). New candidates are **included by default**; for each one
+   you can edit the canonical label, description, type hint, evidence, and
+   add/remove alternate labels, or exclude/remove it outright. You can also
+   add an entity manually. Every edit saves immediately (no separate
+   "save" step) with optimistic-concurrency conflict detection — if the
+   draft changed elsewhere, you're notified and the latest version is
+   reloaded rather than silently overwritten. **Continue** stays disabled
+   until at least one entity (locked or included candidate) remains. Use
+   **Discard Draft** to abandon the review and start over.
+3. **Complete** — click **Continue to Complete** to infer relations,
+   attributes, and axioms (in that strict order) and merge everything into
+   your ontology. Each sub-step is checkpointed, so if one step fails or
+   the task is interrupted, **Retry** resumes from the first incomplete
+   step rather than starting over. The merge is append-only — it never
+   renames or deletes anything already in your ontology.
+
+If your data sources, documents, or ontology change after detection, a
+banner flags the draft as stale and offers a one-click **Re-detect**.
 
 Generation uses the LLM saved in **Domain Information → AI** (an executable
 Unity AI Gateway model service or a legacy Model Serving endpoint). With
-**No LLM** selected, **Generate** stays visible but unavailable.
+**No LLM** selected, **Detect Entities** stays visible but unavailable.
 
 #### Documents (PDF and other formats)
 
@@ -1947,7 +1972,13 @@ longer knows about.
 
 Navigate to **Ontology** in the top navbar, then open **Generate** in the sidebar.
 
-The Wizard uses the LLM saved in **Domain Information → AI** and the imported metadata to automatically design an ontology.
+The Wizard uses the LLM saved in **Domain Information → AI** and the
+imported metadata to design an ontology, across three steps — **Configure &
+Detect**, **Review Entities**, **Complete** — shown as a stepper at the top
+of the section. You can navigate away at any point; the in-progress draft
+resumes exactly where you left it on your next visit.
+
+**1. Configure & Detect**
 
 1. You'll see the list of tables loaded from metadata. **Check the tables** you want the LLM to consider.
 2. **(Optional)** Click a **Quick Template** button to pre-fill domain-specific guidelines:
@@ -1957,19 +1988,36 @@ The Wizard uses the LLM saved in **Domain Information → AI** and the imported 
    - **Healthcare** — patients, providers, appointments, diagnoses
    - **Energy** — energy-sector customer relationship management
 3. Review or edit the **guidelines** text area. You can add specific instructions like "Create a Customer entity with relationships to Contract and Invoice."
-4. Configure generation options:
-   - **Include Data Properties** — generate attributes for entities
-   - **Include Relationships** — generate relationships between entities
-   - **Include Inheritance** — generate class hierarchies
+4. Configure detection options:
+   - **Include Data Properties** — consider attributes for entities
+   - **Include Relationships** — consider relationships between entities
+   - **Include Inheritance** — consider class hierarchies
    - **Use Table Names** — use original table names as entity names
    - **Use Column Comments** — use UC column comments in descriptions
-5. Click **Generate**.
-6. The LLM generates an OWL ontology in Turtle format. You can **preview** the result.
-7. Click **Apply** to import the generated ontology into your domain.
+5. Click **Detect Entities**. This runs as a background task with a
+   progress overlay; you can navigate elsewhere while it works.
 
-After applying, switch to the **Model** view in the sidebar to see the visual ontology with entities, relationships, and inheritance links.
+**2. Review Entities**
 
-> **Tip**: You can edit the generated ontology afterwards — add or remove entities, rename relationships, set icons, adjust attributes.
+Once detection finishes, the wizard moves to Review automatically. Entities
+already in your ontology appear as locked, read-only rows. Every detected
+candidate is **included by default** — for each one you can edit its
+canonical label, description, type hint, evidence, and alternate labels, or
+exclude/remove it. You can also add a candidate manually. Edits save
+immediately; **Continue to Complete** stays disabled until at least one
+entity remains.
+
+**3. Complete**
+
+Click **Continue to Complete** to infer relations, attributes, and axioms
+(strictly in that order) and merge the result into your ontology — this is
+append-only and never renames or deletes anything already present. If a
+step fails or is interrupted, **Retry** resumes from the first incomplete
+step. On success, the domain switches to the **Model** view automatically
+to show the updated ontology with entities, relationships, and inheritance
+links.
+
+> **Tip**: You can edit the merged ontology afterwards — add or remove entities, rename relationships, set icons, adjust attributes.
 
 ---
 
@@ -2120,12 +2168,12 @@ Open **Explorer** in the sidebar to explore the graph viewer interactively:
 | 1 | Settings | Configure Databricks connection | Manual (one-time) |
 | 2 | Domain > Information | Set LLM target and triple store table | Manual (one-time) |
 | 3 | Domain > Metadata | Import table metadata from Unity Catalog | One click |
-| 4 | Ontology > Generate | Generate ontology from metadata using LLM | One click |
+| 4 | Ontology > Generate | Detect → review → complete ontology from metadata using LLM | Detect + Continue |
 | 5 | Mapping > Auto-Map | Auto-map entities and relationships to SQL | One click |
 | 6 | Knowledge Graph > Build | Synchronize to triple store | One click |
 | 7 | Knowledge Graph > Data Quality | Run quality checks | One click |
 
-After the initial one-time configuration (steps 1–2), the entire pipeline from metadata to triple store is **four clicks**: Import Metadata, Generate, Auto-Map, Synchronize.
+After the initial one-time configuration (steps 1–2), the entire pipeline from metadata to triple store is a handful of clicks: Import Metadata, Detect Entities, Continue to Complete, Auto-Map, Synchronize.
 
 ---
 

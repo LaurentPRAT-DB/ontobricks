@@ -1108,3 +1108,219 @@ Tests:
   304 skipped, 6 deselected, 1 xfailed, 32 warnings in 55.26s — no
   regressions (50 more passing than the Task 4 baseline: the new focused
   tests above).
+
+---
+
+## Resumable three-step Generate wizard UI (task 5 of staged ontology generate)
+
+Context: Task 5 (final task) of the `staged-ontology-generate` plan on
+reviewed base `9eab9437` (Task 4 review fixes). Rebuilds the Ontology ->
+Generate section's existing single-page wizard into a resumable three-step
+in-page wizard — Configure & Detect -> Review Entities -> Complete — wired
+to the five staged routes landed in Task 4, replacing every remaining
+client reference to the now-410 legacy `/wizard/generate-async` one-shot
+path. The attached implementation plan
+(`/Users/benoit.cayla/.cursor/plans/staged-ontology-generate_6fc7e158.plan.md`)
+was not edited. Followed strict TDD: `tests/units/front/
+test_ontology_generate_wizard_staged.py` (39 structural/behavior contract
+tests, following this repo's existing regex-on-raw-source convention for
+frontend tests since there is no JS test runner) was written first and run
+to an observed RED (10 failing — missing routes/functions/session keys/
+stepper wiring) before any markup/JS/CSS change, then implemented to GREEN.
+
+Changes:
+
+1. src/front/templates/partials/ontology/_ontology_wizard.html
+   Restructured from one form into three stage panes under a new
+   accessible stepper nav (`wizard-stepper`, `aria-label`, one `<li
+   aria-current="step">` per active step): `wizardConfigurePane` (visible
+   by default, wraps the existing Data Sources/Documents/Guidelines/
+   Options tabs unchanged — `wizardMetadataTableBody`/`wizardDocsList`/
+   `wizardGuidelines`/`wizardIncludeDataProps`/`wizardTemplateButtons` all
+   preserved verbatim), `wizardReviewPane` (`ob-hidden` by default —
+   stale-source banner with a "Re-detect" action, an `aria-live="polite"`
+   validation banner, a read-only "Existing Entities" (locked anchors)
+   card, a "Candidate Entities" card with an add-candidate form and a
+   Discard Draft / disabled-by-default Continue-to-Complete footer), and
+   `wizardCompletePane` (`ob-hidden` by default — a `relations -> attributes
+   -> axioms -> merge` checklist with `data-substage` markers in that exact
+   order, a summary block, and a Retry button). The top-right CTA keeps its
+   existing id/`data-requires-llm` (`wizardTopGenerateBtn`) but is now
+   relabeled "Detect Entities" and drives Stage 1 detection instead of the
+   old one-shot generate. No inline `style=`/`<script>` anywhere in the
+   template; tabs keep the shared `ob-tabs` treatment.
+2. src/front/static/ontology/js/ontology-wizard-review.js (new)
+   Owns Stage 2 rendering/mutation only. `render(draftView)` re-renders the
+   stale banner, locked-anchor rows (`renderLockedAnchorRow` — read-only,
+   deliberately never wires include/exclude/remove/edit controls, per the
+   design's "existing anchors cannot be edited from this screen" rule),
+   candidate rows (checkbox include/exclude, editable canonical label/
+   description/type-hint/evidence, a repeatable alternate-label chip
+   input), and the Continue button's disabled state (stale OR zero
+   entities). Every mutation (`add`/`remove`/`update`/`include`/`exclude`)
+   goes through one `postDraftUpdate({op, ...})` helper that attaches the
+   current `draft_revision` and POSTs to `.../draft/update`; a `409`
+   response reloads the draft from the server instead of clobbering it
+   (`showNotification` + `GET .../draft`), never silently retrying the
+   stale write. Discard uses the shared `showConfirmDialog` (no native
+   `confirm()`/`alert()`/`prompt()` anywhere in this module or
+   `ontology-wizard.js`). Event handling is delegated on the pane root
+   (3 `addEventListener` calls total for click/change/keydown — not one
+   listener per rendered row) via `data-action` attributes
+   (`wizard-review-continue`/`-discard`/`-remove-candidate`/etc.).
+   Cross-module calls into `ontology-wizard.js` (Continue -> Stage 3,
+   Discard success -> back to Configure, stale re-detect) go through a
+   small `window.WizardCore` bridge object rather than duplicating task-
+   polling/stage-transition logic here.
+3. src/front/static/ontology/js/ontology-wizard.js (rewritten)
+   - Removed every legacy one-shot symbol (`generateOntologyFromWizard`,
+     `applyWizardOntology(Silent)`, `showWizardResults`,
+     `wizardGeneratedOWL`, the pitfall-refinement-round panel helpers tied
+     to the old agent) and its three sessionStorage keys (`WIZARD_TASK_KEY`,
+     `WIZARD_OWL_KEY`, `WIZARD_STATS_KEY`) — no code path calls
+     `/wizard/generate-async` (410) anymore.
+   - Added `WIZARD_DETECT_TASK_KEY`/`WIZARD_COMPLETE_TASK_KEY` — the *only*
+     two sessionStorage keys this module ever writes, and only ever an
+     opaque task id string (`sessionStorage.setItem(KEY, taskId)`, never
+     `JSON.stringify` of a draft/entity/checkpoint). All draft/entity/
+     checkpoint state is fetched fresh from `GET .../draft` on every
+     resume (page load with no running task, task completion, task
+     failure/cancel, server-restart/404-on-poll) — `resumeDraftFromServer()`
+     is the single choke point that decides which stage to show
+     (`reviewing` -> Review pane; `completing`/`done` -> Complete pane;
+     no draft -> Configure pane).
+   - `setWizardStage()` drives the stepper: toggles each `.wizard-step`'s
+     `active`/`completed` class and sets/clears `aria-current="step"" per
+     the accessible-stepper requirement.
+   - `startGenerateDetection()` confirms (shared `showConfirmDialog`, not
+     `window.confirm`) before discarding an in-progress Review/Complete
+     draft, then POSTs `.../generate/detect` with the same metadata/
+     guidelines/options/documents payload as before (unchanged ready-
+     document filtering: `file.parse_status !== 'ready'`) plus the
+     selected table names, stores the task id, and polls via the existing
+     `/tasks/{id}` + `TaskProgressUI` overlay.
+   - `startGenerateCompletion()`/`retryGenerateCompletion()` POST
+     `.../generate/complete` and poll the same way; `renderCompleteChecklist
+     (draft)` reads `draft.completion_checkpoints`/`draft.merge_checkpoint`
+     to paint the relations/attributes/axioms/merge checklist and shows the
+     Retry button only when a checkpoint is `failed` — retrying just
+     re-issues the same completion call, which the server already resumes
+     at the first non-`done` substage (never resets a `done` one).
+     `renderCompleteChecklistFromTaskSteps()` mirrors the same checklist
+     live from the polling task's `steps` while a completion is running.
+   - `handleCompletionSuccess()` mirrors today's post-generate behavior:
+     refresh ontology status, reload the session ontology, `SidebarNav
+     .switchTo('map')`, and a `showNotification` summary of what was
+     merged.
+   - `window.WizardCore` exposes exactly the three calls Stage 2 needs
+     (`startCompletion`, `redetect`, `onDraftDiscarded`) — no other
+     surface is shared between the two files, and no task-polling logic is
+     duplicated in `ontology-wizard-review.js`.
+   - Stage 1 config loading (`loadWizardMetadata`/`loadWizardDocuments`/
+     `loadWizardTemplatesFromServer`), table/document selection, and the
+     `data-action` delegation for the Configure pane's own controls are
+     unchanged from before this task.
+4. src/front/static/ontology/css/ontology-wizard.css
+   Replaced the old hard-coded-hex `.wizard-step` progress-step styling
+   with design tokens (`var(--db-primary)`, `var(--db-primary-light)`,
+   `var(--db-status-success)`, `var(--db-text-muted)`, `var(--db-radius-*)`)
+   and added the new stepper/entity-row/chip-input/complete-checklist rules
+   scoped under `.wizard-*` classes — no new visual language, all built
+   from existing tokens/`ob-*` primitives.
+5. src/front/templates/ontology.html
+   Added the `ontology-wizard-review.js` `<script>` tag immediately before
+   `ontology-wizard.js` (load order: review module's `window.WizardReview`
+   must exist before the orchestrator calls it).
+6. tests/units/front/test_ontology_generate_wizard_staged.py (new, 39 tests)
+   Structural/behavior contracts (regex-on-raw-source, matching every
+   other `tests/units/front/test_*` module in this repo): asset wiring;
+   exact staged-endpoint usage per stage and that the legacy one-shot route/
+   symbols are gone; sessionStorage holds only the two task-id keys and no
+   `setItem` call ever carries a `JSON.stringify`d or `"draft"`-named
+   payload; the three-step accessible stepper (nav `aria-label`, per-step
+   `data-wizard-step`, JS-owned `active`/`completed`/`aria-current`
+   transitions); Configure pane preserves every existing control and stays
+   visible by default with Review/Complete both `ob-hidden`; the top CTA
+   keeps `data-requires-llm`; locked-anchor rows never wire mutation
+   controls; candidates default-included with full edit controls
+   (canonical label/description/type-hint/evidence/alternate-label chips);
+   add/remove/include/exclude/update all POST the right `op`; every
+   `draft/update` call carries the current revision and a `409` reloads
+   rather than clobbers; the Continue button starts `disabled`; discard
+   uses `showConfirmDialog`, never `confirm()`/`alert()`/`prompt()`
+   anywhere in either new JS file; the complete checklist is in strict
+   `relations/attributes/axioms/merge` order and rendered from
+   `completion_checkpoints`/`merge_checkpoint`; the Retry button exists and
+   resumes via the same `.../complete` route; completion success mirrors
+   today's `SidebarNav.switchTo('map')` + notification behavior; the stale
+   banner + its re-detect action exist and `ontology-wizard-review.js`
+   checks `.stale`; the validation banner is `aria-live`; no inline
+   `style=`/`<script>` in the template; delegated (not per-row) event
+   handling in the review module (<=6 `addEventListener` calls); ready-
+   document filtering is preserved; and `test_no_llm_ui_gate.py` still
+   references `wizardTopGenerateBtn`. One test-authoring bug found and
+   fixed during RED (the `renderLockedAnchor*` body-extraction regex
+   required an unindented closing brace, which doesn't exist for a function
+   defined inside an IIFE) — corrected to `\n\s*\}` before writing any
+   production code to satisfy it.
+
+No backend route/workflow semantics were changed — Task 4's
+`GenerateWorkflow.py`/routes/error codes are used exactly as documented in
+`tests/units/api/test_generate_routes.py`/`GenerateDraft.py`'s `to_dict()`
+shape (`stage`/`existing_anchors`/`candidate_entities`/`draft_revision`/
+`completion_checkpoints`/`merge_checkpoint`/`stale`).
+
+Modified/added files:
+- src/front/templates/partials/ontology/_ontology_wizard.html
+- src/front/static/ontology/js/ontology-wizard-review.js (new)
+- src/front/static/ontology/js/ontology-wizard.js
+- src/front/static/ontology/css/ontology-wizard.css
+- src/front/templates/ontology.html
+- tests/units/front/test_ontology_generate_wizard_staged.py (new)
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/front/test_ontology_generate_wizard_staged.py`
+  → 10 failed, 29 passed (before `ontology-wizard-review.js` existed and
+  before `ontology-wizard.js`/the template were rewritten — the 29 early
+  passes are the HTML/CSS contracts already satisfied by the first
+  edit pass; the 10 failures were exactly the JS-orchestrator-dependent
+  assertions: detect/complete route usage, legacy route/symbol removal,
+  new sessionStorage keys, `setWizardStage`, locked-anchor read-only body
+  (test-regex bug, see above), `completion_checkpoints`, and the retry
+  button/function).
+- GREEN: same command → 39 passed.
+- Focused regression: `uv run --frozen pytest -q tests/units/front/
+  tests/units/api/test_generate_routes.py tests/units/api/
+  test_no_llm_route_contract.py tests/units/auth/test_permission_middleware.py
+  tests/units/ontology/ tests/units/domain/test_domain_session.py` →
+  2382 passed.
+- Non-scenario e2e (browser-dependent, skipped in this environment — no
+  Playwright browser binaries installed): `uv run --frozen pytest -q
+  tests/e2e/ontology/test_sidebar_flows.py -k wizard` → 2 skipped (both
+  reference only the unchanged `wizardSelectAllCheckbox`/section-switch
+  behavior, not the new stages — no code path here required updating
+  them). Live scenario suites were not run per instructions.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6629 passed,
+  304 skipped, 6 deselected, 1 xfailed, 32 warnings in 54.28s (39 more
+  passing than the Task 4-fixes baseline — the new focused tests above; no
+  regressions).
+
+Concerns / follow-ups for the browser tester:
+- Local run: `./scripts/start.sh` (already running in this environment per
+  the open terminal), then open Ontology -> Generate. No new fixture is
+  needed — the five staged routes and the durable draft/session-store
+  wiring already existed from Task 4.
+- Not covered by structural tests (needs a real browser): actual multi-
+  round trip through Configure -> Detect -> Review (edit/add/remove/
+  include/exclude a candidate, add an alternate label, confirm the
+  Continue button flips from disabled to enabled) -> Complete ->
+  Map-view navigation; the 409-conflict banner path (two tabs editing the
+  same draft); the stale-banner path (change a table selection after
+  detecting, confirm the banner appears and Continue stays disabled); and
+  a simulated task-manager restart mid-detect/-complete (confirm the
+  "interrupted, please try again" notification and a clean return to a
+  resumable state). No Databricks LLM endpoint was exercised in this
+  environment (same missing-credentials gap as every earlier task in this
+  plan) — Stage 1/3 button clicks were not driven against a live endpoint,
+  only the structural JS/HTML/CSS contracts above.
