@@ -20,6 +20,65 @@ from document_corpus_contract import run_contract  # noqa: E402
 DATASET = ROOT / "tests/eval/datasets/agent_owl_generator/baseline.jsonl"
 THRESHOLDS = ROOT / "tests/eval/thresholds.yaml"
 
+# Minimum required "staged" material-change examples for the three-stage
+# Generate design (docs/superpowers/specs/2026-09-20-three-stage-ontology-
+# generate-design.md). These describe the target contract for the staged
+# `detect_entities` / `infer_relations` / `infer_attributes` / `infer_axioms`
+# entry points ahead of their implementation (Task 3 of the
+# `staged-ontology-generate` plan) and are not yet scored by
+# `document_corpus_contract.score_example`, which only judges parsed-corpus
+# tool-call traces. This check keeps the staged rows represented and
+# structurally executable now, without weakening the existing parsed-corpus
+# contract check above.
+_MIN_STAGED_EXAMPLES = 10
+_REQUIRED_STAGED_CONSTRAINT_FIELDS = {"kind", "value"}
+
+
+def _validate_staged_examples(path: Path) -> int:
+    """Validate staged-contract dataset rows and return how many were found.
+
+    A "staged" row is any dataset line tagged ``"staged"``. Unlike the
+    parsed-corpus rows consumed by ``document_corpus_contract.load_examples``,
+    staged rows describe the not-yet-implemented staged entry-point contract
+    (see SPEC.md §3a/§6a) and are validated structurally rather than by
+    replaying an agent trace.
+    """
+    lines = [
+        line
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    all_examples = [json.loads(line) for line in lines]
+    staged = [
+        example
+        for example in all_examples
+        if "staged" in example.get("tags", [])
+    ]
+    if len(staged) < _MIN_STAGED_EXAMPLES:
+        raise ValueError(
+            f"{path} has {len(staged)} staged examples; minimum is "
+            f"{_MIN_STAGED_EXAMPLES}"
+        )
+    ids = [str(example.get("id", "")) for example in staged]
+    if any(not item for item in ids) or len(ids) != len(set(ids)):
+        raise ValueError(f"{path} contains missing or duplicate staged ids")
+    for example in staged:
+        stage = example.get("input", {}).get("stage")
+        if not stage:
+            raise ValueError(f"{example['id']}: staged example missing input.stage")
+        constraints = example.get("expected", {}).get("constraints", [])
+        if not constraints:
+            raise ValueError(
+                f"{example['id']}: staged example has no expected constraints"
+            )
+        for constraint in constraints:
+            if not _REQUIRED_STAGED_CONSTRAINT_FIELDS.issubset(constraint):
+                raise ValueError(
+                    f"{example['id']}: staged constraint missing "
+                    f"{_REQUIRED_STAGED_CONSTRAINT_FIELDS}: {constraint}"
+                )
+    return len(staged)
+
 
 def _live_runner(
     example: Dict[str, Any], *, host: str, token: str, endpoint: str
@@ -117,6 +176,13 @@ def main() -> None:
     args = parser.parse_args()
     if args.live and not (args.host and args.token and args.endpoint):
         parser.error("--live requires host, token, and endpoint")
+
+    staged_count = _validate_staged_examples(DATASET)
+    print(
+        f"[STAGED] validated {staged_count} staged contract examples "
+        "(schema-only; scored once the staged entry points land — see "
+        "SPEC.md §3a/§6a)"
+    )
 
     live = None
     if args.live:

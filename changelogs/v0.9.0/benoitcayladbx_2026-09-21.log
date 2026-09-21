@@ -1,0 +1,70 @@
+## Establish the staged ontology Generate contract and baseline evaluation
+
+Context: Task 1 of the `staged-ontology-generate` plan. Generate is being
+refactored from a one-shot LLM call into a durable three-stage wizard
+(detect → human review → checkpointed relations/attributes/axioms
+completion) that appends to the existing ontology instead of replacing it.
+This entry establishes the approved design, the `agent_owl_generator` SPEC
+target contract, and the expanded eval dataset ahead of any runtime code
+change, per the AI Feature Lifecycle gate (`.cursor/12-ai-feature-lifecycle.mdc`).
+No runtime source code was changed.
+
+Changes:
+
+1. docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md
+   New design doc capturing the approved three-stage Generate architecture:
+   Stage 1 detection inputs/outputs, Stage 2 human review (add/remove/
+   include/exclude/edit + alternate labels, at-least-one-entity invariant,
+   locked existing anchors), the durable versioned draft and source
+   fingerprint/invalidation contract, stable entity identity across rename,
+   Stage 3 strict relations→attributes→axioms ordering with per-substage
+   checkpoints and resume, the append-only final merge, the no-reparse
+   contract, and removal of the post-generation pitfall rewrite loop in
+   favor of prompt-first constraints and reject-only validation.
+2. .planning/agents/agent_owl_generator/SPEC.md
+   Fully updated for the staged material change: four staged entry points
+   (`detect_entities`, `infer_relations`, `infer_attributes`,
+   `infer_axioms`) marked `(staged, planned)` alongside the still-current
+   one-shot `run_agent` contract; a new §3a structured-schema section for
+   candidate entities and locked anchors; three new staged success-criteria
+   examples; eight new proposed staged eval dimensions (§5) with a proposed
+   ≥0.95 aggregate, explicitly not yet in `tests/eval/thresholds.yaml`; a
+   new §6a documenting prompt-first pitfall handling, entity closure, the
+   append-only merge, and the no-reparse rule; five new staged failure
+   modes (§6); updated tracing requirements (draft id/revision/stage trace
+   tags); and a sign-off section recording the real dry-run baseline result
+   and the exact live-baseline blocker (missing Databricks credentials) —
+   no run URI was fabricated.
+3. .planning/agents/agent_owl_generator/eval/dataset.jsonl and
+   tests/eval/datasets/agent_owl_generator/baseline.jsonl
+   Synced both mirrors to be byte-identical (the planning mirror was
+   missing 3 legacy seed rows already present in the baseline mirror), then
+   appended 12 new `staged`-tagged material-change examples covering
+   detection, default inclusion, manual add/edit/remove, alternate labels,
+   excluded-entity rejection, locked-anchor append/dedup, strict
+   relations→attributes→axioms ordering, checkpoint recovery, stale-source
+   invalidation, and no document reparse. The dataset now has 25 examples
+   (10 parsed-corpus + 3 legacy + 12 staged), all unique ids, all valid
+   JSONL. The 10 pre-existing parsed-corpus rows are unchanged.
+4. tests/eval/run_agent_owl_generator.py
+   Added `_validate_staged_examples()` — a schema-level structural check
+   (unique ids, required `input.stage`, non-empty `expected.constraints`
+   with `kind`/`value`) run before the existing parsed-corpus contract
+   check, so the 12 staged rows are represented and executable now without
+   changing or weakening the existing 10-case parsed-corpus scoring. The
+   staged rows are not yet judged behaviorally because `detect_entities` /
+   `infer_relations` / `infer_attributes` / `infer_axioms` do not exist at
+   runtime; that harness extension lands with the staged agent (plan Task 3).
+
+Modified files:
+- docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md (new; force-added — `docs/superpowers/` is gitignored by default, matching the existing tracked sibling `2026-09-18-parsed-document-corpus-design.md`)
+- .planning/agents/agent_owl_generator/SPEC.md
+- .planning/agents/agent_owl_generator/eval/dataset.jsonl
+- tests/eval/datasets/agent_owl_generator/baseline.jsonl
+- tests/eval/run_agent_owl_generator.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- `uv run --frozen python tests/eval/run_agent_owl_generator.py` → `[STAGED] validated 12 staged contract examples`; all 10 parsed-corpus cases PASS; aggregate `1.000` (threshold `0.900`). This is the pre-change baseline for the unchanged parsed-corpus contract — no runtime code changed in this revision.
+- `uv run --frozen python tests/eval/run_agent_owl_generator.py --live` → **BLOCKED**: `--live requires host, token, and endpoint` (no `DATABRICKS_HOST`/`DATABRICKS_TOKEN`/`ONTOBRICKS_LLM_ENDPOINT` configured in this environment). No MLflow run URI exists for this attempt; none was fabricated.
+- `uv run --frozen pytest -q -m "not scenario"` → 6329 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.98s.
