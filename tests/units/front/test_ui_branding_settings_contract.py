@@ -73,6 +73,22 @@ def test_template_contains_ui_section_with_branding_and_theme_cards():
     assert 'id="uiBrandingStatus"' in html
 
 
+def test_theme_card_exposes_an_aurora_color_picker_mirroring_primary():
+    html = _read(SETTINGS_TEMPLATE)
+    assert 'id="uiBrandingAuroraColor"' in html
+    assert 'id="uiBrandingAuroraHex"' in html
+    assert 'type="color"' in html
+    assert 'id="uiBrandingAuroraHelp"' in html
+    assert 'id="uiBrandingAuroraError"' in html
+    assert 'aria-describedby="uiBrandingAuroraHelp uiBrandingAuroraError"' in html
+    assert 'id="uiSwatchAurora"' in html
+    assert 'role="img"' in html
+
+    # Aurora field must sit in the same Theme card as Primary, after it.
+    theme_card = html[html.index('<h5 class="card-title mb-3">Theme</h5>') :]
+    assert theme_card.index("uiBrandingPrimaryHex") < theme_card.index("uiBrandingAuroraColor")
+
+
 def test_logo_file_input_has_accessible_label_and_help_association():
     html = _read(SETTINGS_TEMPLATE)
     assert 'for="uiBrandingLogoFile"' in html
