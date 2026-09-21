@@ -30,8 +30,20 @@ THRESHOLDS = ROOT / "tests/eval/thresholds.yaml"
 # tool-call traces. This check keeps the staged rows represented and
 # structurally executable now, without weakening the existing parsed-corpus
 # contract check above.
-_MIN_STAGED_EXAMPLES = 10
+_MIN_STAGED_EXAMPLES = 14
 _REQUIRED_STAGED_CONSTRAINT_FIELDS = {"kind", "value"}
+
+# Every required staged topic must be exercised by at least one staged
+# example's constraint `kind` (see SPEC.md §5 proposed staged dimensions).
+# This locks in coverage for the two review-flagged contract gaps — a
+# rejected stage output must never be silently rewritten in-request, and no
+# entry point may perform one-shot generation as a default — so a future
+# dataset edit cannot silently drop them while still satisfying the count
+# floor above.
+_REQUIRED_STAGED_CONSTRAINT_KINDS = {
+    "stage_no_rewrite_after_reject",
+    "stage_no_one_shot_default",
+}
 
 
 def _validate_staged_examples(path: Path) -> int:
@@ -62,6 +74,7 @@ def _validate_staged_examples(path: Path) -> int:
     ids = [str(example.get("id", "")) for example in staged]
     if any(not item for item in ids) or len(ids) != len(set(ids)):
         raise ValueError(f"{path} contains missing or duplicate staged ids")
+    seen_kinds: set = set()
     for example in staged:
         stage = example.get("input", {}).get("stage")
         if not stage:
@@ -77,6 +90,13 @@ def _validate_staged_examples(path: Path) -> int:
                     f"{example['id']}: staged constraint missing "
                     f"{_REQUIRED_STAGED_CONSTRAINT_FIELDS}: {constraint}"
                 )
+            seen_kinds.add(constraint["kind"])
+    missing_kinds = _REQUIRED_STAGED_CONSTRAINT_KINDS - seen_kinds
+    if missing_kinds:
+        raise ValueError(
+            f"{path} is missing required staged constraint kinds: "
+            f"{sorted(missing_kinds)}"
+        )
     return len(staged)
 
 

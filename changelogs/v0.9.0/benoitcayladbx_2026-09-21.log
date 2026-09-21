@@ -68,3 +68,67 @@ Tests:
 - `uv run --frozen python tests/eval/run_agent_owl_generator.py` → `[STAGED] validated 12 staged contract examples`; all 10 parsed-corpus cases PASS; aggregate `1.000` (threshold `0.900`). This is the pre-change baseline for the unchanged parsed-corpus contract — no runtime code changed in this revision.
 - `uv run --frozen python tests/eval/run_agent_owl_generator.py --live` → **BLOCKED**: `--live requires host, token, and endpoint` (no `DATABRICKS_HOST`/`DATABRICKS_TOKEN`/`ONTOBRICKS_LLM_ENDPOINT` configured in this environment). No MLflow run URI exists for this attempt; none was fabricated.
 - `uv run --frozen pytest -q -m "not scenario"` → 6329 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.98s.
+
+## Address Task 1 review findings for the staged ontology Generate contract
+
+Context: Follow-up to the entry above. A review of Task 1 flagged four gaps:
+missing staged eval coverage for the "no rewrite after a rejected validation"
+and "no one-shot default path" invariants, an inconsistent constraint-kind
+name for the at-least-one-entity rule, sequential `draft_revision` values
+across unrelated staged examples that implied a false shared session, and an
+inconsistent annotation placement in the SPEC identity table. No runtime
+source code was changed; the attached implementation plan
+(`/Users/benoit.cayla/.cursor/plans/staged-ontology-generate_6fc7e158.plan.md`)
+was not edited.
+
+Changes:
+
+1. .planning/agents/agent_owl_generator/eval/dataset.jsonl and
+   tests/eval/datasets/agent_owl_generator/baseline.jsonl
+   Added two new `staged`-tagged examples: `staged-no-rewrite-after-
+   validation-001` (a rejected Stage 3 axioms output must be reported as a
+   retryable failure and never resubmitted as an in-request rewrite) and
+   `staged-no-one-shot-default-001` (no entry point may silently perform
+   one-shot generation as a default path). Renamed the inconsistent
+   `min_remaining_entities` constraint kind to the canonical
+   `min_included_entities` used elsewhere for the same at-least-one-entity
+   invariant. Replaced the sequential `draft_revision` values across
+   independent staged examples (2..9) with non-sequential, example-specific
+   values so no example implies it continues another's draft session.
+   Dataset now has 27 rows (10 parsed-corpus + 3 legacy + 14 staged), all
+   unique ids, byte-identical mirrors, valid JSONL.
+2. .planning/agents/agent_owl_generator/SPEC.md
+   Moved the `stage_entry_points` `(staged, planned)` annotation from the
+   identity table's Field column into the Value column, consistent with the
+   `max_owl_eval_rounds` row's annotation style. Added a ninth proposed
+   staged eval dimension, `stage_no_one_shot_default`, matching the new
+   dataset coverage. Updated §7 to describe 14 staged cases (was 12) and the
+   two new required-coverage topics, and documented the runner's new
+   required-constraint-kind check. Updated the §10 sign-off note to record
+   the 14-example validation result.
+3. tests/eval/run_agent_owl_generator.py
+   Raised `_MIN_STAGED_EXAMPLES` from 10 to 14 to match the current staged
+   row count, and added `_REQUIRED_STAGED_CONSTRAINT_KINDS` — a coverage
+   check asserting `stage_no_rewrite_after_reject` and
+   `stage_no_one_shot_default` are each exercised by at least one staged
+   example — so neither review-flagged gap can silently regress out of the
+   dataset even if the row count is later satisfied by unrelated additions.
+   Verified the new checks actually fail by temporarily corrupting/removing
+   staged rows, then restored the files and re-validated byte-identical
+   mirrors.
+4. .superpowers/sdd/progress.md (ignored; not committed)
+   Added a "Three-stage ontology generate implementation" section
+   referencing the plan file and recording the Task 1 and Task 1 fixes
+   commits/baseline/test results.
+
+Modified files:
+- .planning/agents/agent_owl_generator/SPEC.md
+- .planning/agents/agent_owl_generator/eval/dataset.jsonl
+- tests/eval/datasets/agent_owl_generator/baseline.jsonl
+- tests/eval/run_agent_owl_generator.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- `uv run --frozen python tests/eval/run_agent_owl_generator.py` → `[STAGED] validated 14 staged contract examples`; all 10 parsed-corpus cases PASS; aggregate `1.000` (threshold `0.900`).
+- Negative-control check: temporarily dropped `staged-no-one-shot-default-001` → runner correctly raised `ValueError: ... has 13 staged examples; minimum is 14`; restored the file and re-confirmed mirrors byte-identical and the harness passes again.
+- `uv run --frozen pytest -q -m "not scenario"` → 6329 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 52.18s.

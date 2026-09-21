@@ -40,7 +40,7 @@ without an intervening review step.
 | `max_owl_eval_rounds` | `2` (`MAX_OWL_EVAL_ROUNDS`; Stage-1 PGE evaluator retry cap — **(staged, planned)** retained only as a reject/report check, not a rewrite trigger; see §6a) |
 | `max_classes` | `40` (`_DEFAULT_MAX_CLASSES`; over-generation guard — accepted ontology is asked to consolidate above this. Overridable via `options["max_classes"]`, `<=0` disables) |
 | `mlflow_experiment` | `/Shared/ontobricks/agents/owl_generator` |
-| `stage_entry_points` **(staged, planned)** | `detect_entities` (Stage 1), `infer_relations` / `infer_attributes` / `infer_axioms` (Stage 3, strict order); the current `run_agent` one-shot entry point is deprecated once the staged entry points ship and is not exposed as a default UI/API path |
+| `stage_entry_points` | **(staged, planned)** `detect_entities` (Stage 1), `infer_relations` / `infer_attributes` / `infer_axioms` (Stage 3, strict order); the current `run_agent` one-shot entry point is deprecated once the staged entry points ship and is not exposed as a default UI/API path |
 
 ## 3. Tool surface
 
@@ -161,6 +161,7 @@ enforced by CI until the staged harness lands:
 | `stage_stale_fingerprint_block` | resume/update is refused when the source fingerprint changed since detection | `1.00` | contract | same (planned) |
 | `stage_alternate_label_lexical_use` | synonyms surface as `alternate_labels`, not separate candidate entities | `0.90` | contract | same (planned) |
 | `stage_no_rewrite_after_reject` | a validation-rejected stage output is reported as a failure, never resubmitted as an in-request rewrite | `1.00` | contract | same (planned) |
+| `stage_no_one_shot_default` | no entry point applies a full ontology without passing through detect → review → complete | `1.00` | contract | same (planned) |
 
 **Staged contract aggregate threshold (proposed):** ≥ `0.95`. To be
 calibrated against real staged-agent traces before it is added to
@@ -210,16 +211,23 @@ Cross-reference for §6's staged rows and §3a's entity-closure rule:
   parsed-corpus material-change cases (ready, pending, failed, mixed, empty,
   boundary, and adversarial corpus states — scored by
   `tests/eval/run_agent_owl_generator.py`) plus 3 legacy schema-shape seed
-  cases and 12 staged-contract material-change cases (tagged `staged`;
+  cases and 14 staged-contract material-change cases (tagged `staged`;
   documented contract examples for detection, default inclusion, manual
   add/edit/remove, alternate labels, excluded-entity rejection,
   locked-anchor append/dedup, strict relations→attributes→axioms ordering,
-  checkpoint recovery, stale-source invalidation, and no-reparse — see
-  §3a/§6a). The `staged` cases describe the target contract ahead of the
-  Task 3 implementation; they are not yet executed by
-  `tests/eval/run_agent_owl_generator.py` because `detect_entities` /
-  `infer_relations` / `infer_attributes` / `infer_axioms` do not exist at
-  runtime yet (see §8 for how they will be wired in).
+  checkpoint recovery, stale-source invalidation, no-reparse, no
+  post-rejection rewrite after a deterministic validation failure, and no
+  one-shot generation path/default — see §3a/§6a). The `staged` cases
+  describe the target contract ahead of the Task 3 implementation; they are
+  not yet judged behaviorally by `tests/eval/run_agent_owl_generator.py`
+  because `detect_entities` / `infer_relations` / `infer_attributes` /
+  `infer_axioms` do not exist at runtime yet (see §8 for how they will be
+  wired in). The runner does structurally validate every staged row
+  (`_validate_staged_examples`): a floor of 14 examples, unique ids, a
+  present `input.stage`, non-empty `expected.constraints`, and mandatory
+  coverage of the `stage_no_rewrite_after_reject` and
+  `stage_no_one_shot_default` constraint kinds, so neither review-flagged
+  gap can silently regress out of the dataset.
 - **Planning mirror:** `.planning/agents/agent_owl_generator/eval/dataset.jsonl`.
 - **Regression:** `tests/eval/datasets/agent_owl_generator/regression.jsonl` (empty until first production failure).
 
@@ -253,13 +261,15 @@ planned)` sections; plan: `staged-ontology-generate`).
 - [x] Post-change eval (parsed-corpus contract, pre-existing, unaffected by
       this revision): `https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663818/runs/6ef43cc56fb34cb1b74208fd81ae06a9` (`judge_score=1.000`).
 - [x] Pre-change baseline for **this** material change (staged-ontology-generate,
-      Task 1): dry-run contract validation only —
+      Task 1 + fixes): dry-run contract validation only —
       `uv run --frozen pytest -q -m "not scenario"` +
       `uv run --frozen python tests/eval/run_agent_owl_generator.py`
-      → all 10 parsed-corpus cases PASS, aggregate `1.000` (stub judge, no
-      MLflow run is created in dry-run mode). No runtime/prompt code changed
-      in this revision, so this dry-run result **is** the pre-change
-      baseline for the unchanged parsed-corpus contract.
+      → 14 staged examples structurally validated (coverage-checked for
+      `stage_no_rewrite_after_reject` and `stage_no_one_shot_default`); all
+      10 parsed-corpus cases PASS, aggregate `1.000` (stub judge, no MLflow
+      run is created in dry-run mode). No runtime/prompt code changed in
+      this revision, so this dry-run result **is** the pre-change baseline
+      for the unchanged parsed-corpus contract.
 - [ ] Live MLflow baseline run for this material change: **NOT RUN — BLOCKED.**
       `tests/eval/run_agent_owl_generator.py --live` requires
       `DATABRICKS_HOST`, `DATABRICKS_TOKEN`, and `ONTOBRICKS_LLM_ENDPOINT`;
