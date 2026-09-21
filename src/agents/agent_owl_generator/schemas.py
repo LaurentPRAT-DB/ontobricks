@@ -49,6 +49,85 @@ class SchemaValidationError(DraftValidationError):
     """
 
 
+# ---------------------------------------------------------------------------
+# Transport-level structured output (response_format) for Stage 1
+# ---------------------------------------------------------------------------
+#
+# Live-reliability fix: a prompt-only "JSON only, first character must be {"
+# instruction cannot force a compliant model to skip a visible reasoning
+# preamble — live reproduction against the user's own endpoint
+# (benoit_cayla.ontobricks-todrop.monclaudesonnetamoi) still narrated prose
+# ahead of the JSON on 4 of 5 calls despite that strengthened prompt. That
+# same endpoint was confirmed (by direct user testing) to honour an
+# OpenAI/Databricks-style ``response_format={"type": "json_schema", ...}``
+# transport directive and return exactly the schema-shaped JSON, while
+# rejecting the simpler ``{"type": "json_object"}`` AND rejecting
+# ``response_format`` combined with ``tools`` in the same request. This
+# constant is passed as ``response_format`` on Stage 1's single
+# schema-enforced finalization call only (never on the tool-gathering
+# calls, which need ``tools`` instead — see
+# :func:`shared.llm_target.build_llm_request`'s mutual-exclusion guard and
+# :mod:`agents.agent_owl_generator.staged`'s two-phase detection flow).
+#
+# The schema mirrors this module's own parser contract exactly (the fields
+# ``parse_detection_payload`` reads) so a strict, additionalProperties=False
+# schema can never itself reject a shape the parser would have accepted —
+# schemas.py's Python-side validation still runs unconditionally afterwards
+# (never trust the wire, even with schema enforcement).
+DETECTION_RESPONSE_FORMAT: Dict[str, Any] = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "detection_candidate_entities",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "candidate_entities": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "canonical_label": {"type": "string"},
+                            "description": {"type": "string"},
+                            "type_hint": {
+                                "type": "string",
+                                "enum": [TYPE_CLASS],
+                            },
+                            "evidence": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "source": {"type": "string"},
+                                        "excerpt": {"type": "string"},
+                                    },
+                                    "required": ["source", "excerpt"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                            "alternate_labels": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                        "required": [
+                            "canonical_label",
+                            "description",
+                            "type_hint",
+                            "evidence",
+                            "alternate_labels",
+                        ],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["candidate_entities"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
 def _strip_fences(text: str) -> str:
     match = _FENCE_RE.match(text or "")
     return match.group(1) if match else (text or "")

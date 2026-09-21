@@ -27,8 +27,26 @@ def build_llm_request(
     max_tokens: int,
     temperature: float | None,
     tools: list[dict] | None = None,
+    response_format: dict | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Build the URL and OpenAI-compatible body for an LLM target."""
+    """Build the URL and OpenAI-compatible body for an LLM target.
+
+    ``response_format`` is an opt-in OpenAI/Databricks-style structured-output
+    directive (e.g. ``{"type": "json_schema", "json_schema": {...}}``) — it is
+    only added to the payload when a caller explicitly passes it, so every
+    other caller's payload is byte-identical to before. The endpoint contract
+    this supports rejects combining ``tools`` and ``response_format`` in the
+    same request ("Cannot specify both response_format and tools"), so that
+    combination is rejected client-side, fail-fast, before ever reaching the
+    network.
+    """
+    if tools and response_format:
+        raise ValueError(
+            "Cannot combine 'tools' and 'response_format' in the same LLM "
+            "request — the endpoint contract rejects that combination. Use "
+            "tools for bounded tool-gathering, then a separate tools=None "
+            "call with response_format for schema-enforced finalization."
+        )
     name = str(endpoint_name or "").strip()
     kind = normalize_llm_endpoint_kind(name, endpoint_kind)
     payload: dict[str, Any] = {"messages": messages, "max_tokens": max_tokens}
@@ -36,6 +54,8 @@ def build_llm_request(
         payload["temperature"] = temperature
     if tools:
         payload["tools"] = tools
+    if response_format:
+        payload["response_format"] = response_format
 
     base = host.rstrip("/")
     if kind == AI_GATEWAY:

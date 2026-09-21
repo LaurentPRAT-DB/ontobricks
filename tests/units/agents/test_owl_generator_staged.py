@@ -27,6 +27,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 import agents.tracing as tracing_mod
 from back.objects.ontology.GenerateDraft import (
@@ -37,6 +38,7 @@ from back.objects.ontology.GenerateDraft import (
 )
 from agents.agent_owl_generator import staged
 from agents.agent_owl_generator import prompts
+from agents.agent_owl_generator import schemas
 
 
 # ---------------------------------------------------------------------------
@@ -115,12 +117,21 @@ def _draft(*, candidates=None, anchors=None, relations_done=False, attributes_do
 
 
 class TestDetectEntities:
+    """Detection is now a bounded tool-gathering phase followed by exactly
+    ONE schema-enforced (``response_format``) finalization call — see
+    ``TestTwoPhaseDetectionArchitecture`` below for the phase-boundary
+    contract itself. Every scripted flow here therefore needs at least TWO
+    responses: one gathering turn (tool call(s) and/or a no-tool-call
+    "gathering is done" turn, whose content is always discarded) followed
+    by the finalization answer that is actually parsed.
+    """
+
     def test_returns_default_included_candidates(self):
         payload = (
             '{"candidate_entities": [{"canonical_label": "Carrier"}, '
             '{"canonical_label": "Invoice"}]}'
         )
-        result, _ = _detect([_answer(payload)])
+        result, _ = _detect([_answer(""), _answer(payload)])
         assert result.success is True
         assert [c.canonical_label for c in result.candidate_entities] == [
             "Carrier",
@@ -133,12 +144,12 @@ class TestDetectEntities:
             '{"candidate_entities": [{"canonical_label": "Customer"}, '
             '{"canonical_label": "Carrier"}]}'
         )
-        result, _ = _detect([_answer(payload)])
+        result, _ = _detect([_answer(""), _answer(payload)])
         assert [c.canonical_label for c in result.candidate_entities] == ["Carrier"]
 
     def test_only_uses_no_reparse_tool_surface(self):
         payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
-        _, mock_llm = _detect([_answer(payload)])
+        _, mock_llm = _detect([_answer(""), _answer(payload)])
         sent_tools = mock_llm.call_args_list[0].kwargs["tools"]
         names = {t["function"]["name"] for t in sent_tools}
         assert names <= {
@@ -152,26 +163,44 @@ class TestDetectEntities:
         assert "ai_parse_document" not in names
         assert "check_owl_pitfalls" not in names
 
-    def test_truncated_then_complete_recovers(self):
+    def test_finalization_truncation_fails_without_reprompt(self):
+        # Reject-only, per this revision's transport-level fix: a
+        # length-truncated FINALIZATION answer fails clearly — it is never
+        # re-prompted for a concise re-emission (that "retry" behaviour was
+        # removed along with the single-phase loop it belonged to).
+        truncated = _answer('{"candidate_entities": [{"canonical', "length")
+        result, mock_llm = _detect([_answer(""), truncated])
+        assert result.success is False
+        assert result.rejected is False
+        assert "truncated" in result.error.lower()
+        assert mock_llm.call_count == 2  # gathering + ONE finalization, no re-prompt
+
+    def test_gathering_truncation_is_treated_as_a_gather_stop(self):
+        # A truncated GATHERING turn's content is never parsed anyway (see
+        # TestTwoPhaseDetectionArchitecture), so truncation there is
+        # indistinguishable from a normal no-tool-call gather-stop: it just
+        # ends gathering and moves on to the one finalization call. Only
+        # the finalization call's own truncation is a reportable failure.
+        truncated_gather = _answer("some cut off reasoning...", "length")
         payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
-        result, mock_llm = _detect(
-            [_answer('{"candidate_entities": [{"canonical', "length"), _answer(payload)]
-        )
+        result, mock_llm = _detect([truncated_gather, _answer(payload)])
         assert result.success is True
         assert [c.canonical_label for c in result.candidate_entities] == ["Carrier"]
 
     def test_malformed_final_output_fails_without_rewrite(self):
-        # A non-truncated malformed answer is rejected (reject-only), and the
-        # agent does not enter a rewrite loop asking the LLM to try again.
-        result, mock_llm = _detect([_answer("this is not json")])
+        # A non-truncated malformed FINALIZATION answer is rejected
+        # (reject-only): exactly one finalization attempt, never a second
+        # one asking the LLM to try again.
+        result, mock_llm = _detect([_answer(""), _answer("this is not json")])
         assert result.success is False
         assert result.rejected is True
-        assert mock_llm.call_count == 1
+        assert mock_llm.call_count == 2  # gathering + ONE finalization
 
     def test_trace_identity_is_stage_specific(self):
         payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
-        _, mock_llm = _detect([_answer(payload)])
-        assert mock_llm.call_args_list[0].kwargs["trace_name"] == "owl_generator.detect"
+        _, mock_llm = _detect([_answer(""), _answer(payload)])
+        for call in mock_llm.call_args_list:
+            assert call.kwargs["trace_name"] == "owl_generator.detect"
 
     def test_empty_candidate_list_is_a_successful_result_not_a_rejection(self):
         # Live bug (Stage-1 zero-new-candidate case): every selected table's
@@ -179,11 +208,173 @@ class TestDetectEntities:
         # contract-compliant answer is the empty list — that must succeed,
         # not be treated as malformed/rejected.
         payload = '{"candidate_entities": []}'
-        result, mock_llm = _detect([_answer(payload)])
+        result, mock_llm = _detect([_answer(""), _answer(payload)])
         assert result.success is True
         assert result.rejected is False
         assert result.candidate_entities == []
-        assert mock_llm.call_count == 1
+        assert mock_llm.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# Transport-level structured output: bounded tool-gathering, then exactly
+# ONE schema-enforced finalization call (live-reliability fix).
+#
+# Root cause this fixes: a prompt-only "JSON only, first character must be
+# {" instruction cannot force a compliant model to skip a visible reasoning
+# preamble — live reproduction against the user's own endpoint
+# (benoit_cayla.ontobricks-todrop.monclaudesonnetamoi) still narrated prose
+# ahead of the JSON on 4 of 5 calls despite that strengthened prompt. That
+# same endpoint was confirmed (by direct user testing) to honour an
+# OpenAI/Databricks-style
+# ``response_format={"type": "json_schema", "json_schema": {...}}``
+# transport directive and return exactly the schema-shaped JSON, while
+# rejecting ``response_format`` combined with ``tools`` in the same
+# request. Detection is therefore split into a bounded tool-gathering phase
+# (``tools=`` set, no ``response_format``) and exactly one finalization
+# call (``tools=None``, ``response_format=`` the strict detection schema).
+# This is NOT a schema-repair loop: there is one structured finalization
+# call, and reject-only validation still runs after it (see
+# ``TestDetectEntities`` above).
+# ---------------------------------------------------------------------------
+
+
+class TestTwoPhaseDetectionArchitecture:
+    def test_tools_and_response_format_are_never_sent_in_the_same_call(self):
+        payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
+        _, mock_llm = _detect(
+            [_tool_call("get_metadata"), _answer(""), _answer(payload)]
+        )
+        assert len(mock_llm.call_args_list) >= 2
+        for call in mock_llm.call_args_list:
+            tools = call.kwargs.get("tools")
+            response_format = call.kwargs.get("response_format")
+            assert not (tools and response_format)
+
+    def test_gathering_calls_never_carry_response_format(self):
+        payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
+        _, mock_llm = _detect(
+            [_tool_call("get_metadata"), _answer(""), _answer(payload)]
+        )
+        gathering_calls = mock_llm.call_args_list[:-1]
+        assert gathering_calls  # at least one gathering call happened
+        for call in gathering_calls:
+            assert call.kwargs.get("tools")
+            assert not call.kwargs.get("response_format")
+
+    def test_finalization_call_uses_the_strict_detection_schema_with_no_tools(self):
+        payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
+        _, mock_llm = _detect([_answer(""), _answer(payload)])
+        final_call = mock_llm.call_args_list[-1]
+        assert final_call.kwargs["response_format"] == schemas.DETECTION_RESPONSE_FORMAT
+        assert final_call.kwargs["tools"] is None
+
+    def test_prose_from_a_gather_stop_turn_is_ignored_not_parsed(self):
+        # The gathering phase's OWN content-only turn — even if it looks
+        # like a (wrong) JSON guess — is never parsed as the answer; only
+        # the separate finalization call's content is.
+        decoy = '{"candidate_entities": [{"canonical_label": "WrongGuess"}]}'
+        real_payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
+        result, mock_llm = _detect([_answer(decoy), _answer(real_payload)])
+        assert result.success is True
+        assert [c.canonical_label for c in result.candidate_entities] == ["Carrier"]
+        # It is not even kept in the conversation sent to finalization.
+        final_messages = mock_llm.call_args_list[-1].args[3]
+        assert not any(m.get("content") == decoy for m in final_messages)
+
+    def test_finalization_receives_accumulated_tool_call_and_result(self):
+        payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
+        _, mock_llm = _detect(
+            [_tool_call("get_metadata"), _answer(""), _answer(payload)]
+        )
+        final_messages = mock_llm.call_args_list[-1].args[3]
+        roles = [m.get("role") for m in final_messages]
+        assert "tool" in roles
+        # The assistant's tool-calling turn itself (its `tool_calls` field)
+        # is also carried forward, alongside the tool result above.
+        assert any(m.get("tool_calls") for m in final_messages)
+
+    def test_endpoint_without_tool_support_skips_straight_to_finalization(self):
+        payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
+        rejection = MagicMock(status_code=400)
+        http_error = requests.exceptions.HTTPError(response=rejection)
+        with patch.object(staged, "call_serving_endpoint") as mock_llm:
+            mock_llm.side_effect = [http_error, _answer(payload)]
+            result = staged.detect_entities(
+                host="https://test.databricks.com",
+                token="tok",
+                endpoint_name="dbx-llm",
+                metadata={"tables": []},
+                guidelines="Generate a CRM ontology.",
+                existing_anchors=[],
+                registry={"catalog": "main", "schema": "ob", "volume": "documents"},
+            )
+        assert result.success is True
+        assert mock_llm.call_count == 2
+        # The only remaining call is the schema-enforced finalization —
+        # never a second tools attempt.
+        assert mock_llm.call_args_list[1].kwargs["tools"] is None
+        assert mock_llm.call_args_list[1].kwargs.get("response_format")
+
+    def test_bounded_gathering_iterations_still_reach_finalization(self):
+        # Even if the model keeps requesting tools for the entire gathering
+        # budget (never emitting a no-tool-call turn), detection still
+        # reaches exactly one finalization call once the budget is spent —
+        # never an unbounded gathering loop.
+        payload = '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
+        gathering_calls = [
+            _tool_call("get_metadata") for _ in range(staged._MAX_GATHERING_ITERATIONS)
+        ]
+        result, mock_llm = _detect([*gathering_calls, _answer(payload)])
+        assert result.success is True
+        assert [c.canonical_label for c in result.candidate_entities] == ["Carrier"]
+        # Exactly budget-many gathering calls + ONE finalization call.
+        assert mock_llm.call_count == staged._MAX_GATHERING_ITERATIONS + 1
+
+
+class TestDetectionResponseFormatFallbackIntegration:
+    """End-to-end proof (real ``staged.detect_entities`` +
+    ``agents.engine_base.call_serving_endpoint`` — only the HTTP transport
+    mocked) that an endpoint rejecting ``response_format`` with a clear 400
+    degrades to a plain finalization call transparently, via
+    ``engine_base``'s existing per-endpoint unsupported-param ban/retry
+    (see ``tests/units/agents/test_agent_engine_base.py`` for the isolated
+    unit tests of that mechanism)."""
+
+    def test_endpoint_rejecting_response_format_still_succeeds_end_to_end(self):
+        rejection = MagicMock()
+        rejection.status_code = 400
+        rejection.text = "does not support the response_format parameter"
+        http_error = requests.exceptions.HTTPError(response=rejection)
+
+        gather_resp = MagicMock()
+        gather_resp.json.return_value = _answer("")
+        finalize_resp = MagicMock()
+        finalize_resp.json.return_value = _answer(
+            '{"candidate_entities": [{"canonical_label": "Carrier"}]}'
+        )
+
+        def _retry_side_effect(_url, _headers, payload, timeout=None):
+            if payload.get("response_format"):
+                raise http_error
+            if payload.get("tools"):
+                return gather_resp
+            return finalize_resp
+
+        with patch(
+            "agents.engine_base.call_llm_with_retry", side_effect=_retry_side_effect
+        ):
+            result = staged.detect_entities(
+                host="https://test.databricks.com",
+                token="tok",
+                endpoint_name="dbx-llm",
+                metadata={"tables": []},
+                guidelines="Generate a CRM ontology.",
+                existing_anchors=[],
+                registry={"catalog": "main", "schema": "ob", "volume": "documents"},
+            )
+
+        assert result.success is True
+        assert [c.canonical_label for c in result.candidate_entities] == ["Carrier"]
 
 
 # ---------------------------------------------------------------------------
@@ -598,7 +789,8 @@ class TestPerToolTracing:
                 with patch.object(staged, "call_serving_endpoint") as mock_llm:
                     mock_llm.side_effect = [
                         _tool_call("get_metadata"),
-                        _answer(payload),
+                        _answer(""),  # gather-stop (content discarded)
+                        _answer(payload),  # schema-enforced finalization
                     ]
                     result = staged.detect_entities(
                         host="https://test.databricks.com",
@@ -634,7 +826,11 @@ class TestPerToolTracing:
                 # get_table_detail with no table_name argument fails cleanly
                 # (returns a JSON error), never raises.
                 result, _ = _detect(
-                    [_tool_call("get_table_detail"), _answer(payload)]
+                    [
+                        _tool_call("get_table_detail"),
+                        _answer(""),  # gather-stop (content discarded)
+                        _answer(payload),  # schema-enforced finalization
+                    ]
                 )
         finally:
             tracing_mod._TRACING_READY = False

@@ -149,6 +149,68 @@ class TestParseDetectionPayload:
 
 
 # ---------------------------------------------------------------------------
+# Transport-level structured-output schema (response_format json_schema)
+#
+# Live-reliability fix: prompt-only "JSON only" instructions cannot force a
+# compliant model to skip a visible reasoning preamble (observed live: 4/5
+# calls against the user's own endpoint still narrated prose before the
+# JSON, despite the strengthened prompt). The user confirmed that same
+# endpoint DOES honour OpenAI/Databricks-style
+# ``response_format={"type": "json_schema", "json_schema": {...}}`` and
+# returns exactly the schema-shaped JSON. This constant is the strict
+# json_schema Stage 1 passes as that transport-level ``response_format`` on
+# its single finalization call — never on the tool-gathering calls, which
+# the endpoint rejects when combined with ``tools``.
+# ---------------------------------------------------------------------------
+
+
+class TestDetectionResponseFormat:
+    def test_is_a_json_schema_response_format(self):
+        rf = schemas.DETECTION_RESPONSE_FORMAT
+        assert rf["type"] == "json_schema"
+        assert "json_schema" in rf
+        assert rf["json_schema"]["strict"] is True
+
+    def test_schema_requires_candidate_entities_array(self):
+        schema = schemas.DETECTION_RESPONSE_FORMAT["json_schema"]["schema"]
+        assert schema["type"] == "object"
+        assert schema["required"] == ["candidate_entities"]
+        assert schema["additionalProperties"] is False
+        items = schema["properties"]["candidate_entities"]["items"]
+        assert items["type"] == "object"
+
+    def test_item_schema_matches_the_parser_contract(self):
+        # The exact fields `parse_detection_payload` reads: canonical_label,
+        # description, type_hint (class-only for Stage 1), evidence
+        # (source/excerpt), alternate_labels.
+        items = schemas.DETECTION_RESPONSE_FORMAT["json_schema"]["schema"][
+            "properties"
+        ]["candidate_entities"]["items"]
+        assert set(items["properties"]) == {
+            "canonical_label",
+            "description",
+            "type_hint",
+            "evidence",
+            "alternate_labels",
+        }
+        assert set(items["required"]) == set(items["properties"])
+        assert items["additionalProperties"] is False
+        assert items["properties"]["type_hint"]["enum"] == [TYPE_CLASS]
+
+        evidence_item = items["properties"]["evidence"]["items"]
+        assert set(evidence_item["properties"]) == {"source", "excerpt"}
+        assert set(evidence_item["required"]) == {"source", "excerpt"}
+        assert evidence_item["additionalProperties"] is False
+
+    def test_response_format_produces_an_endpoint_ready_empty_answer(self):
+        # Sanity check: an answer that is exactly what the schema demands for
+        # zero new candidates must still parse cleanly through the same
+        # parser used for every other detection answer.
+        candidates = schemas.parse_detection_payload('{"candidate_entities": []}')
+        assert candidates == []
+
+
+# ---------------------------------------------------------------------------
 # Completion schemas + referenced-id extraction
 # ---------------------------------------------------------------------------
 

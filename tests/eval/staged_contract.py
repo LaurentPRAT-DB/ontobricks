@@ -318,8 +318,17 @@ def _run_detection_for_example(example: dict):
     selected_docs = [d.get("name") for d in corpus if d.get("name")]
     payload = json.dumps(_build_scripted_detection_payload(example))
 
+    # Detection is now a bounded tool-GATHERING phase followed by exactly
+    # ONE schema-enforced FINALIZATION call (live-reliability fix — see
+    # `agents.agent_owl_generator.staged.detect_entities`'s docstring and
+    # SPEC §3a/§6a): a tool call, then a no-tool-call gather-stop turn
+    # (content discarded), then the real finalization answer.
     with patch.object(staged, "call_serving_endpoint") as mock_llm:
-        mock_llm.side_effect = [_tool_call_answer("get_metadata"), _answer(payload)]
+        mock_llm.side_effect = [
+            _tool_call_answer("get_metadata"),
+            _answer(""),
+            _answer(payload),
+        ]
         result = staged.detect_entities(
             host="https://test.databricks.com",
             token="tok",

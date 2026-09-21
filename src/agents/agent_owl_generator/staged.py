@@ -71,9 +71,11 @@ _GEN_MAX_TOKENS = 8192
 LLM_TIMEOUT = 180
 _TEMPERATURE = 0.0  # deterministic for eval (SPEC §2)
 
-# Stage-1 detection may take a few tool-gathering turns before its final
-# structured answer; keep it bounded.
-_MAX_DETECTION_ITERATIONS = 8
+# Stage-1 detection's bounded tool-GATHERING phase (see `detect_entities`'s
+# two-phase docstring) may take a few turns before the model stops asking for
+# more tools; keep it bounded. The schema-enforced FINALIZATION call that
+# follows is always exactly one additional call — never part of this budget.
+_MAX_GATHERING_ITERATIONS = 8
 # Stage-3 completion is a single structured call; the only reason to loop is a
 # token-truncated answer (re-emit concisely), never a validation rewrite.
 _MAX_COMPLETION_ATTEMPTS = 2
@@ -218,6 +220,30 @@ def detect_entities(
     ``included=true`` / ``origin=detected`` and are deduplicated against the
     locked ``existing_anchors``. Reads documents only through the no-reparse
     tools; never triggers ``ai_parse_document``.
+
+    **Two-phase transport architecture (live-reliability fix)**: a
+    prompt-only "JSON only" instruction cannot force a compliant model to
+    skip a visible reasoning preamble — live reproduction showed a real
+    endpoint still narrating prose ahead of the JSON on most calls despite a
+    strengthened prompt. The endpoint contract this fixes rejects combining
+    ``tools`` and ``response_format`` in one request, so detection is split
+    into:
+
+    1. A bounded tool-GATHERING phase (``tools=`` the metadata/document
+       tools, never ``response_format``). Any turn with no tool calls ends
+       gathering — its (unstructured, unenforced) content is discarded, NOT
+       parsed as the answer. If the endpoint rejects ``tools`` outright
+       (400/422), gathering is skipped entirely.
+    2. Exactly ONE schema-enforced FINALIZATION call (``tools=None``,
+       ``response_format=schemas.DETECTION_RESPONSE_FORMAT``) from the
+       accumulated tool-call/result context. This is the only call whose
+       content is ever parsed into ``candidate_entities``.
+
+    This is **not** a schema-repair loop: there is exactly one finalization
+    call, and the existing reject-only validation (:mod:`schemas`) still
+    runs unconditionally on its answer afterwards — a malformed or
+    length-truncated finalization answer fails clearly and is never
+    re-prompted or retried within this call.
     """
     options = options or {}
     max_candidates = int(options.get("max_classes", _DEFAULT_MAX_CANDIDATES))
@@ -254,20 +280,23 @@ def detect_entities(
 
     usage = _new_usage()
     steps: List[AgentStep] = []
-    tools_supported = True
 
     _notify(on_step, "Detecting candidate entities…")
 
-    for iteration in range(_MAX_DETECTION_ITERATIONS):
-        is_last = iteration >= _MAX_DETECTION_ITERATIONS - 1
-        send_tools = TOOL_DEFINITIONS if (tools_supported and not is_last) else None
+    # -----------------------------------------------------------------
+    # Phase 1 — bounded tool-GATHERING. `tools=` is always set here, never
+    # `response_format` (the endpoint rejects the combination — see
+    # `shared.llm_target.build_llm_request`). A turn with no tool calls
+    # ends gathering; its content is discarded, never parsed.
+    # -----------------------------------------------------------------
+    for _iteration in range(_MAX_GATHERING_ITERATIONS):
         try:
             resp = call_serving_endpoint(
                 host,
                 token,
                 endpoint_name,
                 messages,
-                tools=send_tools,
+                tools=TOOL_DEFINITIONS,
                 max_tokens=_GEN_MAX_TOKENS,
                 temperature=_TEMPERATURE,
                 timeout=LLM_TIMEOUT,
@@ -275,32 +304,19 @@ def detect_entities(
             )
         except requests.exceptions.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else None
-            if status in (400, 422) and tools_supported:
-                # Endpoint rejected the tools param — degrade to a single-shot
-                # structured answer (parsed-corpus safety is unaffected: no
-                # tool means no document read attempt, not an unsafe one).
-                tools_supported = False
-                _notify(on_step, "Endpoint does not support tools — direct detection…")
-                try:
-                    resp = call_serving_endpoint(
-                        host,
-                        token,
-                        endpoint_name,
-                        messages,
-                        tools=None,
-                        max_tokens=_GEN_MAX_TOKENS,
-                        temperature=_TEMPERATURE,
-                        timeout=LLM_TIMEOUT,
-                        trace_name="owl_generator.detect",
-                    )
-                except Exception as inner:  # noqa: BLE001
-                    return DetectionResult(
-                        success=False, steps=steps, usage=usage, error=str(inner)
-                    )
-            else:
-                return DetectionResult(
-                    success=False, steps=steps, usage=usage, error=str(exc)
+            if status in (400, 422):
+                # Endpoint rejects `tools` outright — skip straight to the
+                # single schema-enforced finalization call below (no
+                # unstructured single-shot fallback attempt in between).
+                _notify(
+                    on_step,
+                    "Endpoint does not support tools — proceeding to "
+                    "schema-enforced detection…",
                 )
+                break
+            return DetectionResult(
+                success=False, steps=steps, usage=usage, error=str(exc)
+            )
         except requests.exceptions.RequestException as exc:
             return DetectionResult(
                 success=False, steps=steps, usage=usage, error=str(exc)
@@ -308,109 +324,120 @@ def detect_entities(
 
         accumulate_usage(usage, resp.get("usage", {}))
         choice = resp.get("choices", [{}])[0]
-        finish_reason = choice.get("finish_reason", "?")
         message = choice.get("message", {})
         tool_calls = message.get("tool_calls", [])
 
-        if tool_calls:
-            messages.append(message)
-            for tc in tool_calls:
-                func = tc.get("function", {})
-                tool_name = func.get("name", "")
-                try:
-                    arguments = json.loads(func.get("arguments", "{}") or "{}")
-                except json.JSONDecodeError:
-                    arguments = {}
-                steps.append(
-                    AgentStep(
-                        step_type="tool_call",
-                        content=json.dumps(arguments),
-                        tool_name=tool_name,
-                    )
-                )
-                t0 = time.time()
-                tool_result = _dispatch_detection_tool(
-                    ctx,
-                    tool_name,
-                    arguments,
-                    trace_name="owl_generator.detect",
-                )
-                steps.append(
-                    AgentStep(
-                        step_type="tool_result",
-                        content=tool_result[:500],
-                        tool_name=tool_name,
-                        duration_ms=int((time.time() - t0) * 1000),
-                    )
-                )
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.get("id", ""),
-                        "content": tool_result,
-                    }
-                )
-            continue
+        if not tool_calls:
+            # Gathering is done. This turn's content (if any) is
+            # unstructured and unenforced — it is NEVER parsed as the
+            # answer, and is not even kept in the conversation sent to the
+            # finalization call below.
+            break
 
-        content = extract_message_content(resp)
-        steps.append(
-            AgentStep(step_type="output", content=content[:200])
+        messages.append(message)
+        for tc in tool_calls:
+            func = tc.get("function", {})
+            tool_name = func.get("name", "")
+            try:
+                arguments = json.loads(func.get("arguments", "{}") or "{}")
+            except json.JSONDecodeError:
+                arguments = {}
+            steps.append(
+                AgentStep(
+                    step_type="tool_call",
+                    content=json.dumps(arguments),
+                    tool_name=tool_name,
+                )
+            )
+            t0 = time.time()
+            tool_result = _dispatch_detection_tool(
+                ctx,
+                tool_name,
+                arguments,
+                trace_name="owl_generator.detect",
+            )
+            steps.append(
+                AgentStep(
+                    step_type="tool_result",
+                    content=tool_result[:500],
+                    tool_name=tool_name,
+                    duration_ms=int((time.time() - t0) * 1000),
+                )
+            )
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.get("id", ""),
+                    "content": tool_result,
+                }
+            )
+        # Gathering continues for another iteration (budget permitting).
+
+    # -----------------------------------------------------------------
+    # Phase 2 — exactly ONE schema-enforced FINALIZATION call. `tools=None`
+    # always; `response_format=` the strict detection schema so the
+    # transport itself constrains the answer shape (not just the prompt).
+    # Reject-only: a malformed or truncated answer fails here, with no
+    # second finalization attempt.
+    # -----------------------------------------------------------------
+    _notify(on_step, "Finalizing detected entities…")
+    try:
+        resp = call_serving_endpoint(
+            host,
+            token,
+            endpoint_name,
+            messages,
+            tools=None,
+            response_format=schemas.DETECTION_RESPONSE_FORMAT,
+            max_tokens=_GEN_MAX_TOKENS,
+            temperature=_TEMPERATURE,
+            timeout=LLM_TIMEOUT,
+            trace_name="owl_generator.detect",
         )
+    except requests.exceptions.HTTPError as exc:
+        return DetectionResult(success=False, steps=steps, usage=usage, error=str(exc))
+    except requests.exceptions.RequestException as exc:
+        return DetectionResult(success=False, steps=steps, usage=usage, error=str(exc))
 
-        # Truncation guard: a length-capped answer is incomplete JSON — ask for
-        # a concise re-emission (bounded), or fail loudly. This is a
-        # completeness retry, NOT a validation rewrite.
-        if finish_reason == "length":
-            if not is_last:
-                _notify(on_step, "Detection output truncated — asking to re-emit…")
-                messages.append({"role": "assistant", "content": content})
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": (
-                            "Your previous JSON was cut off by the output limit. "
-                            "Re-emit the COMPLETE candidate_entities JSON, keeping "
-                            "descriptions to one short sentence. JSON only."
-                        ),
-                    }
-                )
-                continue
-            return DetectionResult(
-                success=False,
-                steps=steps,
-                usage=usage,
-                error="Detection output was truncated and could not be completed.",
-            )
+    accumulate_usage(usage, resp.get("usage", {}))
+    choice = resp.get("choices", [{}])[0]
+    finish_reason = choice.get("finish_reason", "?")
+    content = extract_message_content(resp)
+    steps.append(AgentStep(step_type="output", content=content[:200]))
 
-        try:
-            candidates = schemas.parse_detection_payload(
-                content,
-                existing_anchors=existing_anchors,
-                max_candidates=max_candidates,
-            )
-        except schemas.SchemaValidationError as exc:
-            # Reject-only: report the malformed answer; do not re-prompt.
-            return DetectionResult(
-                success=False,
-                steps=steps,
-                usage=usage,
-                error=str(exc),
-                rejected=True,
-            )
-
-        _notify(on_step, f"Detected {len(candidates)} candidate ent(y/ies).")
+    # Truncation guard: a length-capped finalization answer is incomplete
+    # JSON. Fail clearly — never re-prompt for a concise re-emission (that
+    # would be a rewrite loop on a schema-enforced call).
+    if finish_reason == "length":
         return DetectionResult(
-            success=True,
-            candidate_entities=candidates,
+            success=False,
             steps=steps,
             usage=usage,
+            error="Detection output was truncated and could not be completed.",
         )
 
+    try:
+        candidates = schemas.parse_detection_payload(
+            content,
+            existing_anchors=existing_anchors,
+            max_candidates=max_candidates,
+        )
+    except schemas.SchemaValidationError as exc:
+        # Reject-only: report the malformed answer; do not re-prompt.
+        return DetectionResult(
+            success=False,
+            steps=steps,
+            usage=usage,
+            error=str(exc),
+            rejected=True,
+        )
+
+    _notify(on_step, f"Detected {len(candidates)} candidate ent(y/ies).")
     return DetectionResult(
-        success=False,
+        success=True,
+        candidate_entities=candidates,
         steps=steps,
         usage=usage,
-        error="Detection reached its iteration budget without a final answer.",
     )
 
 

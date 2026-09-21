@@ -2148,3 +2148,177 @@ Modified files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6703 passed,
 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 36.79s.
+
+## Implement transport-level structured output for Stage-1 detection (supersedes the prompt-only fix above)
+
+Context: the prompt-only zero-new-candidate fix above was reported
+insufficient by explicit user feedback — the exact-case reproduction
+against the user's own active endpoint
+(`benoit_cayla.ontobricks-todrop.monclaudesonnetamoi`) only succeeded on 1
+of 5 calls, with the model narrating a visible reasoning preamble before
+its JSON on the other 4 despite the strengthened "first character must be
+`{`" instruction. The user independently confirmed by directly probing
+that endpoint: (1) `response_format={"type":"json_object"}` returns 400
+unsupported; (2) `response_format={"type":"json_schema","json_schema":
+{...}}` is accepted and returns exactly the schema-shaped JSON; (3)
+combining `response_format` with `tools` in the same request is rejected
+("Cannot specify both response_format and tools"). Fixed per strict TDD:
+`detect_entities` is now a bounded tool-gathering phase followed by
+exactly one schema-enforced finalization call, with the answer shape
+enforced at the transport layer, not only requested in the prompt. No
+rewrite/re-prompt loop added; reject-only architecture unchanged.
+
+Changes:
+
+1. `src/shared/llm_target.py`
+   `build_llm_request` gained an optional `response_format` parameter
+   (defaults to `None` — every other caller's payload is byte-identical).
+   Combining `tools` and `response_format` now raises `ValueError`
+   fail-fast, client-side, before any network call — the endpoint contract
+   rejects that combination.
+2. `src/agents/engine_base.py`
+   `call_serving_endpoint` gained the same optional `response_format`
+   pass-through. An endpoint that rejects `response_format` with a clear
+   400 (the same "does not support the ... parameter" shape already
+   handled for `temperature`) has it stripped and the request retried
+   once, with the ban cached per endpoint for later calls — mirrors the
+   pre-existing `temperature` ban-cache mechanism exactly; no new caching
+   structure needed.
+3. `src/agents/agent_owl_generator/schemas.py`
+   Added `DETECTION_RESPONSE_FORMAT` — a strict
+   `{"type": "json_schema", ..., "strict": true}` constant whose item
+   schema mirrors `parse_detection_payload`'s own field contract exactly
+   (`canonical_label`, `description`, `type_hint` (enum `["class"]`),
+   `evidence` (`source`/`excerpt`), `alternate_labels`); every object
+   `additionalProperties: false` and every field `required`.
+4. `src/agents/agent_owl_generator/staged.py`
+   `detect_entities` refactored into two phases: a bounded tool-GATHERING
+   loop (`tools=` the metadata/document tools, never `response_format`;
+   renamed budget constant `_MAX_DETECTION_ITERATIONS` ->
+   `_MAX_GATHERING_ITERATIONS`) followed by exactly ONE schema-enforced
+   FINALIZATION call (`tools=None`,
+   `response_format=schemas.DETECTION_RESPONSE_FORMAT`). A gathering turn
+   with no tool calls ends gathering; its content is discarded — never
+   parsed as the answer, and not even carried into the finalization
+   conversation. If the endpoint rejects `tools` outright (400/422),
+   gathering is skipped entirely and finalization is called directly. The
+   old "truncated -> ask the model to re-emit concisely" retry was removed
+   along with the single-phase loop it belonged to: a length-truncated
+   finalization answer now fails clearly, with no re-prompt.
+5. `tests/units/shared/test_llm_target.py`
+   3 new tests: `response_format` included when provided, absent by
+   default, `ValueError` raised when combined with `tools`.
+6. `tests/units/agents/test_agent_engine_base.py`
+   6 new tests: `response_format` included/absent, `ValueError` raised
+   with zero network calls when combined with `tools`, unsupported
+   `response_format` stripped-and-retried-once, the ban cached across
+   calls to the same endpoint.
+7. `tests/units/agents/test_owl_generator_schemas.py`
+   Added `TestDetectionResponseFormat` (4 tests: is a `json_schema`
+   response_format with `strict: true`; requires `candidate_entities` as
+   an array with `additionalProperties: false`; the item schema's
+   properties/required/enum/`additionalProperties` match the parser's own
+   field contract exactly; an empty-list answer still parses cleanly).
+8. `tests/units/agents/test_owl_generator_staged.py`
+   Added `TestTwoPhaseDetectionArchitecture` (6 tests: tools and
+   response_format are never sent in the same call; gathering calls never
+   carry response_format; the finalization call always carries the strict
+   schema with `tools=None`; a gather-stop turn's prose is ignored and not
+   carried into the finalization conversation; finalization receives the
+   accumulated tool call/result context; a bounded gathering budget still
+   reaches finalization) and `TestDetectionResponseFormatFallbackIntegration`
+   (1 end-to-end test: a real `detect_entities` call through the real,
+   only-HTTP-mocked `call_serving_endpoint` still succeeds when the
+   endpoint rejects `response_format`). Every existing `TestDetectEntities`
+   test updated for the new two-call-minimum shape (a gathering turn now
+   always precedes the finalization answer that is actually parsed); added
+   `test_finalization_truncation_fails_without_reprompt` and
+   `test_gathering_truncation_is_treated_as_a_gather_stop` to pin the
+   no-re-prompt truncation contract explicitly; two pre-existing
+   `TestPerToolTracing` scripts extended with the extra gather-stop
+   response the new architecture requires.
+9. `tests/eval/staged_contract.py`
+   `_run_detection_for_example`'s scripted flow updated from 2 to 3
+   responses (tool call, gather-stop, finalization) to match the new
+   two-phase shape.
+10. `tests/eval/test_run_agent_owl_generator.py`
+    `test_does_not_cost_an_extra_live_call_per_row`'s
+    `spy_llm.call_count` assertion updated `6` -> `11` (each
+    `detect_entities()` call is now 2 LLM round-trips, not 1: 5 detect
+    rows * 2 + 1 completion-chain call).
+11. `.planning/agents/agent_owl_generator/SPEC.md`
+    Added the "Transport-level structured output" bullet to §3a; added the
+    `stage_transport_schema_enforcement` row (explicitly marked
+    unit-tested-only, not yet a scored `staged_contract` dataset
+    dimension) to §5's staged table; extended the zero-new-candidate
+    failure-mode row in §6a with the transport-level follow-up, superseding
+    the "prompt-only fix" framing while preserving the original diagnostic
+    evidence; appended the full sign-off entry to §10 with RED/GREEN
+    evidence and both live results below.
+
+Deterministic/offline eval (unchanged gate, unweakened):
+`uv run --frozen python tests/eval/run_agent_owl_generator.py` → all 15
+staged examples PASS, staged-contract aggregate `1.000` (threshold
+`0.950`); all 10 parsed-corpus cases PASS, aggregate `1.000` (threshold
+`0.900`).
+
+Live eval (`--live`, `DEFAULT` Databricks CLI profile,
+`ONTOBRICKS_LLM_ENDPOINT=databricks-claude-sonnet-5` — the production-
+gated eval endpoint): MLflow run
+`https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663818/runs/af6645c81da84ec583199c0ce14360b5`.
+Parsed-corpus contract `judge_score=0.985` (≥ `0.900`, met, unaffected).
+Deterministic staged-contract gate `1.000` (≥ `0.950`, unweakened). Staged
+**live** evidence now `1.000` over the 5 detect rows *and* the full
+3-substage completion chain (`infer_relations`/`infer_attributes`/
+`infer_axioms` all succeeded) — including `staged-zero-new-candidates-001`
+again scoring `1.000` live.
+
+Exact-case verification (read-only, exactly ONE `detect_entities()` call,
+against the user's own active endpoint
+`benoit_cayla.ontobricks-todrop.monclaudesonnetamoi` — the SAME
+session/endpoint combination that scored 1/5 in the prior prompt-only
+entry): loaded the same real 10 selected tables + 15 locked anchors from
+the local session file
+`fastapi_session/b3bd26a3fbe54f89895b0cfcfbff1feb` (read-only; session/
+draft never mutated) and called the production `staged.detect_entities`
+path directly with `databricks auth token DEFAULT` credentials (never
+printed). Result: `success=True`, `rejected=False`, 14 genuinely new
+candidate entities (`EnergyType`, `SubscriptionPlan`,
+`InteractionChannel`, `CustomerSegment`, `LoyaltyProgram`,
+`PaymentMethod`, `CallReason`, `ClaimType`, `Address`,
+`SatisfactionScore`, `Sentiment`, `MeterInspection`, `BillingPeriod`,
+`TransactionReference` — none duplicating the 15 locked anchors), on the
+first attempt, with no `response_format`-unsupported fallback triggered
+(confirmed absent from the captured log) — the finalization call's raw
+output began directly with `{"candidate_entities":[...` (no reasoning
+preamble). Call structure: 6 gathering tool calls (`get_metadata`,
+`list_documents`, `get_table_detail` x4) then one finalization call. This
+resolves the user's explicit "the prompt-only fix is insufficient"
+feedback for this exact endpoint.
+
+Concern (residual, informational): the transport-level fix removes the
+model's ability to narrate prose instead of JSON on the finalization call,
+but does not change gathering-phase behavior beyond what already existed;
+if a future endpoint supports neither `tools` nor `response_format`,
+detection still falls back to the original prompt-only single-shot
+behavior (unchanged, pre-existing degrade path) and could in principle
+retain the same residual unreliability documented in the entry above for
+such an endpoint. No such endpoint was observed in this task's live
+verification.
+
+Modified files:
+- `src/shared/llm_target.py`
+- `src/agents/engine_base.py`
+- `src/agents/agent_owl_generator/schemas.py`
+- `src/agents/agent_owl_generator/staged.py`
+- `tests/units/shared/test_llm_target.py`
+- `tests/units/agents/test_agent_engine_base.py`
+- `tests/units/agents/test_owl_generator_schemas.py`
+- `tests/units/agents/test_owl_generator_staged.py`
+- `tests/eval/staged_contract.py`
+- `tests/eval/test_run_agent_owl_generator.py`
+- `.planning/agents/agent_owl_generator/SPEC.md`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6724 passed,
+304 skipped, 6 deselected, 1 xfailed, 32 warnings in 54.15s.

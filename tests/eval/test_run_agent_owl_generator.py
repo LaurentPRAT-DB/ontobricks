@@ -259,15 +259,21 @@ class TestScoreStagedExamplesLiveReportsDetectionFailureExplicitly:
                 DATASET, ROOT / "tests/eval/thresholds.yaml",
                 host="https://test.databricks.com", token="tok", endpoint="ep",
             )
-        # 5 detect-tagged rows -> exactly one detect_entities()/LLM call each,
+        # 5 detect-tagged rows -> exactly one detect_entities() call each,
         # regardless of how many constraints each row declares (dedup/
         # inclusion/synonym/zero-candidate constraints total across these 5
-        # rows).
+        # rows) — the diagnostic reuses the cached result, never a second
+        # detect_entities() invocation per row.
         assert spy_detect.call_count == 5
+        # Each detect_entities() call now makes exactly TWO LLM round-trips
+        # (live-reliability fix: a bounded tool-gathering call whose
+        # no-tool-call content is discarded, then one separate
+        # schema-enforced finalization call — see
+        # `staged.detect_entities`'s two-phase docstring) -> 5 * 2 = 10,
         # +1 for the completion chain's "relations" substage call (it stops
         # there since this fake reply rejects as a relations payload) — no
-        # extra calls beyond one per detect row plus the chain's own calls.
-        assert spy_llm.call_count == 6
+        # extra calls beyond two per detect row plus the chain's own calls.
+        assert spy_llm.call_count == 11
 
 
 class TestLiveModeInitializesTracingBeforeAnyFoundationModelCall:
