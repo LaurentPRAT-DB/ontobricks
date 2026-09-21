@@ -54,6 +54,18 @@ def test_review_js_file_exists_and_is_not_empty():
     assert len(_read(REVIEW_JS)) > 200
 
 
+def test_detection_note_aligns_with_the_padded_tab_content():
+    html = _read(HTML)
+    note = re.search(
+        r'<div class="([^"]+)">\s*'
+        r'<i class="bi bi-info-circle me-1"></i>\s*'
+        r"Detection uses AI and may take a few seconds\.",
+        html,
+    )
+    assert note is not None
+    assert "px-3" in note.group(1).split()
+
+
 # ---------------------------------------------------------------------------
 # Endpoint usage — exact staged routes only, never the legacy one-shot route
 # ---------------------------------------------------------------------------

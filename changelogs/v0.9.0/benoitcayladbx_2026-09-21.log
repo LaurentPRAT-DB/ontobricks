@@ -1967,3 +1967,26 @@ Concerns:
   non-adversarial closed entity set per live run (unchanged from the prior
   session) — this fix did not add additional live completion-chain
   coverage, only fixed the detect-side fixture bug and the tracing gap.
+
+## Align the Generate detection note with tab content
+
+Context: The informational note below Ontology → Generate configuration tabs
+started at the card edge while the tab content used Bootstrap's standard
+horizontal padding. Align the note with the content above it.
+
+Changes:
+
+1. `src/front/templates/partials/ontology/_ontology_wizard.html`
+   Added the shared Bootstrap horizontal padding utility to the detection
+   information note.
+2. `tests/units/front/test_ontology_generate_wizard_staged.py`
+   Added a structural regression contract that keeps the note aligned with
+   the padded tab content.
+
+Modified files:
+- `src/front/templates/partials/ontology/_ontology_wizard.html`
+- `tests/units/front/test_ontology_generate_wizard_staged.py`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6688 passed,
+304 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.11s.
