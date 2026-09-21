@@ -139,12 +139,13 @@ def test_workspace_group_uses_shared_segmented_control_tokens():
     assert "background: var(--db-surface-warm)" in group
     assert "border: 1px solid var(--db-border)" in group
     assert "border-radius: var(--db-radius-control)" in group
-    assert "background: var(--db-primary-light)" in context_trigger
-    assert "border: 1px solid var(--db-primary)" in context_trigger
+    assert "background: var(--db-primary-soft)" in context_trigger
+    assert "border: 0" in context_trigger
+    assert "border: 1px solid var(--db-primary)" not in context_trigger
     assert "border-radius: var(--db-radius-control)" in context_trigger
     assert "color: var(--db-primary-darker)" in context_trigger
-    assert "background: var(--db-primary-light)" in context_hover
-    assert "border-color: var(--db-primary-dark)" in context_hover
+    assert "background: var(--db-primary-soft-hover)" in context_hover
+    assert "border-color:" not in context_hover
     assert "color: var(--db-primary-darker)" in context_hover
     assert "width: 200px" in context_trigger
     assert "min-width: 200px" in context_trigger

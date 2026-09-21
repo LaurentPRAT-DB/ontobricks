@@ -3043,3 +3043,28 @@ Modified files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6800 passed,
 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.52s.
+
+## Soften the L2 Domain badge with a darker fill
+
+Context: The navbar level-2 Domain badge used a light primary wash plus a
+hard 1px primary outline, which read as a boxed chip next to the segmented
+workspace control. Replace the outline with a darker brand-tinted
+background so the badge stays selected without a hard border.
+
+Changes:
+
+1. src/front/static/global/css/main.css
+   Add `--db-primary-soft` / `--db-primary-soft-hover` (0.18 / 0.28 of
+   `--db-primary-rgb`) and restyle `.ob-subnav-context-trigger` as a
+   borderless filled badge; hover darkens the wash instead of the outline.
+2. tests/units/front/test_segmented_subnav_contract.py
+   Lock the borderless Domain-badge fill and hover wash tokens.
+3. .cursor/11-frontend-design.mdc
+   Document the soft-fill tokens and the L2 Domain badge contract.
+
+Modified files:
+- src/front/static/global/css/main.css
+- tests/units/front/test_segmented_subnav_contract.py
+- .cursor/11-frontend-design.mdc
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6800 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 50.81s

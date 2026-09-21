@@ -45,6 +45,7 @@ other tokens are **fixed** — they are not overridden at runtime.
 | Brand primary *(configurable)* | `--db-primary` | `#4F46E5` |
 | Primary dark / darker *(configurable)* | `--db-primary-dark`, `--db-primary-darker` | `#4338CA`, `#3730A3` |
 | Primary tint *(configurable)* | `--db-primary-light` | `rgba(79, 70, 229, 0.1)` |
+| Primary soft fill *(derived from RGB)* | `--db-primary-soft`, `--db-primary-soft-hover` | `rgba(var(--db-primary-rgb), 0.18)` / `0.28` |
 | Primary RGB components *(configurable)* | `--db-primary-rgb` | `79, 70, 229` |
 | Hover well *(configurable)* | `--db-hover-indigo` | `rgba(79, 70, 229, 0.08)` |
 | Focus ring *(configurable)* | `--db-focus-ring` | `0 0 0 0.2rem rgba(79, 70, 229, 0.35)` |
@@ -584,10 +585,10 @@ asserts Domain ≠ Knowledge Graph and menu ≡ breadcrumb for `/dtwin/`.
   occupy the near-full inner rail height (approximately `40px` inside the
   `48px` / `3rem` outer rail) without touching the segmented-control border.
   The same stretch rule applies to all four workspace targets at every width.
-- The full `.ob-subnav-context-trigger` reads as selected/active like the
-  active workspace segment: `--db-primary-light` background with
-  primary-darker text and primary border treatment, while hover/focus keep
-  clear affordance.
+- The full `.ob-subnav-context-trigger` reads as a filled Domain badge:
+  `--db-primary-soft` background (darker than `--db-primary-light`) with
+  primary-darker text and **no** hard primary outline. Hover darkens the
+  wash (`--db-primary-soft-hover`); keyboard focus keeps `--db-focus-ring`.
 - Inside `.ob-subnav-context-copy`, status and labels are centered against the
   full `200px` control. The leading `bi-box` icon may be absolutely positioned
   at the left so copy remains visually centered. The copy is a two-row grid:
@@ -651,6 +652,7 @@ asserts Domain ≠ Knowledge Graph and menu ≡ breadcrumb for `/dtwin/`.
 |-------|-------|-------|
 | L1 navbar background | `--db-navbar-bg` | `#FFFFFF` |
 | L2 workspace control | `--db-surface-warm` + `--db-border` | white segmented surface on the transparent row |
+| L2 Domain badge | `--db-primary-soft` / `--db-primary-soft-hover` | filled wash, no primary outline |
 | Breadcrumb strip | `.ob-subnav-breadcrumb-wrap` | muted text + one-pixel left separator |
 
 **New Domain flow**
