@@ -23,6 +23,7 @@ from back.objects.ontology.GenerateDraft import (
     DraftRevisionConflict,
     DraftStaleError,
     DraftValidationError,
+    GenerateDraft,
     GenerateEntity,
     REVIEWING,
 )
@@ -1238,3 +1239,43 @@ class TestIdempotentMerge:
             wf.run_completion(
                 domain_session, _settings(), host="h", token="t", endpoint_name="e"
             )
+
+
+class TestInverseRelationMerge:
+    def test_handles_and_handled_collapse_to_one_property(self, domain_session):
+        """A checkpoint that still holds both directions (older parser, or
+        a model that ignored the prompt) must merge as a single object
+        property — the reverse is dropped."""
+        agent = GenerateEntity.new_candidate("Agent")
+        claim = GenerateEntity.new_candidate("Claim")
+        draft = GenerateDraft.new(
+            source_fingerprint="sha256:inverse",
+            candidate_entities=[agent, claim],
+            stage=REVIEWING,
+        )
+        draft = draft.with_checkpoint(
+            "relations",
+            CHECKPOINT_DONE,
+            result={
+                "relations": [
+                    {
+                        "label": "handles",
+                        "domain": agent.id,
+                        "range": claim.id,
+                    },
+                    {
+                        "label": "handled",
+                        "domain": claim.id,
+                        "range": agent.id,
+                    },
+                ]
+            },
+        )
+        stats = wf.merge_draft_into_ontology(domain_session, draft)
+        assert stats["relations_added"] == 1
+        properties = domain_session.get_properties()
+        object_props = [p for p in properties if p.get("type") == "ObjectProperty"]
+        assert len(object_props) == 1
+        assert object_props[0]["label"] == "handles"
+        assert object_props[0]["domain"] == "Agent"
+        assert object_props[0]["range"] == "Claim"

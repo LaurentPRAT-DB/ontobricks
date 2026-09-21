@@ -141,6 +141,21 @@ class TaskManager:
             self._append_log(task, message)
         return True
 
+    def merge_result(self, task_id: str, patch: Dict[str, Any]) -> bool:
+        """Shallow-merge ``patch`` into a running task's ``result`` dict.
+
+        Used to publish incremental payloads (e.g. detected entity labels)
+        while the worker is still running. Terminal tasks are left untouched.
+        """
+        task = self._tasks.get(task_id)
+        if not task or task.status in self._TERMINAL_STATUSES:
+            return False
+        current = task.result if isinstance(task.result, dict) else {}
+        merged = dict(current)
+        merged.update(patch)
+        task.result = merged
+        return True
+
     def advance_step(self, task_id: str, message: str = None) -> bool:
         task = self._tasks.get(task_id)
         if not task or not task.steps:

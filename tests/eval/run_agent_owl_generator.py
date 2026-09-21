@@ -59,12 +59,11 @@ THRESHOLDS = ROOT / "tests/eval/thresholds.yaml"
 # structurally executable now, without weakening the existing parsed-corpus
 # contract check above.
 #
-# Raised 16 -> 17 (this revision, residual JSON double-encoding fix): new
-# regression row `staged-double-encoded-payload-001` proves the
-# `schemas._unwrap_double_encoded` one-decode tolerance end-to-end through
-# the real `infer_attributes` orchestrator (`accepts_double_encoded_list_
-# field` constraint kind) — see SPEC.md §7/§10.
-_MIN_STAGED_EXAMPLES = 17
+# Raised 17 -> 18 (this revision, inverse-relation collapse): new
+# regression row `staged-no-inverse-relations-001` proves
+# `schemas.drop_inverse_relations` keeps the active-voice direction only
+# (`drops_inverse_relations` constraint kind) — see SPEC.md §6.
+_MIN_STAGED_EXAMPLES = 18
 _REQUIRED_STAGED_CONSTRAINT_FIELDS = {"kind", "value"}
 
 # Every required staged topic must be exercised by at least one staged
@@ -85,6 +84,7 @@ _REQUIRED_STAGED_CONSTRAINT_KINDS = {
     # live-bug shape, e.g. `[cand-6]`) must always be rejected reject-only —
     # locked in so this coverage cannot silently disappear from the dataset.
     "rejects_bracketed_id_reference",
+    "drops_inverse_relations",
 }
 
 

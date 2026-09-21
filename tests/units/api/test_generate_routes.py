@@ -45,6 +45,7 @@ class _FakeTaskManager:
         self.created = []
         self.completed = []
         self.failed = []
+        self.result_patches = []
 
     def create_task(self, **kw):
         task = _Task()
@@ -55,6 +56,10 @@ class _FakeTaskManager:
         return True
 
     def update_progress(self, task_id, progress, message=None):
+        return True
+
+    def merge_result(self, task_id, patch):
+        self.result_patches.append((task_id, patch))
         return True
 
     def advance_step(self, task_id, message=None):
@@ -92,6 +97,7 @@ def route_ctx(monkeypatch, domain_session):
         routes, "resolve_warehouse_id", lambda _domain, _settings: "wh1"
     )
     monkeypatch.setattr(routes, "get_task_manager", lambda: tm)
+    monkeypatch.setattr(routes, "_DETECT_ENTITY_REVEAL_PAUSE_S", 0)
     monkeypatch.setattr(threading, "Thread", _FakeThread)
     return SimpleNamespace(routes=routes, tm=tm, domain=domain_session)
 
@@ -140,6 +146,9 @@ class TestStartGenerateDetection:
             task_result["draft"]["candidate_entities"][0]["canonical_label"]
             == "Carrier"
         )
+        assert route_ctx.tm.result_patches == [
+            (task_id, {"detected_entities": ["Carrier"]})
+        ]
 
     async def test_detection_failure_fails_the_task_not_the_request(
         self, route_ctx, monkeypatch

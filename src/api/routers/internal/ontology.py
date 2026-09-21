@@ -30,6 +30,8 @@ from back.core.helpers import (
     require_domain_llm,
     resolve_warehouse_id,
 )
+import time
+
 from agents.serialization import serialize_agent_steps
 from back.core.industry import (
     get_fibo_catalog,
@@ -1858,6 +1860,12 @@ async def generate_ontology_async():
 # ===========================================
 
 
+# Pause between publishing each detected label on the running task so the
+# Generate overlay can render entities one by one before the task completes
+# (unit tests set this to 0).
+_DETECT_ENTITY_REVEAL_PAUSE_S = 0.3
+
+
 @router.post("/wizard/generate/detect")
 async def start_generate_detection(
     request: Request,
@@ -1924,9 +1932,23 @@ async def start_generate_detection(
                 warehouse_id=warehouse_id,
                 on_step=on_step,
             )
+            found: list[str] = []
+            candidates = draft.candidate_entities or []
+            total = len(candidates)
+            for index, entity in enumerate(candidates):
+                label = entity.canonical_label
+                found.append(label)
+                tm.merge_result(task.id, {"detected_entities": list(found)})
+                progress = 40 + int(50 * ((index + 1) / total)) if total else 90
+                tm.update_progress(task.id, progress, f"Found {label}")
+                if _DETECT_ENTITY_REVEAL_PAUSE_S:
+                    time.sleep(_DETECT_ENTITY_REVEAL_PAUSE_S)
             tm.complete_task(
                 task.id,
-                result={"draft": draft.to_dict()},
+                result={
+                    "draft": draft.to_dict(),
+                    "detected_entities": found,
+                },
                 message=f"Detected {len(draft.candidate_entities)} candidate entity(ies)",
             )
         except OntoBricksError as exc:

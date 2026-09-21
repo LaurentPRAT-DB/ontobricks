@@ -2820,3 +2820,138 @@ all other pre-existing/concurrent worktree changes stashed via `git stash
 --keep-index` for the duration of the run only, then restored) via
 `uv run --frozen pytest -q -m "not scenario"` -> 6772 passed, 304 skipped,
 6 deselected, 1 xfailed, 32 warnings, 0 failed.
+
+## Collapse inverse Generate relations to one direction
+
+Context: Stage 3 `infer_relations` was emitting both directions of the same
+fact (for example `handles` A→B and `handled` B→A). The prompt already
+forbade bidirectional relations, but merge only deduped exact
+`(domain, range, label)` tuples, so both object properties landed in the
+ontology. Collapse inverses deterministically and keep the active-voice
+direction.
+
+Changes:
+
+1. src/agents/agent_owl_generator/prompts.py
+   Relations system prompt: never emit a relation and its inverse; worked
+   example is handles vs handled / owns vs ownedBy.
+2. src/agents/agent_owl_generator/schemas.py
+   `drop_inverse_relations` keeps the higher active-voice score direction
+   per unordered entity pair; `parse_relations_payload` applies it.
+3. src/back/objects/ontology/GenerateWorkflow.py
+   Merge skips a relation whose reverse directed pair is already present
+   (defense in depth for older checkpoints).
+4. tests/units/agents/test_owl_generator_schemas.py
+   Parser keeps `handles` and drops `handled`; unrelated pairs stay.
+5. tests/units/ontology/test_generate_workflow.py
+   Merge of a handles/handled checkpoint adds one ObjectProperty.
+6. tests/eval/staged_contract.py, tests/eval/run_agent_owl_generator.py,
+   tests/eval/datasets/agent_owl_generator/baseline.jsonl,
+   .planning/agents/agent_owl_generator/eval/dataset.jsonl
+   New `drops_inverse_relations` constraint and
+   `staged-no-inverse-relations-001` row; staged example floor 17 → 18.
+7. .planning/agents/agent_owl_generator/SPEC.md
+   New §6 failure mode for inverse duplicate relations.
+8. docs/user-guide.md
+   Complete step notes that inverse pairs collapse to the active-voice
+   direction.
+
+Modified files:
+- src/agents/agent_owl_generator/prompts.py
+- src/agents/agent_owl_generator/schemas.py
+- src/back/objects/ontology/GenerateWorkflow.py
+- tests/units/agents/test_owl_generator_schemas.py
+- tests/units/ontology/test_generate_workflow.py
+- tests/eval/staged_contract.py
+- tests/eval/run_agent_owl_generator.py
+- tests/eval/datasets/agent_owl_generator/baseline.jsonl
+- .planning/agents/agent_owl_generator/eval/dataset.jsonl
+- .planning/agents/agent_owl_generator/SPEC.md
+- docs/user-guide.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6773 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 45.21s.
+
+## Focus detection and compact the entity review
+
+Context: The Generate detection stage exposed relationship, attribute, and
+inheritance options even though Stage 1 must only propose entities.
+Detection progress also showed a static sentence, while entity review used
+full-width rows that made existing and candidate entities hard to scan.
+
+Changes:
+
+1. `src/front/templates/partials/ontology/_ontology_wizard.html`
+   Remove the Stage 1 Options tab and all relationship/attribute/type
+   selectors; add entity-only guidance, responsive review grid classes, and
+   move the Review actions beside the top 1–2–3 stepper.
+2. `src/front/static/ontology/js/ontology-wizard.js`
+   Send an empty Stage 1 options object, render detected-entity progress,
+   poll detection at the publication cadence, and show the top action group
+   only during Review.
+3. `src/front/static/ontology/js/ontology-wizard-review.js`
+   Render locked entities as compact Entity cards and keep candidate edits
+   entity-only while persisting the internal class type.
+4. `src/front/static/ontology/css/ontology-wizard.css`
+   Add responsive locked/candidate grids, compact card controls, live
+   detection chips, desktop/mobile stepper-action layout, narrow-screen tab
+   sizing, and a visible keyboard focus ring for wizard buttons.
+5. `src/front/static/global/js/task-progress-ui.js`
+   Add the accessible live detected-entity chip region to async overlays.
+6. `src/api/routers/internal/ontology.py` and
+   `src/back/core/task_manager/TaskManager.py`
+   Publish detected entity labels incrementally through the running task.
+7. `tests/units/front/test_ontology_generate_wizard_staged.py`,
+   `tests/units/api/test_generate_routes.py`, and
+   `tests/units/core/test_task_manager.py`
+   Cover entity-only configuration/review, responsive grids, top Review
+   actions, live progress publication, and task result merging.
+8. `docs/user-guide.md`
+   Document the entity-only Stage 1, live entity progress, responsive review
+   cards, and top Review action placement.
+
+Modified files:
+- `src/front/templates/partials/ontology/_ontology_wizard.html`
+- `src/front/static/ontology/js/ontology-wizard.js`
+- `src/front/static/ontology/js/ontology-wizard-review.js`
+- `src/front/static/ontology/css/ontology-wizard.css`
+- `src/front/static/global/js/task-progress-ui.js`
+- `src/api/routers/internal/ontology.py`
+- `src/back/core/task_manager/TaskManager.py`
+- `tests/units/front/test_ontology_generate_wizard_staged.py`
+- `tests/units/api/test_generate_routes.py`
+- `tests/units/core/test_task_manager.py`
+- `docs/user-guide.md`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6777 passed,
+304 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.19s.
+
+Eval: `uv run --frozen python tests/eval/run_agent_owl_generator.py` →
+staged contract 1.000 (threshold 0.950), parsed-corpus contract 1.000
+(threshold 0.900).
+
+## Restore the moved Complete action
+
+Context: Moving `Continue to Complete` beside the top stepper placed it
+outside `#wizardReviewPane`, but Review click delegation was still attached
+only to that pane. The button therefore received no handler and appeared to
+do nothing.
+
+Changes:
+
+1. `src/front/static/ontology/js/ontology-wizard-review.js`
+   Delegate Review clicks from the shared `#wizard-section` host so the
+   stepper-level Continue and Discard actions reach their existing handlers;
+   keep field change and keyboard listeners scoped to the Review pane.
+2. `tests/units/front/test_ontology_generate_wizard_staged.py`
+   Add a regression contract proving stepper-level Review actions share the
+   wizard click delegate.
+
+Modified files:
+- `src/front/static/ontology/js/ontology-wizard-review.js`
+- `tests/units/front/test_ontology_generate_wizard_staged.py`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6778 passed,
+304 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.91s.

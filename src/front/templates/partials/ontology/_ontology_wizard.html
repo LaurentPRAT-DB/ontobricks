@@ -22,22 +22,33 @@
 </div>
 
 <!-- Stage stepper: Configure/Detect -> Review Entities -> Complete -->
-<nav class="wizard-stepper mb-3" aria-label="Generate ontology steps">
-    <ol class="wizard-stepper-list">
-        <li class="wizard-step active" id="wizardStepConfigure" data-wizard-step="configure" aria-current="step">
-            <span class="wizard-step-icon"><i class="bi bi-1-circle-fill" aria-hidden="true"></i></span>
-            <span class="wizard-step-label">Configure &amp; Detect</span>
-        </li>
-        <li class="wizard-step" id="wizardStepReview" data-wizard-step="review">
-            <span class="wizard-step-icon"><i class="bi bi-2-circle-fill" aria-hidden="true"></i></span>
-            <span class="wizard-step-label">Review Entities</span>
-        </li>
-        <li class="wizard-step" id="wizardStepComplete" data-wizard-step="complete">
-            <span class="wizard-step-icon"><i class="bi bi-3-circle-fill" aria-hidden="true"></i></span>
-            <span class="wizard-step-label">Complete</span>
-        </li>
-    </ol>
-</nav>
+<div id="wizardStepperRow" class="wizard-stepper-row mb-3">
+    <nav class="wizard-stepper" aria-label="Generate ontology steps">
+        <ol class="wizard-stepper-list">
+            <li class="wizard-step active" id="wizardStepConfigure" data-wizard-step="configure" aria-current="step">
+                <span class="wizard-step-icon"><i class="bi bi-1-circle-fill" aria-hidden="true"></i></span>
+                <span class="wizard-step-label">Configure &amp; Detect</span>
+            </li>
+            <li class="wizard-step" id="wizardStepReview" data-wizard-step="review">
+                <span class="wizard-step-icon"><i class="bi bi-2-circle-fill" aria-hidden="true"></i></span>
+                <span class="wizard-step-label">Review Entities</span>
+            </li>
+            <li class="wizard-step" id="wizardStepComplete" data-wizard-step="complete">
+                <span class="wizard-step-icon"><i class="bi bi-3-circle-fill" aria-hidden="true"></i></span>
+                <span class="wizard-step-label">Complete</span>
+            </li>
+        </ol>
+    </nav>
+    <div id="wizardReviewActions" class="wizard-stepper-actions ob-hidden">
+        <button type="button" class="btn btn-sm btn-outline-danger" data-action="wizard-review-discard">
+            <i class="bi bi-trash me-1"></i>Discard Draft &amp; Start Over
+        </button>
+        <button type="button" class="btn btn-sm btn-primary" id="wizardReviewContinueBtn"
+                data-action="wizard-review-continue" data-requires-llm disabled>
+            Continue to Complete <i class="bi bi-arrow-right ms-1"></i>
+        </button>
+    </div>
+</div>
 
 <!-- ============================================================ -->
 <!-- STAGE 1: Configure & Detect                                   -->
@@ -64,12 +75,6 @@
                 <button class="nav-link" id="wizard-tab-guidelines" data-bs-toggle="tab" data-bs-target="#wizard-pane-guidelines"
                         type="button" role="tab" aria-controls="wizard-pane-guidelines" aria-selected="false">
                     <i class="bi bi-lightbulb"></i> Guidelines
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="wizard-tab-options" data-bs-toggle="tab" data-bs-target="#wizard-pane-options"
-                        type="button" role="tab" aria-controls="wizard-pane-options" aria-selected="false">
-                    <i class="bi bi-gear"></i> Options
                 </button>
             </li>
         </ul>
@@ -186,54 +191,12 @@
                 </div>
             </div>
 
-            <!-- Options Tab -->
-            <div class="tab-pane fade" id="wizard-pane-options" role="tabpanel" aria-labelledby="wizard-tab-options">
-                <h6 class="mb-2"><i class="bi bi-gear"></i> Detection Options</h6>
-                <p class="text-muted small mb-3">Fine-tune what the AI model should consider when detecting candidate entities.</p>
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="wizardIncludeDataProps" checked>
-                            <label class="form-check-label" for="wizardIncludeDataProps">
-                                Include data properties (attributes)
-                            </label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="wizardIncludeRelationships" checked>
-                            <label class="form-check-label" for="wizardIncludeRelationships">
-                                Consider relationships between entities
-                            </label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="wizardIncludeInheritance" checked>
-                            <label class="form-check-label" for="wizardIncludeInheritance">
-                                Suggest entity hierarchy (inheritance)
-                            </label>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="wizardUseTableNames" checked>
-                            <label class="form-check-label" for="wizardUseTableNames">
-                                Use table names as entity basis
-                            </label>
-                        </div>
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="wizardUseColumnComments">
-                            <label class="form-check-label" for="wizardUseColumnComments">
-                                Use column comments for descriptions
-                            </label>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
         </div>
 
         <!-- Info note -->
         <div class="text-muted small mb-3 mt-3 px-3">
             <i class="bi bi-info-circle me-1"></i>
-            Detection uses AI and may take a few seconds. You'll review every candidate entity before anything is added to your ontology.
+            Detection only identifies entities. Relationships and attributes are inferred after entity review.
         </div>
         </div>
     </div>
@@ -258,7 +221,7 @@
         <div class="card-body">
             <h6 class="mb-2"><i class="bi bi-lock-fill me-2"></i>Existing Entities <span class="text-muted small">(locked)</span></h6>
             <p class="text-muted small mb-3">Already part of your ontology. Their identity can't be changed here — completion may relate to or enrich them, never rename or delete them.</p>
-            <div id="wizardLockedAnchorsList" class="wizard-entity-list"></div>
+            <div id="wizardLockedAnchorsList" class="wizard-entity-list wizard-locked-grid"></div>
             <div id="wizardNoLockedAnchors" class="text-muted small fst-italic ob-hidden">No existing entities yet — this will be a brand-new ontology.</div>
         </div>
     </div>
@@ -275,23 +238,9 @@
 
             <div id="wizardAddCandidateForm" class="wizard-add-candidate-form ob-hidden">
                 <div class="row g-2">
-                    <div class="col-md-6">
+                    <div class="col-12">
                         <label class="form-label small text-muted" for="wizardNewCandidateLabel">Canonical label</label>
                         <input type="text" class="form-control form-control-sm" id="wizardNewCandidateLabel" placeholder="e.g. Carrier">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label small text-muted" for="wizardNewCandidateType">Type hint</label>
-                        <select class="form-select form-select-sm" id="wizardNewCandidateType">
-                            <option value="class" selected>Entity</option>
-                            <option value="object_property">Relationship (object property)</option>
-                            <option value="data_property">Attribute (data property)</option>
-                        </select>
-                    </div>
-                    <div class="col-12">
-                        <div class="text-muted small">
-                            <i class="bi bi-info-circle me-1"></i>
-                            A Relationship links two entities together; an Attribute stores a single value (like a name or date) on one entity.
-                        </div>
                     </div>
                     <div class="col-12">
                         <label class="form-label small text-muted" for="wizardNewCandidateDescription">Description</label>
@@ -306,20 +255,11 @@
                 </div>
             </div>
 
-            <div id="wizardCandidatesList" class="wizard-entity-list"></div>
+            <div id="wizardCandidatesList" class="wizard-entity-list wizard-candidate-grid"></div>
             <div id="wizardNoCandidates" class="text-muted small fst-italic ob-hidden">No candidate entities. Add one manually or re-run detection.</div>
         </div>
     </div>
 
-    <div class="d-flex justify-content-between">
-        <button type="button" class="btn btn-outline-danger" data-action="wizard-review-discard">
-            <i class="bi bi-trash me-1"></i>Discard Draft &amp; Start Over
-        </button>
-        <button type="button" class="btn btn-primary" id="wizardReviewContinueBtn"
-                data-action="wizard-review-continue" data-requires-llm disabled>
-            Continue to Complete <i class="bi bi-arrow-right ms-1"></i>
-        </button>
-    </div>
 </div>
 
 <!-- ============================================================ -->

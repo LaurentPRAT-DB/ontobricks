@@ -247,6 +247,44 @@ class TestParseRelationsPayload:
             "cand-6",
         }
 
+    def test_inverse_pair_keeps_active_voice_only(self):
+        payload = json.dumps(
+            {
+                "relations": [
+                    {
+                        "label": "handled",
+                        "domain": "cand-Claim",
+                        "range": "cand-Agent",
+                        "evidence": "passive",
+                    },
+                    {
+                        "label": "handles",
+                        "domain": "cand-Agent",
+                        "range": "cand-Claim",
+                        "evidence": "active",
+                    },
+                ]
+            }
+        )
+        result = schemas.parse_relations_payload(payload)
+        assert len(result["relations"]) == 1
+        kept = result["relations"][0]
+        assert kept["label"] == "handles"
+        assert kept["domain"] == "cand-Agent"
+        assert kept["range"] == "cand-Claim"
+
+    def test_unrelated_pairs_are_not_collapsed(self):
+        payload = json.dumps(
+            {
+                "relations": [
+                    {"label": "placesOrder", "domain": "cand-Customer", "range": "cand-Order"},
+                    {"label": "shipsVia", "domain": "cand-Order", "range": "cand-Carrier"},
+                ]
+            }
+        )
+        result = schemas.parse_relations_payload(payload)
+        assert len(result["relations"]) == 2
+
 
 class TestParseAttributesPayload:
     def test_parses_attributes(self):

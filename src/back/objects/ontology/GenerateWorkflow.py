@@ -641,6 +641,11 @@ def merge_draft_into_ontology(domain, draft: GenerateDraft) -> Dict[str, Any]:
         for p in properties
         if p.get("type") == "ObjectProperty"
     }
+    existing_directed_pairs: Set[tuple] = {
+        (p.get("domain"), p.get("range"))
+        for p in properties
+        if p.get("type") == "ObjectProperty" and p.get("domain") and p.get("range")
+    }
 
     added_relations = 0
     for rel in _result_for(SUBSTAGE_RELATIONS).get("relations", []):
@@ -653,6 +658,12 @@ def merge_draft_into_ontology(domain, draft: GenerateDraft) -> Dict[str, Any]:
                 "merge: dropping relation with unresolved entity id: %s", rel
             )
             continue
+        if (
+            domain_name != range_name
+            and (range_name, domain_name) in existing_directed_pairs
+        ):
+            logger.info("merge: dropping inverse relation %s", rel)
+            continue
         rel_label = rel.get("label") or ""
         rel_key = (domain_name, range_name, rel_label)
         if rel_key in existing_relation_keys:
@@ -662,6 +673,7 @@ def merge_draft_into_ontology(domain, draft: GenerateDraft) -> Dict[str, Any]:
         prop_name = _unique_name(_sanitize_camel(rel_label), existing_prop_names)
         existing_prop_names.add(prop_name)
         existing_relation_keys.add(rel_key)
+        existing_directed_pairs.add((domain_name, range_name))
         properties.append(
             Ontology.build_property_from_data(
                 {

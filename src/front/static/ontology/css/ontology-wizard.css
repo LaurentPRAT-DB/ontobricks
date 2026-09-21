@@ -36,6 +36,23 @@
 /* Stage stepper: Configure/Detect -> Review Entities -> Complete       */
 /* -------------------------------------------------------------------- */
 
+.wizard-stepper-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.wizard-stepper-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 0.5rem;
+}
+
+.wizard-stepper-actions.ob-hidden {
+    display: none !important;
+}
+
 .wizard-stepper-list {
     display: flex;
     align-items: center;
@@ -103,6 +120,11 @@
     display: none !important;
 }
 
+#wizard-section .btn:focus-visible {
+    outline: none;
+    box-shadow: var(--db-focus-ring);
+}
+
 /* -------------------------------------------------------------------- */
 /* Review stage: entity rows (locked anchors + editable candidates)     */
 /* -------------------------------------------------------------------- */
@@ -113,15 +135,32 @@
     gap: 0.5rem;
 }
 
+.wizard-locked-grid,
+.wizard-candidate-grid {
+    display: grid;
+    align-items: start;
+    gap: 0.5rem;
+}
+
+.wizard-locked-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.wizard-candidate-grid {
+    grid-template-columns: 1fr;
+}
+
 .wizard-entity-row {
     border: 1px solid var(--db-border);
     border-radius: var(--db-radius-control);
-    padding: 0.6rem 0.75rem;
+    min-width: 0;
+    padding: 0.5rem 0.6rem;
     background: var(--db-surface-warm);
 }
 
 .wizard-entity-locked {
     background: var(--db-border-light);
+    font-size: 0.82rem;
 }
 
 .wizard-lock-icon {
@@ -131,10 +170,23 @@
 
 .wizard-entity-label {
     font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .wizard-candidate-row.wizard-candidate-excluded {
     opacity: 0.6;
+}
+
+.wizard-candidate-row .form-control-sm {
+    min-height: 1.85rem;
+    font-size: 0.78rem;
+}
+
+.wizard-candidate-row textarea.form-control-sm {
+    min-height: 3rem;
+    resize: vertical;
 }
 
 .wizard-add-candidate-form {
@@ -194,6 +246,31 @@
     margin-bottom: 0.3rem;
 }
 
+/* Live Stage-1 result chips replace the former frozen progress sentence. */
+.wizard-detect-live-list {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+    min-height: 1.8rem;
+}
+
+.wizard-detect-entity-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.55rem;
+    border: 1px solid var(--db-border);
+    border-radius: var(--db-radius-chip);
+    background: var(--db-surface-warm);
+    color: var(--db-text);
+    font-size: 0.78rem;
+}
+
+.wizard-detect-entity-chip i {
+    color: var(--db-status-success);
+}
+
 /* -------------------------------------------------------------------- */
 /* Complete stage: per-substage checklist                               */
 /* -------------------------------------------------------------------- */
@@ -220,6 +297,18 @@
     color: var(--db-primary);
 }
 
+@media (min-width: 768px) {
+    .wizard-candidate-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1200px) {
+    .wizard-candidate-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
 /* -------------------------------------------------------------------- */
 /* Mobile (<=768px): stepper wraps/compacts instead of overflowing the   */
 /* row, and the Configure pane's tab shell drops its (unused, on mobile) */
@@ -233,6 +322,17 @@
 /* -------------------------------------------------------------------- */
 
 @media (max-width: 768px) {
+    .wizard-stepper-row {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .wizard-stepper-actions {
+        justify-content: flex-end;
+        flex-wrap: wrap;
+    }
+
     .wizard-stepper-list {
         flex-wrap: wrap;
         gap: 0.35rem;
@@ -246,6 +346,17 @@
 
     .wizard-step .wizard-step-label {
         font-size: 0.72rem;
+        white-space: normal;
+    }
+
+    #wizardTabs .nav-item {
+        min-width: 0;
+    }
+
+    #wizardTabs .nav-link {
+        padding-right: 0.25rem;
+        padding-left: 0.25rem;
+        font-size: 0.78rem;
         white-space: normal;
     }
 

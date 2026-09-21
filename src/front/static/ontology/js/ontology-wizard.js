@@ -50,8 +50,9 @@ const WIZARD_PROGRESS_CFG = {
     activityPanelId: 'wizardActivityLogPanel',
     activityLogId: 'wizardActivityLog',
     agentMountId: 'wizardAgentStepsMount',
+    detectedListId: 'wizardDetectedEntities',
     title: 'Detecting entities...',
-    subtitle: 'Looking for candidate entities in your selected sources...',
+    subtitle: 'Waiting for the first entity...',
 };
 
 // =====================================================
@@ -209,7 +210,15 @@ function showWizardTaskProgress(task, kind) {
     }
     TaskProgressUI.updateFromTask(WIZARD_PROGRESS_CFG, task);
 
-    if (kind === 'complete') {
+    if (kind === 'detect') {
+        const detected = (task.result && task.result.detected_entities) || [];
+        const messageEl = document.getElementById(WIZARD_PROGRESS_CFG.messageId);
+        if (messageEl) {
+            messageEl.textContent = detected.length
+                ? `${detected.length} ${detected.length === 1 ? 'entity' : 'entities'} detected`
+                : 'Scanning selected sources for entities...';
+        }
+    } else if (kind === 'complete') {
         renderCompleteChecklistFromTaskSteps(task);
     }
 }
@@ -225,7 +234,10 @@ function _clearWizardProgressPanels() {
  */
 async function monitorWizardTask(taskId, kind) {
     const storageKey = kind === 'complete' ? WIZARD_COMPLETE_TASK_KEY : WIZARD_DETECT_TASK_KEY;
-    const pollInterval = 1500;
+    // Detection publishes one label every 300ms; poll just below that
+    // cadence so the overlay reveals entities one by one instead of in a
+    // final batch. Completion remains on the lower-frequency cadence.
+    const pollInterval = kind === 'detect' ? 250 : 1500;
 
     while (true) {
         try {
@@ -373,6 +385,10 @@ function setWizardStage(stage) {
         const pane = document.getElementById(WIZARD_STAGE_PANES[s]);
         if (pane) pane.classList.toggle('ob-hidden', s !== stage);
     });
+    const reviewActions = document.getElementById('wizardReviewActions');
+    if (reviewActions) {
+        reviewActions.classList.toggle('ob-hidden', stage !== 'review');
+    }
 
     const stageIndex = WIZARD_STAGE_ORDER.indexOf(stage);
     const stepIds = {
@@ -700,14 +716,6 @@ async function runGenerateDetection() {
         return;
     }
 
-    const options = {
-        includeDataProperties: document.getElementById('wizardIncludeDataProps').checked,
-        includeRelationships: document.getElementById('wizardIncludeRelationships').checked,
-        includeInheritance: document.getElementById('wizardIncludeInheritance').checked,
-        useTableNames: document.getElementById('wizardUseTableNames').checked,
-        useColumnComments: document.getElementById('wizardUseColumnComments').checked
-    };
-
     try {
         const response = await fetch('/ontology/wizard/generate/detect', {
             method: 'POST',
@@ -715,7 +723,7 @@ async function runGenerateDetection() {
             body: JSON.stringify({
                 metadata: hasMetadata ? selectedMetadata : {},
                 guidelines: guidelines,
-                options: options,
+                options: {},
                 documents: documents,
                 tables: hasMetadata ? Array.from(wizardSelectedTables) : [],
             }),

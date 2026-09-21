@@ -426,23 +426,31 @@ in progress survives a page reload:
 1. **Configure & Detect** — choose which **catalog/schema** metadata to
    include, (optionally) select uploaded **Documents**, write custom
    **Guidelines** or pick a **Quick Template**, then click **Detect
-   Entities**. This runs as a background task; a progress overlay tracks
-   it and you can navigate to another section while it runs.
+   Entities**. Detection only proposes entities — relationships and
+   attributes are inferred later, after review. This runs as a background
+   task; the progress overlay shows each detected entity as it arrives, and
+   you can navigate to another section while it runs.
 2. **Review Entities** — once detection finishes, review every candidate
    entity before anything touches your ontology. Entities already in your
-   ontology are shown as locked, read-only rows (their identity can't be
-   changed here). New candidates are **included by default**; for each one
-   you can edit the canonical label, description, type hint, evidence, and
+   ontology are shown as compact, locked Entity cards in a responsive grid
+   (their identity can't be changed here). New candidates use a responsive
+   one-, two-, or three-column grid and are **included by default**; for
+   each one you can edit the entity label, description, evidence, and
    add/remove alternate labels, or exclude/remove it outright. You can also
    add an entity manually. Every edit saves immediately (no separate
    "save" step) with optimistic-concurrency conflict detection — if the
    draft changed elsewhere, you're notified and the latest version is
    reloaded rather than silently overwritten. **Continue** stays disabled
-   until at least one entity (locked or included candidate) remains. Use
+   until at least one entity (locked or included candidate) remains. The
+   **Discard Draft & Start Over** and **Continue to Complete** actions sit
+   beside the 1–2–3 process indicator at the top of the review. Use
    **Discard Draft** to abandon the review and start over.
 3. **Complete** — click **Continue to Complete** to infer relations,
    attributes, and axioms (in that strict order) and merge everything into
-   your ontology. Each sub-step is checkpointed, so if one step fails or
+   your ontology. Inverse pairs that mean the same thing (for example
+   `handles` and `handled` between the same two entities) are collapsed to
+   the active-voice direction. Each sub-step is checkpointed, so if one
+   step fails or
    the task is interrupted, **Retry** resumes from the first incomplete
    step rather than starting over. The merge is append-only — it never
    renames or deletes anything already in your ontology.
@@ -1988,21 +1996,19 @@ resumes exactly where you left it on your next visit.
    - **Healthcare** — patients, providers, appointments, diagnoses
    - **Energy** — energy-sector customer relationship management
 3. Review or edit the **guidelines** text area. You can add specific instructions like "Create a Customer entity with relationships to Contract and Invoice."
-4. Configure detection options:
-   - **Include Data Properties** — consider attributes for entities
-   - **Include Relationships** — consider relationships between entities
-   - **Include Inheritance** — consider class hierarchies
-   - **Use Table Names** — use original table names as entity names
-   - **Use Column Comments** — use UC column comments in descriptions
-5. Click **Detect Entities**. This runs as a background task with a
-   progress overlay; you can navigate elsewhere while it works.
+4. Click **Detect Entities**. This stage only proposes entities;
+   relationships and attributes are inferred after review. It runs as a
+   background task, and the progress overlay shows detected entities one by
+   one while you can navigate elsewhere.
 
 **2. Review Entities**
 
 Once detection finishes, the wizard moves to Review automatically. Entities
-already in your ontology appear as locked, read-only rows. Every detected
-candidate is **included by default** — for each one you can edit its
-canonical label, description, type hint, evidence, and alternate labels, or
+already in your ontology appear as locked, read-only Entity cards. Every
+detected candidate is **included by default**. Existing entities and new
+candidates use responsive card grids; candidates show in one column on
+mobile, two at medium widths, and three on wide pages. For each candidate
+you can edit its label, description, evidence, and alternate labels, or
 exclude/remove it. You can also add a candidate manually. Edits save
 immediately; **Continue to Complete** stays disabled until at least one
 entity remains.
@@ -2011,7 +2017,10 @@ entity remains.
 
 Click **Continue to Complete** to infer relations, attributes, and axioms
 (strictly in that order) and merge the result into your ontology — this is
-append-only and never renames or deletes anything already present. If a
+append-only and never renames or deletes anything already present. Inverse
+pairs that mean the same thing (for example `handles` and `handled`
+between the same two entities) are collapsed to the active-voice
+direction. If a
 step fails or is interrupted, **Retry** resumes from the first incomplete
 step. On success, the domain switches to the **Model** view automatically
 to show the updated ontology with entities, relationships, and inheritance

@@ -463,13 +463,87 @@ def _require_fields(item: Dict[str, Any], fields: Sequence[str], kind: str) -> N
             raise SchemaValidationError(f"{kind} is missing required '{field_name}'")
 
 
+_PASSIVE_PREFIXES = ("is", "was", "are", "were")
+_PASSIVE_SUFFIXES = ("by", "of")
+
+
+def _relation_voice_score(label: str) -> int:
+    """Higher is more active-voice (``handles`` beats ``handled`` / ``isHandledBy``)."""
+    token = re.sub(r"[^a-z0-9]", "", (label or "").casefold())
+    score = 0
+    if any(token.startswith(prefix) for prefix in _PASSIVE_PREFIXES):
+        score -= 4
+    if any(token.endswith(suffix) for suffix in _PASSIVE_SUFFIXES):
+        score -= 2
+    if len(token) > 3 and token.endswith("ed") and not token.endswith("eed"):
+        score -= 3
+    return score
+
+
+def drop_inverse_relations(relations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep at most one direction between any two distinct entities.
+
+    Inverse pairs (``handles`` A→B plus ``handled`` B→A) encode the same
+    fact twice. The active-voice direction is kept; the reverse is dropped.
+    Distinct labels in the winning direction are preserved. Self-relations
+    and pairs that only exist in one direction are left unchanged.
+    """
+    if not relations:
+        return relations
+
+    groups: Dict[tuple, List[Dict[str, Any]]] = {}
+    group_order: List[tuple] = []
+    for rel in relations:
+        domain = str(rel.get("domain") or "")
+        range_ = str(rel.get("range") or "")
+        key = (domain, range_) if domain <= range_ else (range_, domain)
+        if key not in groups:
+            groups[key] = []
+            group_order.append(key)
+        groups[key].append(rel)
+
+    kept: List[Dict[str, Any]] = []
+    for key in group_order:
+        bucket = groups[key]
+        left, right = key
+        if left == right:
+            kept.extend(bucket)
+            continue
+        forward: List[Dict[str, Any]] = []
+        reverse: List[Dict[str, Any]] = []
+        for rel in bucket:
+            domain = str(rel.get("domain") or "")
+            range_ = str(rel.get("range") or "")
+            if domain == left and range_ == right:
+                forward.append(rel)
+            else:
+                reverse.append(rel)
+        if forward and reverse:
+
+            def _dir_score(items: List[Dict[str, Any]]) -> int:
+                return max(
+                    (
+                        _relation_voice_score(item.get("label") or "")
+                        for item in items
+                    ),
+                    default=0,
+                )
+
+            kept.extend(
+                reverse if _dir_score(reverse) > _dir_score(forward) else forward
+            )
+        else:
+            kept.extend(bucket)
+    return kept
+
+
 def parse_relations_payload(text: str) -> Dict[str, Any]:
     """Parse a Stage-3 relations answer: ``{"relations": [{label, domain, range}]}``."""
     data = parse_json_object(text)
     relations = _require_list(data, "relations")
     for rel in relations:
         _require_fields(rel, ("label", "domain", "range"), "relation")
-    return {"relations": relations}
+    return {"relations": drop_inverse_relations(relations)}
 
 
 def parse_attributes_payload(text: str) -> Dict[str, Any]:

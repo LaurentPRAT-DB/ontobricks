@@ -753,6 +753,35 @@ def _c_requires_explicit_flow(_e, _c) -> bool:
     )
 
 
+def _c_drops_inverse_relations(_e, _c) -> bool:
+    """Regression: handles A→B plus handled B→A must collapse to one
+    active-voice relation. Deterministic — exercises the parser, no LLM."""
+    payload = json.dumps(
+        {
+            "relations": [
+                {
+                    "label": "handled",
+                    "domain": "cand-Claim",
+                    "range": "cand-Agent",
+                },
+                {
+                    "label": "handles",
+                    "domain": "cand-Agent",
+                    "range": "cand-Claim",
+                },
+            ]
+        }
+    )
+    result = schemas.parse_relations_payload(payload)
+    rels = result["relations"]
+    return (
+        len(rels) == 1
+        and rels[0]["label"] == "handles"
+        and rels[0]["domain"] == "cand-Agent"
+        and rels[0]["range"] == "cand-Claim"
+    )
+
+
 _CHECKS: Dict[str, Callable[[dict, dict], bool]] = {
     "all_candidates_included_by_default": _c_all_included,
     "excludes_existing_anchor_as_new": _c_excludes_anchor,
@@ -788,6 +817,7 @@ _CHECKS: Dict[str, Callable[[dict, dict], bool]] = {
     "does_not_checkpoint_rejected_output": _c_no_checkpoint_rejected,
     "stage_no_one_shot_default": _c_no_one_shot_default,
     "requires_explicit_stage_flow": _c_requires_explicit_flow,
+    "drops_inverse_relations": _c_drops_inverse_relations,
 }
 
 

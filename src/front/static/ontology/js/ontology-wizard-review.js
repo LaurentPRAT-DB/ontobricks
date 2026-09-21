@@ -201,7 +201,7 @@
         container.innerHTML = anchors.map(renderLockedAnchorRow).join('');
     }
 
-    /** Read-only row for an existing (locked) ontology entity — never
+    /** Read-only card for an existing (locked) ontology entity — never
      * wires include/exclude/remove/edit controls, per the design's
      * "existing entities cannot be edited/excluded/removed" invariant. */
     function renderLockedAnchorRow(anchor) {
@@ -214,7 +214,7 @@
             '<div class="d-flex align-items-center">' +
             '<i class="bi bi-lock-fill wizard-lock-icon" title="Locked \u2014 existing ontology entity" aria-hidden="true"></i>' +
             '<span class="wizard-entity-label">' + escHtml(anchor.canonical_label) + '</span>' +
-            '<span class="badge text-bg-secondary ms-2">' + escHtml(anchor.type_hint || 'class') + '</span>' +
+            '<span class="badge text-bg-secondary ms-auto">Entity</span>' +
             '</div>' +
             (altChips ? '<div class="wizard-chip-list">' + altChips + '</div>' : '') +
             '</div>'
@@ -279,16 +279,6 @@
             'data-entity-id="' + id + '" data-field="description" rows="2" ' +
             'placeholder="Description" aria-label="Description">' + escHtml(candidate.description || '') +
             '</textarea>' +
-            '<select class="form-select form-select-sm wizard-field-input mb-1" ' +
-            'data-entity-id="' + id + '" data-field="type_hint" style="max-width:200px;" aria-label="Type hint">' +
-            '<option value="class"' + (candidate.type_hint === 'class' ? ' selected' : '') + '>Entity</option>' +
-            '<option value="object_property"' + (candidate.type_hint === 'object_property' ? ' selected' : '') +
-            '>Relationship (object property)</option>' +
-            '<option value="data_property"' + (candidate.type_hint === 'data_property' ? ' selected' : '') +
-            '>Attribute (data property)</option>' +
-            '</select>' +
-            '<div class="text-muted small mb-1">A Relationship links two entities; ' +
-            'an Attribute stores a single value on this entity.</div>' +
             '<div class="wizard-chip-list" data-entity-id="' + id + '">' +
             altChips +
             '<input type="text" class="wizard-chip-input" data-entity-id="' + id + '" ' +
@@ -356,16 +346,13 @@
         form.classList.add('ob-hidden');
         const label = document.getElementById('wizardNewCandidateLabel');
         const description = document.getElementById('wizardNewCandidateDescription');
-        const typeHint = document.getElementById('wizardNewCandidateType');
         if (label) label.value = '';
         if (description) description.value = '';
-        if (typeHint) typeHint.value = 'class';
     }
 
     async function submitNewCandidate() {
         const labelEl = document.getElementById('wizardNewCandidateLabel');
         const descriptionEl = document.getElementById('wizardNewCandidateDescription');
-        const typeHintEl = document.getElementById('wizardNewCandidateType');
         const label = (labelEl && labelEl.value || '').trim();
         if (!label) {
             showNotification('A canonical label is required to add an entity', 'warning');
@@ -376,7 +363,7 @@
             entity: {
                 canonical_label: label,
                 description: (descriptionEl && descriptionEl.value || '').trim(),
-                type_hint: (typeHintEl && typeHintEl.value) || 'class',
+                type_hint: 'class',
             },
         });
         if (result) {
@@ -390,13 +377,17 @@
     // -------------------------------------------------------------------
 
     function bindEvents() {
-        const root = document.getElementById('wizardReviewPane');
-        if (!root || root.dataset.wizardReviewBound === '1') return;
-        root.dataset.wizardReviewBound = '1';
+        const reviewRoot = document.getElementById('wizardReviewPane');
+        if (!reviewRoot || reviewRoot.dataset.wizardReviewBound === '1') return;
+        reviewRoot.dataset.wizardReviewBound = '1';
 
-        root.addEventListener('click', onReviewClick);
-        root.addEventListener('change', onReviewChange);
-        root.addEventListener('keydown', onReviewKeydown);
+        // Review actions live beside the top stepper, outside the Review
+        // pane. Delegate clicks from the shared wizard host while keeping
+        // field change/keyboard listeners scoped to editable review cards.
+        const clickRoot = document.getElementById('wizard-section') || reviewRoot;
+        clickRoot.addEventListener('click', onReviewClick);
+        reviewRoot.addEventListener('change', onReviewChange);
+        reviewRoot.addEventListener('keydown', onReviewKeydown);
     }
 
     function onReviewClick(event) {

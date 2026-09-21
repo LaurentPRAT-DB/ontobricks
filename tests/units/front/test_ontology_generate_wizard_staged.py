@@ -59,7 +59,7 @@ def test_detection_note_aligns_with_the_padded_tab_content():
     note = re.search(
         r'<div class="([^"]+)">\s*'
         r'<i class="bi bi-info-circle me-1"></i>\s*'
-        r"Detection uses AI and may take a few seconds\.",
+        r"Detection only identifies entities\.",
         html,
     )
     assert note is not None
@@ -199,10 +199,26 @@ def test_configure_pane_preserves_existing_source_selectors():
         "wizardMetadataTableBody",
         "wizardDocsList",
         "wizardGuidelines",
-        "wizardIncludeDataProps",
         "wizardTemplateButtons",
     ):
         assert marker in block, f"Configure pane missing existing control {marker}"
+
+
+def test_detection_configuration_is_entity_only():
+    html = _read(HTML)
+    js = _read(WIZARD_JS)
+    for removed_control in (
+        "wizardIncludeDataProps",
+        "wizardIncludeRelationships",
+        "wizardIncludeInheritance",
+        "wizardUseTableNames",
+        "wizardUseColumnComments",
+        "wizard-tab-options",
+        "wizard-pane-options",
+    ):
+        assert removed_control not in html
+        assert removed_control not in js
+    assert "relationships and attributes are inferred after entity review" in html.lower()
 
 
 def test_top_cta_still_requires_llm_and_is_rightmost():
@@ -211,6 +227,32 @@ def test_top_cta_still_requires_llm_and_is_rightmost():
     assert btn
     assert "data-requires-llm" in btn.group(0)
     assert "btn-primary" in btn.group(0)
+
+
+def test_review_actions_are_right_aligned_beside_the_stepper():
+    html = _read(HTML)
+    js = _read(WIZARD_JS)
+    row = re.search(
+        r'id="wizardStepperRow".*?id="wizardReviewActions".*?'
+        r'data-action="wizard-review-discard".*?'
+        r'id="wizardReviewContinueBtn".*?</div>',
+        html,
+        re.DOTALL,
+    )
+    assert row, "Review actions must live to the right of steps 1-2-3"
+    assert "wizardReviewActions" in js
+    assert re.search(
+        r"wizardReviewActions[\s\S]{0,300}classList\.toggle\("
+        r"['\"]ob-hidden['\"],\s*stage\s*!==\s*['\"]review['\"]",
+        js,
+    )
+
+
+def test_stepper_review_actions_share_the_wizard_click_delegate():
+    js = _read(REVIEW_JS)
+    bind = js[js.index("function bindEvents(") : js.index("function onReviewClick(")]
+    assert "getElementById('wizard-section')" in bind
+    assert re.search(r"clickRoot\.addEventListener\(['\"]click['\"]", bind)
 
 
 # ---------------------------------------------------------------------------
@@ -224,23 +266,64 @@ def test_locked_anchor_rows_are_rendered_read_only():
     assert "bi-lock-fill" in js
     # Locked rows must never wire include/exclude/remove/edit controls.
     locked_render = re.search(
-        r"function renderLockedAnchor\w*\([^)]*\)\s*\{([\s\S]*?)\n\s*\}", js
+        r"function renderLockedAnchorRow\([^)]*\)\s*\{([\s\S]*?)\n\s*\}", js
     )
     assert locked_render, "locked anchor row renderer not found"
     body = locked_render.group(1)
     assert "wizard-candidate-remove" not in body
     assert "wizard-candidate-include" not in body
     assert "wizard-field-input" not in body
+    assert "Entity" in body
+    assert "object_property" not in body
+    assert "data_property" not in body
+    assert "Class" not in body
 
 
-def test_candidates_default_to_included_and_expose_full_edit_controls():
+def test_locked_anchors_use_a_responsive_card_grid():
+    html = _read(HTML)
+    css = _read(WIZARD_CSS)
+    assert 'id="wizardLockedAnchorsList"' in html
+    assert "wizard-locked-grid" in html
+    assert "wizard-locked-grid" in css
+    assert "auto-fill" in css
+    assert "minmax(" in css
+
+
+def test_candidates_default_to_included_and_expose_entity_attributes():
     js = _read(REVIEW_JS)
+    html = _read(HTML)
+    css = _read(WIZARD_CSS)
     assert "wizard-candidate-include" in js
     assert "wizard-candidate-remove" in js
-    for field in ("canonical_label", "description", "type_hint"):
+    for field in ("canonical_label", "description"):
         assert f'data-field="{field}"' in js
+    assert 'data-field="type_hint"' not in js
+    assert "object_property" not in js
+    assert "data_property" not in js
+    assert "Object Property" not in js
+    assert "Data Property" not in html
+    assert 'id="wizardNewCandidateType"' not in html
     assert "wizard-chip" in js  # alternate labels chip widget
     assert "evidence" in js.lower()
+    assert "wizard-candidate-grid" in html
+    assert "wizard-candidate-grid" in css
+    assert "repeat(2," in css
+    assert "repeat(3," in css
+
+
+def test_detect_overlay_renders_found_entities_live():
+    js = _read(WIZARD_JS)
+    ui = _read(
+        REPO_ROOT / "src/front/static/global/js/task-progress-ui.js"
+    )
+    assert "detectedListId" in js
+    assert "detected_entities" in js
+    assert "wizard-detect-live-list" in ui or "detectedListId" in ui
+    assert "renderDetectLiveList" in js or "detected_entities" in js
+    assert re.search(
+        r"pollInterval\s*=\s*kind\s*===\s*['\"]detect['\"]\s*\?\s*250\s*:\s*1500",
+        js,
+    )
 
 
 def test_add_candidate_flow_posts_op_add():
@@ -382,6 +465,21 @@ def test_no_native_browser_popups_anywhere_in_the_new_code():
 def test_configure_tabs_still_use_shared_ob_tabs_treatment():
     html = _read(HTML)
     assert 'class="nav nav-tabs ob-tabs nav-fill"' in html
+
+
+def test_mobile_configure_tabs_fit_without_clipping():
+    css = _read(WIZARD_CSS)
+    assert "#wizardTabs .nav-item" in css
+    assert "min-width: 0" in css
+    assert "#wizardTabs .nav-link" in css
+    assert "white-space: normal" in css
+
+
+def test_wizard_buttons_have_a_visible_keyboard_focus_ring():
+    css = _read(WIZARD_CSS)
+    focus = re.search(r"#wizard-section \.btn:focus-visible\s*\{([^}]*)\}", css)
+    assert focus
+    assert "var(--db-focus-ring)" in focus.group(1)
 
 
 def test_wizard_step_css_uses_design_tokens_not_raw_hex():
@@ -608,32 +706,25 @@ def test_document_list_rows_escape_the_file_name():
 
 
 # ---------------------------------------------------------------------------
-# Class -> Entity rename (user-visible label only, `value="class"` kept)
+# Entity-only review contract
 # ---------------------------------------------------------------------------
 
 
-def test_add_candidate_type_select_labels_entity_not_class():
-    """The Add Entity form's Type hint select must show the friendly
-    "Entity" label while keeping the technical `value="class"` attribute
-    the backend/schema still expects."""
+def test_add_candidate_form_has_no_type_selector():
     html = _read(HTML)
-    select = re.search(
-        r'id="wizardNewCandidateType"[^>]*>(.*?)</select>', html, re.DOTALL
-    )
-    assert select, "wizardNewCandidateType select not found"
-    body = select.group(1)
-    assert '<option value="class" selected>Entity</option>' in body
-    assert ">Class<" not in body
+    assert 'id="wizardNewCandidateType"' not in html
+    assert "object_property" not in html
+    assert "data_property" not in html
 
 
-def test_edit_candidate_type_select_labels_entity_not_class():
-    """Same relabeling on the Stage 2 per-candidate edit variant of the
-    type hint select (renderCandidateRow in ontology-wizard-review.js)."""
+def test_candidate_edits_are_entity_fields_only():
     js = _read(REVIEW_JS)
-    select_block = js[js.index('data-field="type_hint"') :]
-    select_block = select_block[: select_block.index("</select>")]
-    assert ">Entity</option>" in select_block
-    assert ">Class</option>" not in select_block
+    assert 'data-field="canonical_label"' in js
+    assert 'data-field="description"' in js
+    assert 'data-field="type_hint"' not in js
+    assert "object_property" not in js
+    assert "data_property" not in js
+    assert "type_hint: 'class'" in js
 
 
 def test_help_modal_glossary_leads_with_entity_not_class():
@@ -666,58 +757,6 @@ def test_toast_messages_say_entities_not_classes():
         "expected at least one toast to render '... entities' from "
         "stats.classes_added"
     )
-
-
-# ---------------------------------------------------------------------------
-# Relationship / Attribute type-hint clarification (finding: data vs object
-# property ambiguity)
-# ---------------------------------------------------------------------------
-
-
-def test_add_candidate_type_select_relabels_relationship_and_attribute():
-    html = _read(HTML)
-    select = re.search(
-        r'id="wizardNewCandidateType"[^>]*>(.*?)</select>', html, re.DOTALL
-    )
-    assert select
-    body = select.group(1)
-    assert '<option value="object_property">Relationship (object property)</option>' in body
-    assert '<option value="data_property">Attribute (data property)</option>' in body
-
-
-def test_edit_candidate_type_select_relabels_relationship_and_attribute():
-    js = _read(REVIEW_JS)
-    select_block = js[js.index('data-field="type_hint"') :]
-    select_block = select_block[: select_block.index("</select>")]
-    assert "Relationship (object property)" in select_block
-    assert "Attribute (data property)" in select_block
-
-
-def test_add_candidate_form_has_relationship_vs_attribute_hint():
-    """A short one-line hint near the Type hint select clarifies the
-    Relationship/Attribute distinction, matching the existing
-    `.text-muted.small` hint style in this file."""
-    html = _read(HTML)
-    form = re.search(
-        r'id="wizardAddCandidateForm"[^>]*>(.*?)id="wizardNewCandidateDescription"',
-        html,
-        re.DOTALL,
-    )
-    assert form, "add-candidate form block not found"
-    block = form.group(1)
-    assert "text-muted" in block and "small" in block
-    assert re.search(r"[Rr]elationship links two entities", block)
-    assert re.search(r"[Aa]ttribute stores", block)
-
-
-def test_edit_candidate_row_has_matching_relationship_vs_attribute_hint():
-    """The Stage 2 duplicated dropdown (per-candidate edit) gets the same
-    hint for consistency, per the design's ambiguity-clarification note."""
-    js = _read(REVIEW_JS)
-    select_idx = js.index('data-field="type_hint"')
-    after_select = js[select_idx : select_idx + 900]
-    assert re.search(r"[Rr]elationship links", after_select)
-    assert re.search(r"[Aa]ttribute stores", after_select)
 
 
 # ---------------------------------------------------------------------------

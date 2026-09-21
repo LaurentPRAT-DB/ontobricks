@@ -205,8 +205,9 @@ fixed, closed set of entities.
 {_CLOSURE_RULE}
 
 {_NAMING_RULES}
-• At most ONE relation between any ordered pair; choose the most natural
-  direction. Never create bidirectional relations.
+• At most ONE direction between any pair of entities. Never emit a relation
+  AND its inverse (handles vs handled, owns vs ownedBy, hasX vs isXOf).
+  Pick the active-voice direction only.
 
 # OUTPUT (JSON ONLY — NO PROSE, NO CODE FENCES)
 {{"relations": [
