@@ -3,17 +3,24 @@
 > Required by `.cursor/12-ai-feature-lifecycle.mdc`.
 > Material change in progress: staged Generate (design:
 > `docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md`,
-> plan: `staged-ontology-generate`). **Task 3 has landed**: the staged agent
+> plan: `staged-ontology-generate`). **Task 4 has landed**: the staged agent
 > entry points (`detect_entities`, `infer_relations`, `infer_attributes`,
-> `infer_axioms` in `agents.agent_owl_generator.staged`) now exist and are
-> the package's public surface (`agents.agent_owl_generator.__all__`).
-> Sections still marked **(staged, planned)** describe target contract for
-> Tasks 4/5 (async workflow routes, checkpoint persistence, and the wizard
-> UI), which have not landed yet — those stages do not yet drive anything
-> reachable from the API or frontend. The deprecated one-shot `run_agent`
-> bridge in `agents.agent_owl_generator.engine` still backs the existing
-> `/wizard/generate-async` route only until Task 4 replaces it; it is not
-> re-exported from the package root and the staged module never calls it.
+> `infer_axioms` in `agents.agent_owl_generator.staged`) are now wired into a
+> durable async workflow (`back.objects.ontology.GenerateWorkflow`) with
+> checkpoint persistence and an append-only final merge, exposed via
+> `POST /ontology/wizard/generate/detect`, `GET/POST
+> /ontology/wizard/generate/draft(/update|/discard)`, and
+> `POST /ontology/wizard/generate/complete`
+> (`src/api/routers/internal/ontology.py`). `/ontology/wizard/generate-async`
+> (the legacy one-shot route) now always returns `410 Gone` and never runs
+> generation. The deprecated `run_agent` bridge in
+> `agents.agent_owl_generator.engine` has no remaining production caller —
+> `Ontology.generate_with_agent`, `AgentClient.run_owl_generator`, and the
+> supervisor's `"ontology"` task were all removed, not merely left dormant
+> — since the design explicitly requires the post-generation pitfall
+> rewrite loop to never run for production Generate. Sections still marked
+> **(staged, planned)** describe target contract for Task 5 (the wizard UI),
+> which has not landed yet.
 
 ## 1. Purpose
 
@@ -23,17 +30,22 @@ proposes classes, properties, and relationships in a single LLM-driven step
 and returns a structure that conforms to the OntoBricks ontology JSON format
 consumed by `back/objects/ontology/OntologyService`.
 
-**(staged — live as of Task 3)** The agent is split into four explicit entry
-points — `detect_entities`, `infer_relations`, `infer_attributes`, and
-`infer_axioms` — driven by a durable, human-reviewed draft instead of a
-single unattended call. Detection proposes candidate entities for human
-review; completion (relations → attributes → axioms, in that strict order)
-consumes only the reviewed, validated entity set and appends its result to
-the existing ontology instead of replacing it. The generic one-shot default
-is removed from the package's public surface: `agent_owl_generator.__all__`
-exposes only the four staged entry points, and no staged function calls the
-still-existing legacy `run_agent` bridge. Wiring the staged functions into
-async workflow routes and the final append-only merge is Task 4 — see §2.
+**(staged — live as of Task 3; wired end-to-end as of Task 4)** The agent is
+split into four explicit entry points — `detect_entities`, `infer_relations`,
+`infer_attributes`, and `infer_axioms` — driven by a durable, human-reviewed
+draft instead of a single unattended call. Detection proposes candidate
+entities for human review; completion (relations → attributes → axioms, in
+that strict order) consumes only the reviewed, validated entity set and
+appends its result to the existing ontology instead of replacing it. The
+generic one-shot default is removed from the package's public surface:
+`agent_owl_generator.__all__` exposes only the four staged entry points, and
+no staged function calls the still-existing legacy `run_agent` bridge — which
+itself now has no remaining production caller (Task 4 removed
+`Ontology.generate_with_agent`, `AgentClient.run_owl_generator`, and the
+supervisor's `"ontology"` task). `back.objects.ontology.GenerateWorkflow`
+(Task 4) wires the staged functions into an async workflow with checkpoint
+persistence and the final append-only merge against the live ontology — see
+§2.
 
 ## 2. Identity
 
@@ -47,7 +59,7 @@ async workflow routes and the final append-only merge is Task 4 — see §2.
 | `max_owl_eval_rounds` | `2` (`MAX_OWL_EVAL_ROUNDS`; Stage-1 PGE evaluator retry cap — **(staged, planned)** retained only as a reject/report check, not a rewrite trigger; see §6a) |
 | `max_classes` | `40` (`_DEFAULT_MAX_CLASSES`; over-generation guard — accepted ontology is asked to consolidate above this. Overridable via `options["max_classes"]`, `<=0` disables) |
 | `mlflow_experiment` | `/Shared/ontobricks/agents/owl_generator` |
-| `stage_entry_points` | `detect_entities` (Stage 1), `infer_relations` / `infer_attributes` / `infer_axioms` (Stage 3, strict order) — **live** as of Task 3 (`agents.agent_owl_generator.staged`); `run_agent` (`agents.agent_owl_generator.engine`) is deprecated, not re-exported from the package root, and never called by the staged module — **(staged, planned)** wiring these into async workflow routes/checkpoint persistence and gating `/wizard/generate-async` is Task 4 |
+| `stage_entry_points` | `detect_entities` (Stage 1), `infer_relations` / `infer_attributes` / `infer_axioms` (Stage 3, strict order) — **live** as of Task 3 (`agents.agent_owl_generator.staged`); wired into the async workflow + checkpoint persistence + append-only merge — **live as of Task 4** (`back.objects.ontology.GenerateWorkflow`, `POST /ontology/wizard/generate/detect` + `.../complete`). `run_agent` (`agents.agent_owl_generator.engine`) is deprecated, not re-exported from the package root, never called by the staged module, and has **no remaining production caller** as of Task 4 (`/wizard/generate-async` now returns `410 Gone`) |
 
 ## 3. Tool surface
 
@@ -185,16 +197,16 @@ against every `staged`-tagged dataset row, gated by
 | **Repeated warehouse parsing.** Generate invokes `ai_parse_document` while reading a source. | Parsed-corpus eval observes an extractor/parse call. | Agent document tools have no extractor dependency and return only persisted corpus content. Completion entry points additionally never call a document tool at all (§3, live as of Task 3 — `tools=None` on every `infer_*` LLM call). |
 | **Corpus not ready.** The agent treats pending/failed files as evidence. | Tool payload has `parse_status != ready`; response claims document evidence. | Return a structured unavailable payload and require status disclosure in evals. |
 | **Internal sidecar exposed.** `_parsed` appears in the document list. | Listed filename contains `_parsed`. | Filter internal directories before tool results are built. |
-| **Entity injection.** A completion substage (`infer_relations`/`infer_attributes`/`infer_axioms`) references or introduces an entity id outside the locked anchors plus the validated Stage 2 set. | Server-side validation of every referenced id against the closed entity set before checkpointing (`_run_completion()` + `GenerateDraft.validate_references()`). | **Live as of Task 3.** Reject the substage output outright (`rejected=True`); do not checkpoint (checkpoint persistence itself is Task 4); surface a retryable failure for that substage only. |
+| **Entity injection.** A completion substage (`infer_relations`/`infer_attributes`/`infer_axioms`) references or introduces an entity id outside the locked anchors plus the validated Stage 2 set. | Server-side validation of every referenced id against the closed entity set before checkpointing (`_run_completion()` + `GenerateDraft.validate_references()`). | **Live as of Task 3**, with a second, workflow-level closure re-check added in Task 4 (`GenerateWorkflow.run_completion`, after each substage returns, before checkpointing — defense-in-depth even if the substage's own internal check is bypassed). Reject the substage output outright (`rejected=True`); mark that checkpoint `FAILED` and do not merge; surface a retryable failure for that substage only (resume re-runs only the failed/incomplete stage — see §3a checkpoint persistence, live as of Task 4). |
 | **Stale draft resumed against a changed source.** The user (or a retry) continues a draft after the selected metadata, ready-document manifests, or existing ontology identities changed since detection. | Recomputed `source_fingerprint` mismatches the draft's stored value. | **Live (Task 2 draft layer, exercised by the staged contract).** Invalidate the draft for resume/update (`GenerateDraft.ensure_not_stale`); require an explicit re-run of `detect_entities`; never silently reuse stale candidates or silently reparse to "refresh" the fingerprint. |
 | **Out-of-order or duplicated substage execution.** A retry or race starts `infer_axioms` before `infer_attributes` is checkpointed `done`, or re-runs a substage already `done`. | `completion_checkpoints` status inspected before every substage starts (`staged._ordering_error()`, fails before any LLM call). | **Live as of Task 3.** Refuse to start a substage unless its predecessor is `done`; skip any substage already `done` on resume (`GenerateDraft.next_pending_substage()`). |
-| **(staged, planned) Replace instead of append.** The final merge deletes or renames a pre-existing entity instead of appending validated new entities and enriching anchors. | Merge diff shows a removed or renamed pre-existing entity id. | Merge is append-only by construction: existing entities keep their `id`/canonical label; only relations/attributes/axioms/alternate-labels may be added to them; new entities are added, never substituted for old ones. Implementing the actual merge against the live ontology is Task 4 — `staged.py`'s completion results are returned to the caller, never merged or persisted by these functions themselves. |
+| **Replace instead of append.** The final merge deletes or renames a pre-existing entity instead of appending validated new entities and enriching anchors. | Merge diff shows a removed or renamed pre-existing entity id. | **Live as of Task 4** (`GenerateWorkflow.merge_draft_into_ontology`). Merge is append-only by construction: existing classes/properties/`dataProperties` are read and only ever appended to (new classes/properties/`dataProperties`/axioms added; an existing class's unset `parent` may be set from a `subClassOf` axiom) — no existing entity's `name`/content is ever removed or overwritten. New candidate entities are minted a fresh, collision-free class `name` from their `canonical_label`; their detection-time `id` is the merge-time join key only, not carried into the live ontology. Tested by `tests/units/ontology/test_generate_workflow.py::TestMergePreservesExistingEntities`. |
 
 ## 6a. Prompt-first pitfall handling and append guarantees
 
 Cross-reference for §6's staged rows and §3a's entity-closure rule. Prompt-
 first pitfalls, entity closure, and no-reparse are **live as of Task 3**;
-append-only merge is still **(staged, planned)** for Task 4:
+append-only merge is **live as of Task 4**:
 
 - **Prompt-first, not rewrite-after.** Pitfall constraints (naming rules,
   orphan-class avoidance, domain/range completeness, duplicate-class
@@ -206,10 +218,15 @@ append-only merge is still **(staged, planned)** for Task 4:
   against the closed set (locked anchors ∪ included Stage 2 candidates,
   identified by stable `id`) before it is checkpointed. An output that
   references an unknown id is rejected, not merged, and not patched.
-- **Append-only merge.** The final merge never deletes or renames a
-  pre-existing ontology entity. New candidate entities are added using the
-  same `id` minted at detection time; existing entities may gain new
-  relations/attributes/axioms/alternate labels but keep their identity.
+- **Append-only merge.** The final merge (`GenerateWorkflow.
+  merge_draft_into_ontology`, live as of Task 4) never deletes or renames a
+  pre-existing ontology entity. New candidate entities are added as new
+  classes/properties/`dataProperties`; their detection-time `id` is used only
+  to join relations/attributes/axioms output to the right newly-minted class
+  name during this one merge, not carried forward as the entity's identity.
+  Existing (anchor) entities may gain new relations/attributes/axioms/an
+  unset `parent` (from a `subClassOf` axiom) but their `name`/`uri`/existing
+  `dataProperties` are read-only during merge.
 - **No-reparse.** `detect_entities` is the only entry point that reads
   documents, and only through `list_documents`/`read_document` against
   `ready` manifests. Completion entry points read only the persisted Stage 2
@@ -266,9 +283,10 @@ staged span additionally carries `draft_id`, `draft_revision`, and `stage`
 use — so a resumed run's traces can be correlated across the checkpointed
 substages, and so an eval harness can assert stage-order and
 no-rewrite-after-reject directly from the trace without re-deriving it from
-prose output. **(staged, planned)** wiring `draft_id`/`draft_revision` from a
-persisted draft into every call is Task 4 (checkpoint persistence); the
-staged functions already accept and forward those kwargs to the trace today.
+prose output. **Live as of Task 4:** `GenerateWorkflow.run_completion` passes
+the persisted draft's `draft_id`/`draft_revision` into every `infer_*` call,
+so a resumed run's spans are correlated by the real draft identity, not just
+forwarded-but-unused kwargs.
 
 Each Stage-1 tool dispatch (`detect_entities`'s `list_documents` /
 `read_document` / `get_metadata` / `get_table_detail` calls) additionally
@@ -325,4 +343,15 @@ planned)` sections; plan: `staged-ontology-generate`).
 - [x] Aggregate threshold ≥ declared value in §5 (staged `1.000` ≥ `0.950`;
       parsed-corpus `1.000` ≥ `0.900`; deterministic scoring, not a live
       MLflow judge run — see the blocked item above).
+- [x] Task 4 (async workflow, checkpoint persistence, append-only merge, API
+      routes): no new eval dimension needed — §5's `stage_*` dimensions
+      already exercise the underlying `staged.py`/`GenerateDraft` behavior
+      Task 4 wires together; `tests/units/ontology/test_generate_workflow.py`
+      (31 tests) and `tests/units/api/test_generate_routes.py` (10 tests)
+      cover the new orchestration/route layer itself.
+      `uv run --frozen python tests/eval/run_agent_owl_generator.py` →
+      unchanged: all 14 staged examples PASS, aggregate `1.000` (threshold
+      `0.950`); all 10 parsed-corpus cases PASS, aggregate `1.000`
+      (threshold `0.900`). Live MLflow eval run blocked for the same
+      credential reason as prior tasks; no run URI fabricated.
 - [ ] Reviewer waiver recorded in the PR, if used.

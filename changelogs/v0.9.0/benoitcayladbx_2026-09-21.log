@@ -680,3 +680,236 @@ Tests:
   304 skipped, 6 deselected, 1 xfailed, 32 warnings in 55.86s (16 more
   passing than the Task 3 baseline — the 16 new focused tests above; no
   regressions).
+
+## Wire the staged Generate workflow into API routes and merge (task 4 of staged ontology generate)
+
+Context: Task 4 of the `staged-ontology-generate` plan on reviewed base
+`be0e66e6` (Task 3 review fixes). Wires the Task 2 draft/contract layer
+(`GenerateDraft.py`) and the Task 3 staged agent entry points (`staged.py`)
+into an actual runnable workflow: detect -> human review -> checkpointed
+completion -> append-only merge, exposed via new API routes. Also removes
+every remaining production bridge that could still run the deprecated
+one-shot `agent_owl_generator` path (and its post-generation pitfall-rewrite
+loop), per the user's explicit instruction that pitfalls must never be
+applied after generation. The attached implementation plan
+(`/Users/benoit.cayla/.cursor/plans/staged-ontology-generate_6fc7e158.plan.md`)
+was not edited. Followed strict TDD: `test_generate_workflow.py` and
+`test_generate_routes.py` were written first and run to an observed RED
+(`ModuleNotFoundError`/route-not-found) before `GenerateWorkflow.py` and the
+new routes existed, then implemented to GREEN. Frontend templates/JS/CSS are
+explicitly out of scope (Task 5); the existing wizard "Generate" button
+still calls the now-410 legacy route and will need a Task 5 rewire.
+
+Changes:
+
+1. src/back/objects/ontology/GenerateWorkflow.py (new, 612 lines)
+   Focused workflow service (kept out of the 2,500-line `Ontology.py` per
+   the plan's explicit instruction), all pure orchestration — no FM call is
+   made inline; every function that calls the staged agent is documented as
+   expected to run inside a `TaskManager` worker thread.
+   - `list_ready_document_manifests()` / `compute_current_fingerprint()` —
+     reads only the durable parsed-corpus manifest (`DocumentParseService
+     .status()`, never `parse_pending`/the extractor — no-reparse contract)
+     plus the live ontology's locked-anchor identities, and recomputes the
+     Task 2 `source_fingerprint` from them.
+   - `run_detection()` — Stage 1: resolves locked anchors from
+     `domain.get_classes()`, computes the fingerprint, calls
+     `staged.detect_entities()`, then applies a defense-in-depth dedup pass
+     against locked anchors by normalized canonical/alternate label **and**
+     by the class name the merge would mint (`_sanitize_pascal`) — a second
+     line of defense on top of `detect_entities()`'s own internal dedup, so
+     this persistence boundary never depends on a caller/mock reproducing
+     that behavior. Discards any prior draft and persists a fresh one,
+     `stage=REVIEWING`, every new candidate `included=true` by default.
+   - `get_draft_view()` / `update_draft()` / `discard_draft()` — Stage 2,
+     fully synchronous (no LLM call). `update_draft()` handles `add` (manual
+     candidate), `remove`, `update` (any of `canonical_label`,
+     `description`, `type_hint`, `evidence`, `alternate_labels`, `included`),
+     `include`, `exclude`, enforcing optimistic concurrency (`draft_revision`
+     mismatch raises `DraftRevisionConflict`, 409) and delegating every
+     invariant (locked-anchor immutability, unique labels, at-least-one-
+     entity) to `GenerateDraft`'s existing Task 2 primitives.
+   - `run_completion()` — Stage 3: rejects a stale draft
+     (`ensure_not_stale`) or one not yet ready (`ensure_ready_for_completion`)
+     before any LLM call; loops `next_pending_substage()` and runs
+     `infer_relations` -> `infer_attributes` -> `infer_axioms` in that
+     order, checkpointing `RUNNING` before each call and `DONE`/`FAILED`
+     after, so a resumed run skips every substage already `done`. Adds a
+     workflow-level entity-closure re-check (`_SUBSTAGE_REF_EXTRACTORS` +
+     `draft.validate_references()`) immediately after each substage
+     returns success and *before* checkpointing `DONE` — defense-in-depth
+     against the substage's own internal check being bypassed by a test
+     mock or a future staged.py bug; a failing re-check checkpoints `FAILED`
+     and raises. On all three substages reaching `DONE`, calls
+     `merge_draft_into_ontology()` then sets `stage=DONE`.
+   - `merge_draft_into_ontology()` — the deterministic append-only merge.
+     Existing classes/properties/`dataProperties` are read-only except for
+     appends and one exception (setting a currently-unset `parent` from a
+     `subClassOf` axiom); included candidates are minted a fresh,
+     collision-free class `name` from `canonical_label` (`_sanitize_pascal`
+     + `_unique_name`) and persisted via `alternate_labels` (new first-class
+     field, see #2) — their detection-time `id` is the merge-time join key
+     only (`id_to_name`), never carried into the live ontology as identity.
+     Relations become new `ObjectProperty` entries (domain/range resolved
+     through `id_to_name`); attributes become new `dataProperties` entries
+     on the resolved class; axioms translate the staged shape
+     (`kind`/`subject`/`object`) into the ontology's (`subClassOf` sets
+     `parent`; `disjointWith`/`equivalentClass` append to `domain.axioms` as
+     `{type, subject, objects}`). Any relation/attribute/axiom whose id
+     doesn't resolve through `id_to_name` is dropped with a warning (already
+     unreachable in practice — the entity-closure check above rejects it
+     first) rather than silently corrupting the ontology. Calls
+     `domain.clear_generated_content()` + `domain.record_change(...)` +
+     `domain.save()`, matching the existing ontology-mutation contract.
+2. src/back/objects/ontology/Ontology.py — `build_class_from_data()`
+   Added `alternate_labels` as a first-class field on the ontology class
+   dict (defaults to the existing value on edit, `[]` on create) — the
+   persistence target `merge_draft_into_ontology()` writes synonyms into.
+   Also removed `generate_with_agent()` (the legacy one-shot bridge to
+   `agents.agent_owl_generator.engine.run_agent`, including its
+   `TYPE_CHECKING`-only `AgentResult` import) — its only caller was the now-
+   gated `/wizard/generate-async` route (#3), and the design requires the
+   post-generation pitfall-rewrite loop it triggered to be unreachable from
+   production Generate, not merely undocumented.
+3. src/api/routers/internal/ontology.py
+   - `POST /wizard/generate-async` (legacy) now always raises
+     `OntoBricksError(..., status_code=410)` and does nothing else — no
+     `require_domain_llm`, no `create_task`, no thread. Docstring points
+     callers at the five new routes below.
+   - `POST /wizard/generate/detect` — Stage 1, async (`TaskManager`
+     background thread): resolves the LLM endpoint/warehouse via the
+     existing `require_domain_llm`/`resolve_warehouse_id` helpers, then runs
+     `GenerateWorkflow.run_detection()` in a worker thread exactly like the
+     old generate-async route did; returns `{task_id}` for polling
+     (`GET /tasks/{task_id}`) — the task result carries `{"draft": ...}`.
+   - `GET /wizard/generate/draft` — Stage 2, synchronous: returns
+     `GenerateWorkflow.get_draft_view()` (draft dict + a computed `stale`
+     flag), or `{"draft": None}` if none is persisted.
+   - `POST /wizard/generate/draft/update` — Stage 2, synchronous: validates
+     `revision`/`op` are present, delegates to `GenerateWorkflow.
+     update_draft()`, returns the updated draft (and its new revision).
+   - `POST /wizard/generate/draft/discard` — Stage 2, synchronous: discards
+     the persisted draft.
+   - `POST /wizard/generate/complete` — Stage 3, async (`TaskManager`
+     background thread): runs `GenerateWorkflow.run_completion()` (relations
+     -> attributes -> axioms -> merge) in a worker thread; returns
+     `{task_id}` — the task result carries `{"draft": ..., "merge": {
+     classes_added, relations_added, attributes_added, axioms_added}}`.
+   All five new routes reuse the existing `map_route_errors`/`OntoBricksError`
+   mapping so `DraftValidationError`/`DraftRevisionConflict`/`DraftStaleError`
+   /`NotFoundError` surface with their existing status codes (400/409/404)
+   with no new error-handling wiring.
+4. src/back/core/agents/AgentClient.py
+   Removed `run_owl_generator()` (the gateway method wrapping the
+   deprecated `run_agent` bridge) and its `TYPE_CHECKING`-only import — its
+   only caller was the supervisor's `"ontology"` task branch (#5), now also
+   removed.
+5. src/agents/agent_supervisor/engine.py
+   Removed the `"ontology"` task branch entirely: `_VALID_TASKS` is now
+   `("mapping",)` only, and `SupervisorEngine.run()` dropped the now-unused
+   `base_uri`/`selected_tables` parameters. This branch was dead in
+   production (only `task="mapping"` is reachable from
+   `responses_agent.py`), but removing it outright — rather than leaving it
+   reachable-but-undocumented — closes the last code path that could still
+   invoke the pitfall-rewrite loop via `AgentClient.run_owl_generator`.
+   Docstring rewritten to explain the removal and point at the staged
+   workflow instead.
+6. src/back/objects/ontology/__init__.py
+   Re-exported `GenerateWorkflow` alongside the existing `Ontology`/
+   `GenerateDraft` exports.
+7. tests/units/ontology/test_generate_workflow.py (new, 577 lines, 31 tests)
+   `TestRunDetection` (default inclusion, anchor dedup by label and by
+   minted class-name collision, ready-corpus-only/no-reparse, fingerprint
+   composition), `TestDraftReview` (add/remove/update every editable field,
+   include/exclude, locked-anchor immutability, revision-conflict 409,
+   at-least-one-entity gate, unknown op), `TestRunCompletion` (strict
+   relations->attributes->axioms ordering with per-substage checkpoints,
+   resume skipping a `done` substage, stale-fingerprint rejection before any
+   LLM call, entity-closure rejection with a `FAILED` checkpoint even when
+   the substage itself reports fabricated success, not-ready/already-done
+   guard errors), `TestMergePreservesExistingEntities` (existing classes/
+   properties/`dataProperties` byte-identical after merge; new entities
+   correctly appended with alternate labels persisted; relations/attributes
+   correctly resolved through `id_to_name`), and
+   `TestSubClassOfAndDisjointAxiomMerge` (parent-setting only when unset;
+   `disjointWith`/`equivalentClass` appended to `domain.axioms`; unresolved/
+   self-referential axioms dropped, never crash the merge).
+8. tests/units/api/test_generate_routes.py (new, 291 lines, 10 tests)
+   `TestStartGenerateDetection` (task created, background thread invokes
+   `GenerateWorkflow.run_detection`, `require_domain_llm`/task-manager wiring
+   matches the existing async-route pattern), `TestDraftRoutes` (GET/update/
+   discard call through to the workflow functions with the right kwargs and
+   surface `DraftRevisionConflict`/`NotFoundError` as their existing status
+   codes), `TestStartGenerateCompletion` (same async pattern for Stage 3),
+   and `TestLegacyOneShotRouteGone` (the old route returns 410 and calls
+   neither `require_domain_llm` nor `create_task`/`threading.Thread`).
+9. tests/units/api/test_no_llm_route_contract.py
+   `ROUTES` now lists `start_generate_detection`/`start_generate_completion`
+   (both call `require_domain_llm` only inside their background-thread
+   target, never in the `async def` body) instead of the removed
+   `generate_ontology_async`. Added
+   `test_legacy_one_shot_generate_route_never_calls_require_domain_llm`,
+   asserting the 410 route calls neither `require_domain_llm` nor
+   `create_task` — the strongest possible "no silent one-shot path"
+   regression test for this route.
+10. tests/agents/agent_supervisor/test_engine.py
+    Removed the `run_owl_generator` stub from `_FakeAgentClient` (no longer
+    a valid method) and replaced `test_ontology_task_uses_single_engine`
+    with `test_ontology_task_no_longer_accepted`, asserting
+    `SupervisorEngine.run(task="ontology")` now raises `ValueError`.
+11. .planning/agents/agent_owl_generator/SPEC.md
+    Marked every Task-4-scoped `(staged, planned)` annotation as landed:
+    the header banner, §1 Purpose, the `stage_entry_points` identity row,
+    the "Replace instead of append" and "Entity injection" failure-mode
+    rows (§6), §6a's append-only-merge bullet, and §8's `draft_id`/
+    `draft_revision` tracing note. Documented that
+    `Ontology.generate_with_agent`/`AgentClient.run_owl_generator`/the
+    supervisor's `"ontology"` task were removed outright, not left dormant.
+    Added a §10 sign-off entry recording that no new eval dimension was
+    needed (Task 4 wires together behavior §5 already scores) and the
+    unchanged 14/14 staged + 10/10 parsed-corpus offline eval result.
+    `(staged, planned)` on the still-pending Task 5 wizard UI is unchanged.
+
+No frontend template/JS/CSS code was touched (Task 5 scope) — the existing
+wizard "Generate" button still POSTs to the now-410 legacy route and will
+silently fail in the UI until Task 5 rewires it to the new staged routes.
+
+Modified files:
+- src/back/objects/ontology/GenerateWorkflow.py (new)
+- src/back/objects/ontology/Ontology.py
+- src/back/objects/ontology/__init__.py
+- src/api/routers/internal/ontology.py
+- src/back/core/agents/AgentClient.py
+- src/agents/agent_supervisor/engine.py
+- tests/units/ontology/test_generate_workflow.py (new)
+- tests/units/api/test_generate_routes.py (new)
+- tests/units/api/test_no_llm_route_contract.py
+- tests/agents/agent_supervisor/test_engine.py
+- .planning/agents/agent_owl_generator/SPEC.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/ontology/test_generate_workflow.py
+  tests/units/api/test_generate_routes.py` → collection errors (`ModuleNotFoundError:
+  No module named 'back.objects.ontology.GenerateWorkflow'`; new routes not
+  yet defined) before either module existed.
+- GREEN (focused): `uv run --frozen pytest -q
+  tests/units/ontology/test_generate_workflow.py
+  tests/units/api/test_generate_routes.py
+  tests/units/api/test_no_llm_route_contract.py
+  tests/agents/agent_supervisor/test_engine.py` → 50 passed.
+- Regression (ontology/api/domain/agents): `uv run --frozen pytest -q
+  tests/units/ontology/ tests/units/api/ tests/units/domain/
+  tests/units/agents/ tests/agents/` → 1928 passed.
+- Offline eval: `uv run --frozen python tests/eval/run_agent_owl_generator.py`
+  → unchanged: all 14 staged examples PASS, staged-contract aggregate
+  `1.000` (threshold `0.950`); all 10 parsed-corpus cases PASS, aggregate
+  `1.000` (threshold `0.900`). No new eval dimension needed (Task 4 wires
+  together behavior the existing dimensions already score). No live MLflow
+  run — same missing-credentials blocker as prior Task 1/2/3 entries
+  (`DATABRICKS_HOST`/`DATABRICKS_TOKEN`/`ONTOBRICKS_LLM_ENDPOINT` not
+  configured in this environment); no run URI fabricated.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6540 passed,
+  304 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.35s (42 more
+  passing than the Task 3 baseline — the new focused tests above; no
+  regressions).

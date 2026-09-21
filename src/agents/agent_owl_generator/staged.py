@@ -17,12 +17,14 @@ SPEC: ``.planning/agents/agent_owl_generator/SPEC.md`` §2/§3/§3a/§6a):
   reference is **rejected** (reject-only), never fed back to the LLM for an
   in-request rewrite.
 
-Checkpoint *persistence* and the async workflow/routes are Task 4 — these
+Checkpoint *persistence*, the async workflow, and the API routes are Task 4
+(:mod:`back.objects.ontology.GenerateWorkflow` +
+:mod:`api.routers.internal.ontology`'s ``/wizard/generate/*`` routes) — these
 functions validate ordering by inspecting the passed draft's checkpoints but
-do not write them. The deprecated one-shot bridge lives in
+do not write them themselves. The deprecated one-shot bridge lives in
 :mod:`agents.agent_owl_generator.engine`; it is intentionally NOT imported or
-reachable from this module, so a staged path can never fall back to one-shot
-generation.
+reachable from this module (or from any production caller as of Task 4), so
+a staged path can never fall back to one-shot generation.
 """
 
 from __future__ import annotations

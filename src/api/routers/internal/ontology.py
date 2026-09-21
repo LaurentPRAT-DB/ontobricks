@@ -11,10 +11,16 @@ import re
 from fastapi import APIRouter, Request, Depends
 
 from api.routers.internal._helpers import map_route_errors
-from back.core.errors import InfrastructureError, NotFoundError, ValidationError
+from back.core.errors import (
+    InfrastructureError,
+    NotFoundError,
+    OntoBricksError,
+    ValidationError,
+)
 from back.objects.session import SessionManager, get_session_manager
 from shared.config.settings import get_settings, Settings
 from back.objects.ontology import Ontology
+from back.objects.ontology import GenerateWorkflow
 from back.objects.session import get_domain
 from back.core.task_manager import get_task_manager
 from back.core.helpers import (
@@ -1822,15 +1828,49 @@ async def get_wizard_templates():
 
 
 @router.post("/wizard/generate-async")
-async def generate_ontology_async(
+async def generate_ontology_async():
+    """Removed: legacy one-shot ontology generation.
+
+    This route used to drive ``agent_owl_generator``'s deprecated
+    ``run_agent`` bridge in one unattended call, including a post-generation
+    pitfall-rewrite loop. Per the three-stage Generate design
+    (``docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md``),
+    there is no one-shot Generate path anymore — this route always returns
+    ``410 Gone`` and never runs generation. Use the staged workflow instead:
+
+    * ``POST /ontology/wizard/generate/detect`` — Stage 1 (detect candidates)
+    * ``GET /ontology/wizard/generate/draft`` — Stage 2 (read the draft)
+    * ``POST /ontology/wizard/generate/draft/update`` — Stage 2 (edit/include/exclude)
+    * ``POST /ontology/wizard/generate/draft/discard`` — Stage 2 (discard)
+    * ``POST /ontology/wizard/generate/complete`` — Stage 3 (complete + merge)
+    """
+    raise OntoBricksError(
+        "This one-shot Generate route has been removed. Use the staged "
+        "workflow: POST /ontology/wizard/generate/detect, "
+        "GET/POST /ontology/wizard/generate/draft(/update|/discard), "
+        "POST /ontology/wizard/generate/complete.",
+        status_code=410,
+    )
+
+
+# ===========================================
+# Wizard — staged Generate (three-stage workflow: detect -> review -> complete)
+# ===========================================
+
+
+@router.post("/wizard/generate/detect")
+async def start_generate_detection(
     request: Request,
     session_mgr: SessionManager = Depends(get_session_manager),
     settings: Settings = Depends(get_settings),
 ):
-    """Start ontology generation via ``agent_owl_generator`` (background task).
+    """Stage 1: detect candidate entities (background task).
 
-    Poll ``GET /tasks/{task_id}`` for ``owl_content``, ``stats``, and agent trace fields.
-    There is no synchronous generate endpoint; this is the only LLM wizard entry point.
+    Discards any prior Generate draft and persists a fresh one, paused for
+    review — ``included=true`` by default for every new candidate, existing
+    ontology entities carried over as locked anchors. Poll
+    ``GET /tasks/{task_id}`` for the ``draft`` result, or read it directly via
+    ``GET /wizard/generate/draft`` once the task completes.
     """
     import threading
 
@@ -1839,6 +1879,7 @@ async def generate_ontology_async(
     guidelines = data.get("guidelines", "")
     options = data.get("options", {})
     documents = data.get("documents", [])
+    tables = data.get("tables", [])
 
     tables_count = len(metadata.get("tables", []))
 
@@ -1851,94 +1892,191 @@ async def generate_ontology_async(
     tm = get_task_manager()
     task = tm.create_task(
         name=(
-            f"Generate Ontology ({tables_count} tables)"
+            f"Detect Ontology Entities ({tables_count} tables)"
             if tables_count
-            else "Generate Ontology (guidelines only)"
+            else "Detect Ontology Entities (guidelines only)"
         ),
-        task_type="ontology_generation",
+        task_type="ontology_generate_detect",
         steps=[
             {"name": "init", "description": "Initializing agent"},
-            {
-                "name": "gather",
-                "description": "Gathering context (metadata & documents)",
-            },
-            {"name": "generate", "description": "Generating ontology with AI"},
-            {"name": "process", "description": "Processing results"},
-            {"name": "finalize", "description": "Finalizing"},
+            {"name": "detect", "description": "Detecting candidate entities"},
         ],
     )
 
-    def run_generation():
+    def run_detection_task():
         try:
-            tm.start_task(task.id, "Initializing agent…")
-            tm.advance_step(task.id, "Gathering context (metadata & documents)…")
-            tm.advance_step(task.id, "Generating ontology with AI…")
+            tm.start_task(task.id, "Detecting candidate entities…")
 
             def on_step(msg: str):
                 tm.update_progress(task.id, task.progress, msg)
 
-            agent_result = Ontology(domain).generate_with_agent(
+            draft = GenerateWorkflow.run_detection(
+                domain,
+                settings,
                 host=host,
                 token=token,
                 endpoint_name=llm_endpoint,
                 metadata=metadata,
                 guidelines=guidelines,
                 options=options,
+                selected_tables=tables,
                 selected_docs=documents,
                 warehouse_id=warehouse_id,
                 on_step=on_step,
             )
-
-            if not agent_result.success:
-                tm.fail_task(
-                    task.id, agent_result.error or "Agent did not produce output"
-                )
-                return
-
-            tm.advance_step(task.id, "Processing results…")
-            owl_content, stats = Ontology.postprocess_generated_owl(
-                agent_result.owl_content
-            )
-
-            tm.advance_step(task.id, "Finalizing…")
-
-            iteration_summary = agent_result.iteration_summary or []
-            final_score = (
-                iteration_summary[-1]["score"] if iteration_summary else None
-            )
-            converged = bool(
-                iteration_summary
-                and iteration_summary[-1]["status"] in ("passed", "max_rounds_reached")
-            )
-
             tm.complete_task(
                 task.id,
-                result={
-                    "owl_content": owl_content,
-                    "stats": stats,
-                    "agent_steps": serialize_agent_steps(agent_result.steps),
-                    "agent_iterations": agent_result.iterations,
-                    "agent_usage": agent_result.usage,
-                    "iteration_summary": iteration_summary,
-                    "generation_score": final_score,
-                    "generation_converged": converged,
-                },
-                message=(
-                    f"Generated {stats.get('classes', 0)} classes, "
-                    f"{stats.get('properties', 0)} properties "
-                    f"({agent_result.iterations} agent iterations)"
-                    + (f" — quality score {final_score}/100" if final_score is not None else "")
-                ),
+                result={"draft": draft.to_dict()},
+                message=f"Detected {len(draft.candidate_entities)} candidate entity(ies)",
             )
-
+        except OntoBricksError as exc:
+            tm.fail_task(task.id, exc.message)
         except Exception as e:
-            logger.exception("Wizard async: Ontology generation failed: %s", e)
-            tm.fail_task(task.id, "Ontology generation failed unexpectedly")
+            logger.exception("Generate detect task failed: %s", e)
+            tm.fail_task(task.id, "Entity detection failed unexpectedly")
 
-    thread = threading.Thread(target=run_generation, daemon=True)
+    thread = threading.Thread(target=run_detection_task, daemon=True)
     thread.start()
 
-    return {"success": True, "task_id": task.id, "message": "Agent task started"}
+    return {"success": True, "task_id": task.id, "message": "Detection task started"}
+
+
+@router.get("/wizard/generate/draft")
+async def get_generate_draft(
+    session_mgr: SessionManager = Depends(get_session_manager),
+    settings: Settings = Depends(get_settings),
+):
+    """Stage 2: read the persisted Generate draft (synchronous, no LLM call).
+
+    Returns ``{"success": True, "draft": None}`` when no draft is persisted.
+    The draft payload includes a ``stale`` flag (recomputed source
+    fingerprint vs. the one captured at detection time).
+    """
+    domain = get_domain(session_mgr)
+    with map_route_errors("Loading Generate draft failed", logger):
+        view = GenerateWorkflow.get_draft_view(domain, settings)
+    return {"success": True, "draft": view}
+
+
+@router.post("/wizard/generate/draft/update")
+async def update_generate_draft(
+    request: Request,
+    session_mgr: SessionManager = Depends(get_session_manager),
+):
+    """Stage 2: apply one review mutation (synchronous, no LLM call).
+
+    Body: ``{"revision": int, "op": "add"|"remove"|"update"|"include"|"exclude",
+    "entity_id"?: str, "entity"?: dict, "updates"?: dict}``. ``revision`` must
+    match the currently-persisted draft revision (optimistic concurrency) —
+    a stale revision raises a 409 conflict. Existing (locked) anchors are
+    never editable through this route.
+    """
+    data = await request.json()
+    revision = data.get("revision")
+    op = data.get("op")
+    if revision is None or not op:
+        raise ValidationError("Both 'revision' and 'op' are required")
+
+    domain = get_domain(session_mgr)
+    with map_route_errors("Updating Generate draft failed", logger):
+        draft = GenerateWorkflow.update_draft(
+            domain,
+            revision=int(revision),
+            op=op,
+            entity=data.get("entity"),
+            entity_id=data.get("entity_id"),
+            updates=data.get("updates"),
+        )
+    return {"success": True, "draft": draft.to_dict()}
+
+
+@router.post("/wizard/generate/draft/discard")
+async def discard_generate_draft(
+    session_mgr: SessionManager = Depends(get_session_manager),
+):
+    """Stage 2: discard the persisted Generate draft entirely."""
+    domain = get_domain(session_mgr)
+    with map_route_errors("Discarding Generate draft failed", logger):
+        GenerateWorkflow.discard_draft(domain)
+    return {"success": True, "message": "Draft discarded"}
+
+
+@router.post("/wizard/generate/complete")
+async def start_generate_completion(
+    request: Request,
+    session_mgr: SessionManager = Depends(get_session_manager),
+    settings: Settings = Depends(get_settings),
+):
+    """Stage 3: complete (relations -> attributes -> axioms) and merge (background task).
+
+    Re-validates the draft's source fingerprint and rejects a stale draft.
+    Runs the three completion substages in strict order, persisting a
+    running/done/failed checkpoint around each; a retry after a partial
+    failure resumes at the first incomplete substage rather than re-running
+    already-``done`` ones. On success, appends the validated new entities to
+    the live ontology (append-only — existing entities/content are never
+    deleted or renamed). Poll ``GET /tasks/{task_id}`` for the final
+    ``draft`` + ``merge`` stats result.
+    """
+    import threading
+
+    data = await request.json()
+    options = data.get("options", {})
+
+    domain = get_domain(session_mgr)
+    host, token, llm_endpoint, _llm_endpoint_kind = require_domain_llm(
+        domain, settings
+    )
+
+    tm = get_task_manager()
+    task = tm.create_task(
+        name="Complete Ontology Generate",
+        task_type="ontology_generate_complete",
+        steps=[
+            {"name": "relations", "description": "Inferring relations"},
+            {"name": "attributes", "description": "Inferring attributes"},
+            {"name": "axioms", "description": "Inferring axioms"},
+            {"name": "merge", "description": "Merging into ontology"},
+        ],
+    )
+
+    def run_completion_task():
+        try:
+            tm.start_task(task.id, "Completing ontology Generate…")
+
+            def on_step(msg: str):
+                tm.update_progress(task.id, task.progress, msg)
+
+            outcome = GenerateWorkflow.run_completion(
+                domain,
+                settings,
+                host=host,
+                token=token,
+                endpoint_name=llm_endpoint,
+                options=options,
+                on_step=on_step,
+            )
+            merge_stats = outcome["merge"]
+            tm.complete_task(
+                task.id,
+                result=outcome,
+                message=(
+                    f"Merged {merge_stats['classes_added']} classes, "
+                    f"{merge_stats['relations_added']} relations, "
+                    f"{merge_stats['attributes_added']} attributes, "
+                    f"{merge_stats['axioms_added']} axioms"
+                ),
+            )
+        except OntoBricksError as exc:
+            tm.fail_task(task.id, exc.message)
+        except Exception as e:
+            logger.exception("Generate completion task failed: %s", e)
+            tm.fail_task(task.id, "Ontology completion failed unexpectedly")
+
+    thread = threading.Thread(target=run_completion_task, daemon=True)
+    thread.start()
+
+    return {"success": True, "task_id": task.id, "message": "Completion task started"}
 
 
 # ===========================================

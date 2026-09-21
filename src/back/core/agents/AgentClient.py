@@ -10,7 +10,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from agents.agent_owl_generator.engine import AgentResult
     from agents.agent_auto_assignment.engine import AgentResult as AutoAssignAgentResult
     from agents.agent_mapping_pge.engine import AgentResult as MappingPGEAgentResult
     from agents.agent_auto_icon_assign.engine import (
@@ -28,56 +27,17 @@ class AgentClient:
     Usage::
 
         client = AgentClient()
-        result = client.run_owl_generator(host=..., token=..., ...)
+        result = client.run_mapping_pge(host=..., token=..., ...)
+
+    Note: the one-shot ``run_owl_generator`` bridge to
+    ``agents.agent_owl_generator.engine.run_agent`` (the deprecated,
+    pitfall-rewrite-loop OWL generator) has been removed — see the
+    three-stage Generate design
+    (``docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md``).
+    Ontology generation now goes through the staged workflow
+    (``back.objects.ontology.GenerateWorkflow`` +
+    ``agents.agent_owl_generator.staged``) instead of this gateway.
     """
-
-    def run_owl_generator(
-        self,
-        *,
-        host: str,
-        token: str,
-        endpoint_name: str,
-        base_uri: str,
-        selected_tables: List[str],
-        metadata: Optional[Dict] = None,
-        ontology: Optional[Dict] = None,
-        on_step: Optional[Callable] = None,
-    ) -> "AgentResult":
-        """Generate or extend OWL from warehouse metadata via the owl-generator agent.
-
-        Args:
-            host: Databricks workspace host (with or without ``https://``).
-            token: Bearer token for the workspace APIs.
-            endpoint_name: Model serving endpoint name for the agent.
-            base_uri: Ontology base URI used in generated IRIs.
-            selected_tables: Fully qualified or logical table names the agent may use.
-            metadata: Optional pre-fetched schema/catalog context for the agent.
-            ontology: Optional existing ontology dict to merge or constrain output.
-            on_step: Optional ``(message, progress)`` callback for UI progress.
-
-        Returns:
-            Agent result object from ``agents.agent_owl_generator`` (fields depend
-            on agent version; typically includes generated OWL and diagnostics).
-
-        Raises:
-            Exception: Propagates any failure raised by ``run_agent`` (network,
-                auth, or model errors).
-        """
-        # Legacy one-shot bridge (deprecated). Imported from the engine
-        # submodule explicitly — the package root exposes only the staged
-        # entry points now.
-        from agents.agent_owl_generator.engine import run_agent
-
-        return run_agent(
-            host=host,
-            token=token,
-            endpoint_name=endpoint_name,
-            base_uri=base_uri,
-            selected_tables=selected_tables,
-            metadata=metadata,
-            ontology=ontology,
-            on_step=on_step,
-        )
 
     def run_auto_assignment(
         self,

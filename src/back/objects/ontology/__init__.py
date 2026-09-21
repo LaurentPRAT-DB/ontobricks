@@ -12,6 +12,7 @@ from back.objects.ontology.GenerateDraft import (
     GenerateEntity,
     compute_source_fingerprint,
 )
+from back.objects.ontology import GenerateWorkflow
 
 __all__ = [
     "IndustryKind",
@@ -20,6 +21,7 @@ __all__ = [
     "GenerateDraft",
     "GenerateDraftStore",
     "GenerateEntity",
+    "GenerateWorkflow",
     "compute_source_fingerprint",
     "get_ontology_classes",
     "get_ontology_info",

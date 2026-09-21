@@ -7,12 +7,14 @@ staged flow is detect → human review → checkpointed relations/attributes/
 axioms completion, appending to (never replacing) the existing ontology.
 
 The one-shot ``run_agent`` bridge in :mod:`agents.agent_owl_generator.engine`
-is **deprecated and legacy-only**: it is retained solely so the existing,
-soon-to-be-replaced ``Ontology.generate_with_agent`` API path stays green
-until Task 4 of ``staged-ontology-generate`` swaps it for the staged routes.
-It is intentionally NOT re-exported as part of the default public surface, and
-the staged module never imports or falls back to it. Import it explicitly from
-``agents.agent_owl_generator.engine`` if you truly need the legacy path.
+is **deprecated**: it contains the post-generation pitfall-rewrite loop the
+three-stage design replaces, and every production caller
+(``Ontology.generate_with_agent``, ``AgentClient.run_owl_generator``, the
+supervisor's ``"ontology"`` task, and the ``/ontology/wizard/generate-async``
+route) has been removed as of Task 4 of ``staged-ontology-generate``. The
+module still exists only for direct, explicit, non-production use (e.g. ad
+hoc scripts); it is intentionally NOT re-exported as part of the default
+public surface, and the staged module never imports or falls back to it.
 """
 
 from agents.agent_owl_generator.staged import (  # noqa: F401

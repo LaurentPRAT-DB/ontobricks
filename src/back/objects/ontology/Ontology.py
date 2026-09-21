@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from agents.agent_auto_icon_assign.engine import (
         AgentResult as IconAssignAgentResult,
     )
-    from agents.agent_owl_generator.engine import AgentResult
     from agents.agent_business_rules_generator.engine import (
         AgentResult as BusinessRulesAgentResult,
     )
@@ -68,61 +67,6 @@ class Ontology:
 
     def __init__(self, session: "DomainSession") -> None:
         self._domain = session
-
-    def generate_with_agent(
-        self,
-        *,
-        host: str,
-        token: str,
-        endpoint_name: str,
-        metadata: Dict[str, Any],
-        guidelines: str = "",
-        options: Optional[Dict[str, Any]] = None,
-        selected_docs: Optional[List[str]] = None,
-        warehouse_id: str = "",
-        on_step: Optional[Callable[[str], None]] = None,
-    ) -> "AgentResult":
-        """Run ``agent_owl_generator`` for this project (blocking).
-
-        Resolves ``base_uri``, registry, project folder, and table selection from
-        the session and the provided ``metadata`` (same rules as the wizard).
-
-        Typical use: call from a background thread; poll task status from HTTP.
-        """
-        # Legacy one-shot bridge (deprecated; replaced by the staged
-        # detect/review/complete flow in Task 4 of staged-ontology-generate).
-        # Imported from the engine submodule explicitly — the package root now
-        # exposes only the staged entry points as the public surface.
-        from agents.agent_owl_generator.engine import run_agent
-
-        s = self._domain
-        ont = s.ontology
-        base_uri = (
-            ont.get("base_uri")
-            or ont.get("info", {}).get("base_uri")
-            or DEFAULT_BASE_URI
-        )
-        selected_tables = [
-            t.get("full_name") or t.get("name")
-            for t in (metadata or {}).get("tables", [])
-        ]
-        return run_agent(
-            host=host,
-            token=token,
-            endpoint_name=endpoint_name,
-            registry=dict(s.registry),
-            metadata=metadata or {},
-            guidelines=guidelines or "",
-            options=options or {},
-            base_uri=base_uri,
-            domain_name=s.info.get("name", ""),
-            domain_folder=s.domain_folder,
-            domain_version=s.current_version,
-            selected_tables=selected_tables,
-            selected_docs=list(selected_docs or []),
-            warehouse_id=warehouse_id or "",
-            on_step=on_step,
-        )
 
     def generate_rules_with_agent(
         self,
@@ -1801,6 +1745,14 @@ class Ontology:
             "actions": data.get("actions", existing.get("actions", [])),
             "virtualAttributes": data.get(
                 "virtualAttributes", existing.get("virtualAttributes", [])
+            ),
+            # First-class synonym storage (design:
+            # docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md
+            # §Synonyms as first-class alternate labels). Populated by the
+            # Generate merge for newly-appended entities; preserved verbatim
+            # on manual edits via the existing/`existing` fallback.
+            "alternate_labels": data.get(
+                "alternate_labels", existing.get("alternate_labels", [])
             ),
         }
 

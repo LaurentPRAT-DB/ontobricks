@@ -2148,11 +2148,21 @@ The full pipeline is also available via REST API for automation or CI/CD integra
 curl -X POST /domain/metadata/initialize-async \
   -d '{"catalog": "my_catalog", "schema": "my_schema", "tables": ["t1", "t2"]}'
 
-## Step 4: Generate ontology
-curl -X POST /ontology/wizard/generate-async \
+## Step 4: Generate ontology (three-stage: detect -> review -> complete)
+## 4a. Detect candidate entities (async; returns a task_id)
+curl -X POST /ontology/wizard/generate/detect \
   -d '{"metadata": {...}, "guidelines": "...", "options": {...}}'
 
-## Step 4b: Apply generated ontology
+## 4b. Review the draft (sync) — edit/add/remove/include/exclude candidates
+curl -X GET /ontology/wizard/generate/draft
+curl -X POST /ontology/wizard/generate/draft/update \
+  -d '{"revision": 1, "op": "exclude", "entity_id": "cand-abc123"}'
+
+## 4c. Complete (relations -> attributes -> axioms) and merge (async)
+curl -X POST /ontology/wizard/generate/complete \
+  -d '{"options": {...}}'
+
+## Step 4d: Apply an independently authored ontology (optional; separate from Generate)
 curl -X POST /ontology/import-owl \
   -d '{"content": "<turtle content>"}'
 
