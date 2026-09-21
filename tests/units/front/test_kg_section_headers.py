@@ -14,7 +14,7 @@ pytestmark = pytest.mark.unit
 REPO_ROOT = Path(__file__).resolve().parents[3]
 _TEMPLATES = (
     REPO_ROOT / "src/front/templates/partials/dtwin/_query_sigmagraph.html",
-    REPO_ROOT / "src/front/templates/partials/dtwin/_query_graphql.html",
+    REPO_ROOT / "src/front/templates/partials/dtwin/_query_query.html",
     REPO_ROOT / "src/front/templates/partials/dtwin/_query_chat.html",
 )
 

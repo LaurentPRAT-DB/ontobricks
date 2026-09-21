@@ -3107,3 +3107,48 @@ Modified files:
 Tests:
 - `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py tests/e2e/dtwin/test_dtwin_flows.py` → 10 passed, 12 skipped, 1 warning in 0.26s
 - `uv run --frozen pytest -q -m "not scenario"` → 3 failed, 6826 passed, 307 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.87s (failures in existing `_query_graphql.html` contracts unrelated to Task 3 JS/test scope)
+
+## Fix Task 3 review regressions
+
+Context: Address critical and important review findings for Task 3 before
+acceptance: Query tab re-entry must preserve the selected tab, generated SQL
+must remain visible after a failed subsequent execution, and stale template
+contracts must follow the Task 2 Query-shell architecture (`_query_query.html`
+shared header + `_query_graphql.html` tab pane only).
+
+Changes:
+
+1. `src/front/static/query/js/query.js`
+   Add `getActiveQueryTabName()` and update `initQueryPlayground(tabName)` so
+   only explicit `tab=graphql|sparql` triggers Bootstrap `.show()`; when no
+   pending tab exists, it inspects the currently active tab and lazily inits
+   only that module without force-switching back to GraphQL.
+2. `src/front/static/query/js/query-execute.js`
+   Preserve prior generated SQL on execution failure by removing the catch-path
+   reset call to `displayGeneratedSql("")`.
+3. `tests/units/front/test_sparql_playground_contract.py`
+   Add regression contracts proving no default GraphQL force-switch on later
+   Query activation and proving execute catch-path does not clear generated SQL.
+4. `tests/units/front/test_help_center_menu_sync.py`
+   Move Query Ontology-button icon contract to `_query_query.html`; keep
+   GraphQL-pane-specific assertions on `_query_graphql.html`.
+5. `tests/units/front/test_kg_readiness_indicator.py`
+   Update readiness-indicator include coverage to check `_query_query.html`
+   instead of `_query_graphql.html`.
+6. `tests/units/front/test_kg_section_headers.py`
+   Update Query header contract to target `_query_query.html` (shared header)
+   while keeping Explorer/Chat checks unchanged.
+
+Modified files:
+- `src/front/static/query/js/query.js`
+- `src/front/static/query/js/query-execute.js`
+- `tests/units/front/test_sparql_playground_contract.py`
+- `tests/units/front/test_help_center_menu_sync.py`
+- `tests/units/front/test_kg_readiness_indicator.py`
+- `tests/units/front/test_kg_section_headers.py`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests:
+- `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py` → RED: 2 failed, 10 passed, 1 warning in 0.18s; GREEN: included in focused suite below.
+- `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py tests/e2e/dtwin/test_dtwin_flows.py tests/units/front/test_help_center_menu_sync.py tests/units/front/test_kg_readiness_indicator.py tests/units/front/test_kg_section_headers.py` → 44 passed, 12 skipped, 1 warning in 0.34s
+- `uv run --frozen pytest -q -m "not scenario"` → 6831 passed, 307 skipped, 6 deselected, 1 xfailed, 32 warnings in 51.31s

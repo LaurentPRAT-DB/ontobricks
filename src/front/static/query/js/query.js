@@ -172,14 +172,30 @@ function _bindQueryLanguageTabs() {
     );
 }
 
-function initQueryPlayground(tabName) {
-    const useSparql = tabName === 'sparql';
-    const tabId = useSparql ? 'querySparqlTab' : 'queryGraphqlTab';
-    const tab = document.getElementById(tabId);
-    if (tab && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
-        bootstrap.Tab.getOrCreateInstance(tab).show();
+function getActiveQueryTabName() {
+    const sparqlTab = document.getElementById('querySparqlTab');
+    if (sparqlTab && sparqlTab.classList.contains('active')) {
+        return 'sparql';
     }
-    if (useSparql) {
+    const graphqlTab = document.getElementById('queryGraphqlTab');
+    if (graphqlTab && graphqlTab.classList.contains('active')) {
+        return 'graphql';
+    }
+    return 'graphql';
+}
+
+function initQueryPlayground(tabName) {
+    const requestedTab = tabName === 'sparql' || tabName === 'graphql' ? tabName : null;
+    if (requestedTab) {
+        const tabId = requestedTab === 'sparql' ? 'querySparqlTab' : 'queryGraphqlTab';
+        const tab = document.getElementById(tabId);
+        if (tab && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+            bootstrap.Tab.getOrCreateInstance(tab).show();
+        }
+    }
+
+    const activeTabName = getActiveQueryTabName();
+    if (activeTabName === 'sparql') {
         if (typeof SPARQLPlayground !== 'undefined') {
             SPARQLPlayground.init();
         }

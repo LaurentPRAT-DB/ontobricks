@@ -151,3 +151,25 @@ def test_query_page_initializes_only_the_selected_language_tab():
     assert "initQueryPlayground" in js
     assert "GraphQLPlayground.init()" in js
     assert "SPARQLPlayground.init()" in js
+
+
+def test_query_reentry_without_pending_tab_does_not_force_graphql():
+    js = read(QUERY_JS)
+    assert "function getActiveQueryTabName()" in js
+    assert "tabName === 'sparql' || tabName === 'graphql'" in js
+    init_body = js[js.index("function initQueryPlayground(") :]
+    init_body = init_body[: init_body.index("async function _initQueryPage(")]
+    assert "const activeTabName = getActiveQueryTabName();" in init_body
+    assert "bootstrap.Tab.getOrCreateInstance(tab).show();" in init_body
+    assert "if (requestedTab) {" in init_body
+    assert "if (activeTabName === 'sparql')" in init_body
+
+
+def test_execute_failure_does_not_clear_generated_sql():
+    js = read(JS)
+    execute_body = js[js.index("async function execute()") :]
+    execute_body = execute_body[: execute_body.index("function displayResults(")]
+    catch_body = execute_body[execute_body.index("} catch (error) {") :]
+    catch_body = catch_body[: catch_body.index("} finally {")]
+    assert 'displayGeneratedSql("")' not in catch_body
+    assert "displayGeneratedSql('')" not in catch_body

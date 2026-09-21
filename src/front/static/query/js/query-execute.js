@@ -195,7 +195,6 @@ LIMIT ${limit}`,
         } catch (error) {
             currentResult = null;
             displayError(error && error.message ? error.message : "Execution failed");
-            displayGeneratedSql("");
             const resultCount = el("sparqlResultCount");
             if (resultCount) resultCount.textContent = "0";
             updateActionState([], 0);

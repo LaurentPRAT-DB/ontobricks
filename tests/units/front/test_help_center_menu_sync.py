@@ -19,6 +19,7 @@ pytestmark = pytest.mark.unit
 _HELP = Path("src/front/templates/partials/layout/help_modal.html")
 _MENU = Path("src/front/config/menu_config.json")
 _EXPLORER = Path("src/front/templates/partials/dtwin/_query_sigmagraph.html")
+_QUERY_SHELL = Path("src/front/templates/partials/dtwin/_query_query.html")
 _GRAPHQL = Path("src/front/templates/partials/dtwin/_query_graphql.html")
 _SIGMA_JS = Path("src/front/static/query/js/query-sigmagraph.js")
 _BUILD_LAKEBASE = Path("src/front/templates/partials/dtwin/_query_sync.html")
@@ -83,7 +84,7 @@ def test_explorer_uses_share_icon_consistently():
 
 
 def test_kg_viewer_buttons_use_menu_icons():
-    """Explorer canvas and Ontology buttons reuse the sidebar menu icons."""
+    """Explorer canvas and Query-shell Ontology button reuse menu icons."""
     explorer_icon = "bi-share"
     ontology_icon = _menus()["ontology"]["icon"]
 
@@ -97,9 +98,15 @@ def test_kg_viewer_buttons_use_menu_icons():
         and f'<i class="bi {ontology_icon}"></i> Ontology' in explorer_html
     )
 
+    query_shell_html = _QUERY_SHELL.read_text(encoding="utf-8")
+    assert (
+        'data-query-action="ontology"' in query_shell_html
+        and f'<i class="bi {ontology_icon}"></i> Ontology' in query_shell_html
+    )
+
     graphql_html = _GRAPHQL.read_text(encoding="utf-8")
-    assert f'<i class="bi {ontology_icon}"></i> Ontology' in graphql_html
-    assert "View Ontology" not in graphql_html
+    assert 'id="graphqlOpenNewTab"' in graphql_html
+    assert "data-query-action=\"ontology\"" not in graphql_html
 
 
 def test_build_uses_fast_forward_icon_consistently():
