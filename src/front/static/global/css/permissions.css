@@ -338,6 +338,32 @@ body:is(.read-only-version, .role-viewer, .read-only-locked) .btn.disabled {
     cursor: not-allowed;
 }
 
+/* --- Ontology > Generate wizard, Stage 2 (Review) / Stage 3 (Complete):
+   every draft-mutating control. The generic form-field rule above already
+   covers the dynamically-rendered `input`/`textarea`/`select` elements in
+   this pane (candidate include checkboxes, canonical-label/description/
+   type-hint fields, the alternate-label chip input, the add-candidate
+   form) — none of their ids/classes match its exemption list. Buttons are
+   not covered by that generic rule anywhere in the app, so every wizard
+   button that actually mutates the durable draft (or discards/re-runs
+   detection) needs its own entry here. The view itself (locked anchors,
+   candidate list, completion checklist) stays fully visible — only the
+   controls are neutralised, per the shared read-only contract. */
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-add-candidate-toggle"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-add-candidate-submit"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-remove-candidate"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-remove-alt-label"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-add-evidence"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-remove-evidence"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-discard"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-continue"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-restart"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-complete-retry"] {
+    pointer-events: none !important;
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+}
+
 /* ==========================================================================
    Navbar role badge
 

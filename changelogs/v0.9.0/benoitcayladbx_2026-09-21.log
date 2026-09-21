@@ -1324,3 +1324,231 @@ Concerns / follow-ups for the browser tester:
   environment (same missing-credentials gap as every earlier task in this
   plan) — Stage 1/3 button clicks were not driven against a live endpoint,
   only the structural JS/HTML/CSS contracts above.
+
+---
+
+## Fix Task 5 review + browser findings for the Generate wizard UI
+
+Context: Follow-up review + browser-testing pass on the Task 5 wizard UI
+(commit `cac2ada5`) for the `staged-ontology-generate` plan. Four blocking/
+important findings and five additional findings, all fixed with TDD (each
+got a focused failing test observed RED before the fix). No backend route/
+workflow semantics touched — every change is frontend HTML/CSS/JS plus one
+new/extended `permissions.css` gate. The attached implementation plan
+(`/Users/benoit.cayla/.cursor/plans/staged-ontology-generate_6fc7e158.plan.md`)
+was not edited.
+
+Changes:
+
+1. src/front/static/ontology/js/ontology-wizard-review.js (Blocking #1 —
+   draft-mutation race/loss-on-409)
+   `postDraftUpdate` used to read `_draft.draft_revision` synchronously at
+   call time — three rapid calls fired back-to-back (typing across two
+   fields, toggling include while an evidence edit was still in flight)
+   all read the *same* revision before any request was sent, so the
+   server only ever durably applied the first one; a `409` from one call
+   had no defined effect on calls already queued behind it. Renamed the
+   function body to `_applyDraftUpdate()` and added `postDraftUpdate()` as
+   a thin FIFO-queue wrapper (`_updateQueue.then(run, run)`, with the
+   queue's own continuation decoupled from the call's result via
+   `.then(ok, ok)`) — each call now only reads `_draft.draft_revision`
+   once its turn in the queue arrives, after every earlier call has
+   applied its response, and a rejected/409'd request can never wedge
+   edits queued behind it. `postDraftUpdate` is additionally exposed on
+   `window.WizardReview` purely for the new behavior-contract test below —
+   no markup or delegated handler calls it directly.
+2. src/front/templates/partials/ontology/_ontology_wizard.html (Blocking #2)
+   Added `data-requires-llm` to `wizardReviewContinueBtn` (Stage 3 runs
+   three LLM completions) and `wizardCompleteRetryBtn` (re-issues the same
+   completion call) — both were missing the declarative marker the global
+   fail-closed No-LLM gate (`permissions.js`/`permissions.css`) reads.
+3. src/front/static/ontology/css/ontology-wizard.css (Blocking #3 — hidden
+   pane visibility)
+   `components.css`'s shared `.ob-hidden { display: none; }` loads
+   *before* this file's `<link>` (base.html's own stylesheets vs.
+   `ontology.html`'s `extra_css` block); on the resulting equal-specificity
+   tie, this file's later `.wizard-stage-pane { display: block; }` won and
+   a stage pane marked `ob-hidden` silently rendered anyway (all three
+   panes visible/overlapping regardless of `setWizardStage()`). Added
+   `.wizard-stage-pane.ob-hidden { display: none !important; }` — a
+   combined selector has strictly higher specificity than either rule
+   alone, so it wins regardless of link/source order, and `!important`
+   additionally guards against any future higher-specificity or flex/grid
+   override on `.wizard-stage-pane` itself.
+4. src/front/static/ontology/css/ontology-wizard.css (Blocking #4 — mobile
+   ≤768px)
+   The 3-item stepper never wrapped and pushed the row wider than the
+   viewport, forcing page-level horizontal scroll — which is what made the
+   Configure pane's source tabs and metadata table unreachable without
+   panning sideways, on top of a large vertical gap left over from the
+   (on mobile, unused) desktop fixed-height/overflow-hidden tab shell.
+   Added a `@media (max-width: 768px)` block: `.wizard-stepper-list` gains
+   `flex-wrap: wrap`, `.wizard-step` becomes `flex: 1 1 auto` with reduced
+   padding, and `.wizard-step-label` shrinks/wraps instead of clipping;
+   `#wizardConfigurePane .card.h-100`/`.card-body.ob-tabs-wrap`/
+   `#wizardTabContent` reset to `flex: none; height: auto; overflow:
+   visible;` — the same "reset the desktop fixed-height chain to natural
+   flow after the desktop rule" convention already documented in
+   `.cursor/11-frontend-design.mdc` for other sections (Knowledge Graph
+   Data Quality, Graph Chat). Bootstrap's `.table-responsive`/the shared
+   `.nav-tabs.ob-tabs { overflow-x: auto; }` already made the table and
+   tabs independently scrollable — the page-level overflow was the actual
+   root cause, not those two containers.
+5. src/front/static/ontology/js/ontology-wizard.js (finding #5 — focus
+   management)
+   `setWizardStage()` now tracks whether it has ever run
+   (`_wizardStageBooted`) and which stage it last rendered
+   (`_wizardCurrentStage`). On a genuine transition (stage actually
+   changed, and this isn't the very first call) it moves focus to the new
+   pane's heading. The very first call ever — resuming a running task or
+   an existing draft on page load — never focuses, so it can't steal focus
+   from wherever the browser naturally placed it on paint; re-calling the
+   *same* stage (e.g. `resumeDraftFromServer`'s own redundant
+   `setWizardStage('review')` right after a fresh detection already
+   transitioned there) does not re-focus either.
+6. src/front/templates/partials/ontology/_ontology_wizard.html (finding #5)
+   Added a `tabindex="-1"` heading per stage pane as the focus target:
+   new visually-hidden `<h2 id="wizardConfigureHeading">`/
+   `<h2 id="wizardReviewHeading">` (Configure/Review had no pane-level
+   heading before), and `tabindex="-1"` added directly to the Complete
+   pane's existing visible `<h6 id="wizardCompleteHeading">`.
+7. src/front/static/ontology/js/ontology-wizard.js (finding #7 — confirm
+   before a stale re-detect)
+   The stale-banner's "Re-detect" action (`window.WizardCore.redetect`)
+   called `runGenerateDetection` directly, bypassing the "this discards
+   your current draft" confirmation — even though a stale draft can still
+   hold manually-added/edited candidates the user hasn't acted on.
+   `redetect` now points at `startGenerateDetection` (the same confirm-
+   guarded entry point Stage 1's own button uses), which sees the Review
+   pane is visible and prompts before discarding.
+8. src/front/static/global/css/permissions.css (finding #6 — gating)
+   The generic read-only form-field rule already covers every dynamically-
+   rendered `input`/`textarea`/`select` in the Review pane (none of their
+   ids/classes match its exemption list), but buttons are never covered by
+   that generic rule anywhere in the app. Added a dedicated block gating
+   every draft-mutating *button* (`data-action`-selected):
+   add-candidate toggle/submit, remove-candidate, remove-alt-label,
+   add/remove-evidence, discard, continue, the stale-banner re-detect, and
+   the complete-stage retry — `pointer-events: none !important; opacity:
+   0.5 !important; cursor: not-allowed !important;`, matching every other
+   gated write control in this file. The pane's own visible content
+   (locked anchors, candidate list, completion checklist) is untouched —
+   only the controls are neutralised.
+9. src/front/static/ontology/js/ontology-wizard.js (finding #8 — aria
+   labels; finding #9 — XSS hardening)
+   `loadWizardMetadata()`'s table-row renderer and `renderWizardDocsList()`
+   were both substantially rewritten for the staged wizard and injected
+   server-supplied table names/comments/document names into `innerHTML`
+   without escaping. Added a local `escWizardAttr()` helper (mirrors
+   `escAttr` in `ontology-wizard-review.js`) on top of the existing global
+   `escapeHtml()` — `escapeHtml()` alone only escapes `&`/`<`/`>` in text
+   content and is not attribute-safe (a literal `"` would break out of a
+   quoted attribute). Every interpolated field (`tableName`, `displayName`,
+   `description`, `file.name`) is now escaped: `escWizardAttr()` inside the
+   quoted `data-table`/`value`/`aria-label` attributes, `escapeHtml()` in
+   text content. The same pass added the missing programmatic labels:
+   `aria-label="Include <name>"` on both the metadata-table checkbox and
+   the document-row checkbox (the latter previously had no `<label for>`
+   or `aria-label` at all), plus `aria-label` on `wizardSelectAllCheckbox`
+   alongside its existing `title`.
+10. tests/units/front/test_wizard_draft_update_queue.py (new, 3 tests)
+    Real-JS behavior-contract tests via `vm.runInContext` (same pattern as
+    `test_no_llm_save_gate_sync.py` — no JS test runner in this repo):
+    three rapid `postDraftUpdate` calls submit incrementing revisions
+    `[0, 1, 2]` (not `[0, 0, 0]`); three distinct edits are sent to the
+    server in the exact order issued; a `409` on the second of three
+    queued calls does not wedge the third — it still fires, using the
+    revision reloaded after the conflict.
+11. tests/units/front/test_wizard_stage_focus_management.py (new, 4 tests)
+    Same `vm.runInContext` pattern against `ontology-wizard.js`'s
+    `setWizardStage`: the first call ever never focuses; a real transition
+    after load focuses the new heading; recalling the same stage does not
+    refocus; multiple real transitions focus each heading in order.
+12. tests/units/front/test_wizard_review_permissions_gate.py (new, 13
+    tests)
+    Every gated `data-action` is disabled (`pointer-events: none`) under
+    `body:is(.read-only-version, .role-viewer, .read-only-locked)`; the
+    gate uses `!important`; every gated action still exists in the markup/
+    JS (regression guard against a silent rename); the pane's own content
+    ids are never targeted by the gate (view stays visible).
+13. tests/units/front/test_ontology_generate_wizard_staged.py
+    Extended with 9 new structural tests, one per finding #2–#9 (Continue/
+    Retry `data-requires-llm`; the `.wizard-stage-pane.ob-hidden`
+    `!important` guard and its source-order placement; the mobile
+    `@media` block's `flex-wrap`/height-reset rules; a focusable heading
+    per pane; the `isFirstCall`/`_wizardStageBooted` guard's presence;
+    `redetect` pointing at `startGenerateDetection`; accessible labels on
+    the document/metadata checkboxes; `escapeHtml()` wrapping every
+    server-supplied field in both rewritten renderers).
+14. tests/units/front/test_no_llm_ui_gate.py
+    Added `wizardReviewContinueBtn`/`wizardCompleteRetryBtn` to the
+    per-page declarative-marker table for `_ontology_wizard.html`.
+
+Modified/added files:
+- src/front/static/ontology/js/ontology-wizard-review.js
+- src/front/static/ontology/js/ontology-wizard.js
+- src/front/static/ontology/css/ontology-wizard.css
+- src/front/templates/partials/ontology/_ontology_wizard.html
+- src/front/static/global/css/permissions.css
+- tests/units/front/test_wizard_draft_update_queue.py (new)
+- tests/units/front/test_wizard_stage_focus_management.py (new)
+- tests/units/front/test_wizard_review_permissions_gate.py (new)
+- tests/units/front/test_ontology_generate_wizard_staged.py
+- tests/units/front/test_no_llm_ui_gate.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- Node syntax: `node --check src/front/static/ontology/js/ontology-wizard.js
+  src/front/static/ontology/js/ontology-wizard-review.js` → both OK.
+- RED (each new test file/assertion observed failing against the pre-fix
+  code before its corresponding production change): the queue test failed
+  with `[0, 0, 0]`/out-of-order requests (no `postDraftUpdate` exposed at
+  all, then a `TypeError` once exposed unqueued); the focus test had no
+  `.focus()` calls; the permissions-gate test's `_gated()` helper found no
+  matching rule for any of the 10 actions (11 of 13 failed); the 9 new
+  structural assertions in `test_ontology_generate_wizard_staged.py` all
+  failed (missing `data-requires-llm`, missing CSS guard/media block/
+  headings/focus guard/escaping, `redetect: runGenerateDetection`, no
+  `aria-label` on the doc checkbox).
+- GREEN (focused): `uv run --frozen pytest -q
+  tests/units/front/test_wizard_draft_update_queue.py
+  tests/units/front/test_wizard_stage_focus_management.py
+  tests/units/front/test_wizard_review_permissions_gate.py
+  tests/units/front/test_ontology_generate_wizard_staged.py
+  tests/units/front/test_no_llm_ui_gate.py` → 82 passed.
+- Full frontend suite: `uv run --frozen pytest -q tests/units/front/` →
+  1248 passed.
+- API/permission/design contracts: `uv run --frozen pytest -q
+  tests/units/api/test_generate_routes.py
+  tests/units/api/test_no_llm_route_contract.py
+  tests/units/auth/test_permission_middleware.py` → 324 passed (unchanged —
+  no backend route/workflow semantics touched in this pass).
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6659 passed,
+  304 skipped, 6 deselected, 1 xfailed, 32 warnings in 52.02s (30 more
+  passing than the Task 5 baseline — the new focused tests above; no
+  regressions).
+
+Local browser retest instructions:
+- `./scripts/start.sh`, open Ontology -> Generate.
+- Findings #1/#7/#8/#9 have no visible UI change to eyeball beyond the new
+  `aria-label`s on the Data Sources/Documents checkboxes (inspect via
+  DevTools Accessibility panel or a screen reader) — their coverage is the
+  new behavior-contract tests above (no JS test runner in this repo to run
+  them live in a browser console instead).
+- #2/#6: with no LLM endpoint configured (or as a read-only-version/viewer/
+  locked-out caller), confirm "Continue to Complete" and the Complete
+  stage's "Retry" button are visibly disabled (50% opacity, not-allowed
+  cursor) and inert to clicks; as a read-only caller in the Review stage,
+  confirm every candidate add/remove/discard/continue control is inert
+  while the locked-anchor and candidate lists themselves stay visible.
+- #3: run detection, confirm only the Review pane is visible (not stacked
+  under/over Configure or Complete); click "Continue to Complete" and
+  confirm only the Complete pane renders.
+- #4: open DevTools device toolbar at 390×844 (iPhone 12), confirm the
+  3-step stepper wraps/stays compact without clipped labels, there is no
+  page-level horizontal scrollbar, and the Data Sources table / tab strip
+  scroll independently within their own bounds.
+- #5: with a screen reader (or by watching `document.activeElement` in the
+  console), run detection and confirm focus lands on "Review Entities"
+  once the Review pane appears (not on page load/resume), then click
+  Continue and confirm focus lands on "Completing Ontology Generate".

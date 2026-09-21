@@ -16,6 +16,17 @@
 // WIZARD STATE
 // =====================================================
 
+/**
+ * Escape a value for interpolation inside a *quoted HTML attribute*.
+ * `escapeHtml()` (utils.js) only escapes `&`/`<`/`>` in text-node content —
+ * the HTML serialization it relies on (`div.textContent` -> `div.innerHTML`)
+ * never escapes `"`, so it is not safe on its own inside `attr="${value}"`.
+ * Mirrors `escAttr` in ontology-wizard-review.js.
+ */
+function escWizardAttr(value) {
+    return escapeHtml(value).replace(/"/g, '&quot;');
+}
+
 let wizardMetadataCache = null;
 let wizardSelectedTables = new Set();
 let wizardSelectedDocs = new Set();
@@ -325,14 +336,38 @@ const WIZARD_STAGE_PANES = {
     review: 'wizardReviewPane',
     complete: 'wizardCompletePane',
 };
+const WIZARD_STAGE_HEADING_IDS = {
+    configure: 'wizardConfigureHeading',
+    review: 'wizardReviewHeading',
+    complete: 'wizardCompleteHeading',
+};
+
+// Tracks whether `setWizardStage` has ever run and which stage it last
+// rendered, so we can tell a real user-facing transition apart from the
+// page-load/task-resume call every `init*`/`resume*` path makes.
+let _wizardStageBooted = false;
+let _wizardCurrentStage = null;
 
 /**
  * Switch the visible stage pane and update every `.wizard-step` stepper
  * item's active/completed state + `aria-current` (accessible: screen
  * readers get the current step announced, not just a visual highlight).
+ *
+ * On every *real* transition (stage actually changes, and this isn't the
+ * very first call on page load/resume) focus moves to the new pane's
+ * `tabindex="-1"` heading, so screen-reader/keyboard users land on the new
+ * stage's content instead of staying anchored wherever they were. The
+ * first call ever — resuming a running task or an existing draft on page
+ * load — must not steal focus from wherever the browser naturally placed
+ * it, hence the `isFirstCall` guard.
  */
 function setWizardStage(stage) {
     if (WIZARD_STAGE_ORDER.indexOf(stage) === -1) return;
+
+    const isFirstCall = !_wizardStageBooted;
+    const stageChanged = _wizardCurrentStage !== stage;
+    _wizardStageBooted = true;
+    _wizardCurrentStage = stage;
 
     WIZARD_STAGE_ORDER.forEach(function (s) {
         const pane = document.getElementById(WIZARD_STAGE_PANES[s]);
@@ -359,6 +394,11 @@ function setWizardStage(stage) {
             stepEl.removeAttribute('aria-current');
         }
     });
+
+    if (stageChanged && !isFirstCall) {
+        const heading = document.getElementById(WIZARD_STAGE_HEADING_IDS[stage]);
+        if (heading) heading.focus();
+    }
 }
 
 // =====================================================
@@ -409,21 +449,33 @@ async function loadWizardMetadata() {
                 const description = table.comment || table.description || '';
                 const tableName = table.full_name || table.name;
                 const displayName = tableName.split('.').pop();
+                // Table names/comments come straight from the connected
+                // catalog (server-controlled today, but this rendering path
+                // was substantially rewritten for the staged wizard) — every
+                // server-supplied field is escaped before it reaches
+                // innerHTML, both in text content and inside the quoted
+                // `data-table` attribute.
+                const safeTableNameAttr = escWizardAttr(tableName);
+                const safeDisplayNameAttr = escWizardAttr(displayName);
+                const safeTableName = escapeHtml(tableName);
+                const safeDisplayName = escapeHtml(displayName);
+                const safeDescription = escapeHtml(description);
 
                 tableBody.innerHTML += `
                     <tr>
                         <td class="text-center">
                             <input type="checkbox" class="form-check-input wizard-table-checkbox" 
-                                   data-table="${tableName}" id="wizardTable${index}" checked>
+                                   data-table="${safeTableNameAttr}" id="wizardTable${index}" checked
+                                   aria-label="Include ${safeDisplayNameAttr}">
                         </td>
                         <td>
                             <label for="wizardTable${index}" class="mb-0 cursor-pointer">
-                                <strong>${displayName}</strong>
-                                <br><small class="text-muted">${tableName}</small>
+                                <strong>${safeDisplayName}</strong>
+                                <br><small class="text-muted">${safeTableName}</small>
                             </label>
                         </td>
                         <td class="text-center">${columnCount}</td>
-                        <td class="small">${description || '<span class="text-muted">-</span>'}</td>
+                        <td class="small">${safeDescription || '<span class="text-muted">-</span>'}</td>
                     </tr>
                 `;
             });
@@ -886,9 +938,14 @@ async function handleCompletionSuccess(result) {
 window.WizardCore = {
     /** Stage 2 "Continue to Complete" -> Stage 3. */
     startCompletion: startGenerateCompletion,
-    /** Stale-draft banner's "Re-detect" -> re-run Stage 1 (no confirm — a
-     * stale draft has nothing valid left to lose). */
-    redetect: runGenerateDetection,
+    /** Stale-draft banner's "Re-detect" -> re-run Stage 1 through the same
+     * confirm-guarded entry point Stage 1's own button uses. A stale draft
+     * can still hold manually-added/edited candidates the user hasn't
+     * acted on yet, so re-detecting must not silently discard them —
+     * `startGenerateDetection` sees the Review pane is visible and prompts
+     * before wiping the draft, exactly like re-running detection from
+     * Stage 1 while a draft is already in progress. */
+    redetect: startGenerateDetection,
     /** After a successful discard, return to the Configure pane. */
     onDraftDiscarded: function () {
         setWizardStage('configure');
@@ -974,12 +1031,22 @@ function renderWizardDocsList() {
                </span>`;
         const size = file.size != null ? formatDocSize(file.size) : '';
         const docNameAttr = encodeURIComponent(file.name);
+        // Document names come straight from the domain volume listing —
+        // this rendering path was substantially rewritten for the staged
+        // wizard, so every server-supplied field is escaped before it
+        // reaches innerHTML, both in text content and inside the quoted
+        // `value` attribute (`docNameAttr` above is already
+        // percent-encoded via encodeURIComponent, which is attribute-safe
+        // on its own).
+        const safeNameAttr = escWizardAttr(file.name);
+        const safeName = escapeHtml(file.name);
         html += `
             <div class="list-group-item list-group-item-action d-flex align-items-center py-2">
                 <input type="checkbox" class="form-check-input me-3 wizard-doc-checkbox"
-                       value="${file.name}" ${checked} ${disabled}>
+                       value="${safeNameAttr}" ${checked} ${disabled}
+                       aria-label="Include ${safeNameAttr}">
                 <i class="bi ${iconCls} me-2"></i>
-                <span class="text-truncate flex-grow-1">${file.name}</span>
+                <span class="text-truncate flex-grow-1">${safeName}</span>
                 ${size ? `<span class="small text-muted ms-2">${size}</span>` : ''}
                 ${statusLabel}
                 <button class="btn btn-sm btn-outline-primary py-0 px-1 ms-2" type="button"

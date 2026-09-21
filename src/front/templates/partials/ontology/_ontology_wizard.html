@@ -43,6 +43,7 @@
 <!-- STAGE 1: Configure & Detect                                   -->
 <!-- ============================================================ -->
 <div id="wizardConfigurePane" class="wizard-stage-pane">
+    <h2 id="wizardConfigureHeading" class="visually-hidden" tabindex="-1">Configure &amp; Detect</h2>
     <div class="card h-100">
         <div class="card-body p-0 ob-tabs-wrap">
         <!-- Tab Navigation -->
@@ -106,7 +107,8 @@
                                 <tr>
                                     <th class="wizard-metadata-th-check text-center">
                                         <input type="checkbox" class="form-check-input" id="wizardSelectAllCheckbox"
-                                               checked title="Select / deselect all tables">
+                                               checked title="Select / deselect all tables"
+                                               aria-label="Select or deselect all tables">
                                     </th>
                                     <th>Table</th>
                                     <th class="wizard-metadata-th-cols text-center">Columns</th>
@@ -241,6 +243,7 @@
 <!-- STAGE 2: Review Entities                                      -->
 <!-- ============================================================ -->
 <div id="wizardReviewPane" class="wizard-stage-pane ob-hidden">
+    <h2 id="wizardReviewHeading" class="visually-hidden" tabindex="-1">Review Entities</h2>
 
     <div id="wizardStaleBanner" class="alert alert-warning d-flex align-items-center justify-content-between ob-hidden" role="alert">
         <span><i class="bi bi-exclamation-triangle me-2"></i>The data sources or ontology changed since detection. Re-run detection to refresh candidates.</span>
@@ -306,7 +309,8 @@
         <button type="button" class="btn btn-outline-danger" data-action="wizard-review-discard">
             <i class="bi bi-trash me-1"></i>Discard Draft
         </button>
-        <button type="button" class="btn btn-primary" id="wizardReviewContinueBtn" data-action="wizard-review-continue" disabled>
+        <button type="button" class="btn btn-primary" id="wizardReviewContinueBtn"
+                data-action="wizard-review-continue" data-requires-llm disabled>
             Continue to Complete <i class="bi bi-arrow-right ms-1"></i>
         </button>
     </div>
@@ -318,7 +322,7 @@
 <div id="wizardCompletePane" class="wizard-stage-pane ob-hidden">
     <div class="card">
         <div class="card-body">
-            <h6 class="mb-3"><i class="bi bi-check2-square me-2"></i>Completing Ontology Generate</h6>
+            <h6 id="wizardCompleteHeading" class="mb-3" tabindex="-1"><i class="bi bi-check2-square me-2"></i>Completing Ontology Generate</h6>
             <ul id="wizardCompleteChecklist" class="list-group list-group-flush mb-3">
                 <li class="list-group-item bg-transparent px-0 wizard-complete-step" data-substage="relations">
                     <span class="wizard-complete-step-icon"><i class="bi bi-circle text-muted" aria-hidden="true"></i></span>
@@ -339,7 +343,8 @@
             </ul>
             <div id="wizardCompleteSummary" class="ob-hidden mb-3"></div>
             <div class="d-flex gap-2">
-                <button type="button" class="btn btn-primary ob-hidden" id="wizardCompleteRetryBtn" data-action="wizard-complete-retry">
+                <button type="button" class="btn btn-primary ob-hidden" id="wizardCompleteRetryBtn"
+                        data-action="wizard-complete-retry" data-requires-llm>
                     <i class="bi bi-arrow-clockwise me-1"></i>Retry
                 </button>
             </div>

@@ -417,3 +417,179 @@ def test_no_llm_ui_gate_test_still_references_this_button():
     """Guards against silently dropping the declarative LLM marker contract
     exercised by ``test_no_llm_ui_gate.py``."""
     assert "wizardTopGenerateBtn" in _read(NO_LLM_GATE_TEST)
+
+
+# ---------------------------------------------------------------------------
+# Review-fix batch: Continue/Retry LLM markers (finding #2)
+# ---------------------------------------------------------------------------
+
+
+def test_continue_and_retry_controls_require_llm():
+    html = _read(HTML)
+    continue_btn = re.search(
+        r'<button[^>]*id="wizardReviewContinueBtn"[^>]*>', html, re.DOTALL
+    )
+    retry_btn = re.search(
+        r'<button[^>]*id="wizardCompleteRetryBtn"[^>]*>', html, re.DOTALL
+    )
+    assert continue_btn and "data-requires-llm" in continue_btn.group(0)
+    assert retry_btn and "data-requires-llm" in retry_btn.group(0)
+
+
+# ---------------------------------------------------------------------------
+# Review-fix batch: hidden panes cannot be overridden by pane layout CSS
+# (finding #3)
+# ---------------------------------------------------------------------------
+
+
+def test_hidden_stage_panes_cannot_be_overridden_by_pane_layout_css():
+    """`.wizard-stage-pane { display: block; }` loads *after* the shared
+    `.ob-hidden { display: none; }` rule (components.css loads before this
+    file's <link>), so on an equal-specificity tie the later rule used to
+    win and a "hidden" stage pane silently rendered anyway. A combined
+    selector has strictly higher specificity than either rule alone, so it
+    wins regardless of link order — `!important` on top guards against any
+    future higher-specificity/flex override on `.wizard-stage-pane` too."""
+    css = _read(WIZARD_CSS)
+    guard = re.search(r"\.wizard-stage-pane\.ob-hidden\s*\{([^}]*)\}", css)
+    assert guard, "no CSS guard forcing hidden stage panes to stay hidden"
+    body = guard.group(1)
+    assert "display: none" in body
+    assert "!important" in body
+    # The guard must appear after the plain `.wizard-stage-pane` rule so a
+    # reader can see it as the deliberate override, not a coincidence.
+    assert css.index(".wizard-stage-pane.ob-hidden") > css.index(
+        ".wizard-stage-pane {"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Review-fix batch: mobile (<=768px) stepper + configure pane (finding #4)
+# ---------------------------------------------------------------------------
+
+
+def test_mobile_breakpoint_wraps_stepper_and_resets_pane_height():
+    css = _read(WIZARD_CSS)
+    idx = css.find("@media (max-width: 768px)")
+    assert idx != -1, "no mobile breakpoint in ontology-wizard.css"
+    mobile_block = css[idx:]
+
+    stepper_rule = re.search(
+        r"\.wizard-stepper-list\s*\{([^}]*)\}", mobile_block
+    )
+    assert stepper_rule, "stepper must gain a mobile rule to wrap/compact"
+    assert "flex-wrap: wrap" in stepper_rule.group(1)
+
+    # The desktop tabs shell's fixed-height/overflow-hidden chain must be
+    # reset to natural flow on mobile (same convention as the Knowledge
+    # Graph / Data Quality mobile resets documented in
+    # .cursor/11-frontend-design.mdc), so the metadata table and source
+    # tabs stay reachable without the whole page scrolling sideways.
+    assert "overflow: visible" in mobile_block
+    assert "height: auto" in mobile_block
+
+
+# ---------------------------------------------------------------------------
+# Review-fix batch: accessible focus target per stage (finding #5)
+# ---------------------------------------------------------------------------
+
+
+def test_each_stage_pane_has_a_focusable_heading():
+    html = _read(HTML)
+    for pane_id, heading_id in (
+        ("wizardConfigurePane", "wizardConfigureHeading"),
+        ("wizardReviewPane", "wizardReviewHeading"),
+        ("wizardCompletePane", "wizardCompleteHeading"),
+    ):
+        pane_block = re.search(
+            rf'id="{pane_id}"[^>]*>(.*?)(?=<!-- =+ -->|\Z)', html, re.DOTALL
+        )
+        assert pane_block, f"{pane_id} not found"
+        heading = re.search(
+            rf'<h[1-6]\b[^>]*id="{heading_id}"[^>]*>', pane_block.group(1)
+        )
+        assert heading, f"{pane_id} missing focusable heading {heading_id}"
+        assert 'tabindex="-1"' in heading.group(0)
+
+
+def test_stage_transition_focus_is_not_disruptive_on_initial_load():
+    js = _read(WIZARD_JS)
+    assert "function setWizardStage(" in js
+    # setWizardStage must distinguish "first call ever" (page load/resume)
+    # from a real transition, and only focus on the latter.
+    assert re.search(r"isFirstCall|_wizardStageBooted", js), (
+        "setWizardStage has no guard against focusing on initial load"
+    )
+    assert ".focus()" in js
+
+
+# ---------------------------------------------------------------------------
+# Review-fix batch: confirm before a stale-banner re-detect (finding #7)
+# ---------------------------------------------------------------------------
+
+
+def test_stale_banner_redetect_goes_through_the_confirm_guarded_entrypoint():
+    """The stale banner's Re-detect action must not bypass the "this
+    discards your current draft" confirmation — it now routes through the
+    same `startGenerateDetection` entry point Stage 1's own button uses,
+    instead of calling `runGenerateDetection` directly."""
+    js = _read(WIZARD_JS)
+    core_block = re.search(
+        r"window\.WizardCore\s*=\s*\{([\s\S]*?)\};", js
+    )
+    assert core_block, "window.WizardCore bridge not found"
+    redetect_line = re.search(r"redetect:\s*(\w+)", core_block.group(1))
+    assert redetect_line
+    assert redetect_line.group(1) == "startGenerateDetection", (
+        "stale-banner redetect must go through the confirm-guarded "
+        "startGenerateDetection, not call runGenerateDetection directly"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Review-fix batch: programmatic labels on source row checkboxes (finding #8)
+# ---------------------------------------------------------------------------
+
+
+def test_document_row_checkboxes_have_accessible_labels():
+    js = _read(WIZARD_JS)
+    doc_checkbox = re.search(
+        r"<input type=\"checkbox\" class=\"form-check-input me-3 wizard-doc-checkbox\"[\s\S]{0,200}",
+        js,
+    )
+    assert doc_checkbox, "document row checkbox markup not found"
+    assert "aria-label" in doc_checkbox.group(0)
+
+
+def test_metadata_select_all_checkbox_has_accessible_label():
+    html = _read(HTML)
+    checkbox = re.search(r'<input[^>]*id="wizardSelectAllCheckbox"[^>]*>', html)
+    assert checkbox
+    assert "aria-label" in checkbox.group(0) or "title=" in checkbox.group(0)
+
+
+# ---------------------------------------------------------------------------
+# Review-fix batch: XSS hardening on rewritten metadata/document rendering
+# (finding #9)
+# ---------------------------------------------------------------------------
+
+
+def test_metadata_table_rows_escape_every_server_supplied_field():
+    js = _read(WIZARD_JS)
+    render_block = js[js.index("result.metadata.tables.forEach((table, index)"):]
+    render_block = render_block[: render_block.index("previewEl.style.display")]
+    for var in ("tableName", "displayName", "description"):
+        assert re.search(rf"escapeHtml\({var}\)", render_block), (
+            f"metadata table row renders {var} without escapeHtml(): "
+            "XSS risk on a substantially rewritten rendering path"
+        )
+
+
+def test_document_list_rows_escape_the_file_name():
+    js = _read(WIZARD_JS)
+    render_block = js[js.index("function renderWizardDocsList("):]
+    render_block = render_block[: render_block.index("function updateWizardDocSelection")]
+    assert re.search(r"escapeHtml\(file\.name\)", render_block), (
+        "document list row renders file.name without escapeHtml(): XSS risk "
+        "on a substantially rewritten rendering path"
+    )

@@ -84,6 +84,8 @@ def test_every_domain_llm_trigger_has_declarative_marker():
     files = {
         "src/front/templates/partials/ontology/_ontology_wizard.html": [
             "wizardTopGenerateBtn",
+            "wizardReviewContinueBtn",
+            "wizardCompleteRetryBtn",
         ],
         "src/front/templates/partials/ontology/_ontology_map.html": [
             "mapAutoAssignIcons",

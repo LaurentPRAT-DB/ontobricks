@@ -91,6 +91,18 @@
     display: block;
 }
 
+/* `components.css`'s shared `.ob-hidden { display: none; }` loads *before*
+   this file's <link> (see base.html vs. ontology.html extra_css block), so
+   on the equal-specificity tie above, this file's later `display: block`
+   used to win and a "hidden" stage pane silently rendered anyway. The
+   combined selector below has strictly higher specificity than either
+   rule alone, so it always wins regardless of link/source order; the
+   `!important` also guards against any future higher-specificity or
+   flex/grid override added to `.wizard-stage-pane` itself. */
+.wizard-stage-pane.ob-hidden {
+    display: none !important;
+}
+
 /* -------------------------------------------------------------------- */
 /* Review stage: entity rows (locked anchors + editable candidates)     */
 /* -------------------------------------------------------------------- */
@@ -206,4 +218,43 @@
 
 .wizard-complete-step.wizard-complete-step-running .wizard-complete-step-icon i {
     color: var(--db-primary);
+}
+
+/* -------------------------------------------------------------------- */
+/* Mobile (<=768px): stepper wraps/compacts instead of overflowing the   */
+/* row, and the Configure pane's tab shell drops its (unused, on mobile) */
+/* desktop fixed-height/overflow-hidden chain so the page scrolls as one */
+/* normal document — same "reset to height:auto/overflow:visible after   */
+/* the desktop rule" convention documented in                            */
+/* .cursor/11-frontend-design.mdc for other fixed-height sections. Before */
+/* this rule, the 3-item stepper never wrapped, pushed the row wider than */
+/* the viewport, and forced page-level horizontal scroll — which is what  */
+/* made the source tabs and metadata table unreachable without panning.  */
+/* -------------------------------------------------------------------- */
+
+@media (max-width: 768px) {
+    .wizard-stepper-list {
+        flex-wrap: wrap;
+        gap: 0.35rem;
+    }
+
+    .wizard-step {
+        flex: 1 1 auto;
+        justify-content: center;
+        padding: 0.3rem 0.5rem;
+    }
+
+    .wizard-step .wizard-step-label {
+        font-size: 0.72rem;
+        white-space: normal;
+    }
+
+    #wizardConfigurePane .card.h-100,
+    #wizardConfigurePane .card-body.ob-tabs-wrap,
+    #wizardTabContent {
+        flex: none;
+        height: auto;
+        max-height: none;
+        overflow: visible;
+    }
 }

@@ -38,12 +38,34 @@
     // -------------------------------------------------------------------
 
     /**
+     * Serializes every Stage 2 mutation through one FIFO queue. Rapid
+     * edits (typing across two fields, toggling include while an evidence
+     * edit is still in flight, ...) must never read `_draft.draft_revision`
+     * at the same instant — each queued call only reads it once its turn
+     * arrives, after every earlier call has applied its response to
+     * `_draft`. The queue's own continuation (`_updateQueue`) is decoupled
+     * from the call's returned promise via `.then(ok, ok)`, so a rejected
+     * or server-refused (409) request can never wedge edits queued behind
+     * it — the next one still runs, in the exact order callers invoked
+     * `postDraftUpdate`.
+     */
+    let _updateQueue = Promise.resolve();
+
+    function postDraftUpdate(payload) {
+        const run = function () { return _applyDraftUpdate(payload); };
+        const result = _updateQueue.then(run, run);
+        _updateQueue = result.then(function () {}, function () {});
+        return result;
+    }
+
+    /**
      * Apply one Stage 2 review mutation. `payload` must already carry
      * `op` (and any op-specific fields); the current draft's revision is
      * attached here so every call site stays a plain, readable object
      * literal like `postDraftUpdate({ op: 'exclude', entity_id: id })`.
+     * Only ever invoked through the queue above — never call directly.
      */
-    async function postDraftUpdate(payload) {
+    async function _applyDraftUpdate(payload) {
         if (!_draft) return null;
         const draftRevision = _draft.draft_revision;
         const body = Object.assign({ revision: draftRevision }, payload);
@@ -523,5 +545,10 @@
     window.WizardReview = {
         render: render,
         reset: reset,
+        // Exposed only for the mutation-serialization behavior contract
+        // (tests/units/front/test_wizard_draft_update_queue.py). No markup
+        // or delegated handler calls this directly — every real call site
+        // above already goes through the same queued `postDraftUpdate`.
+        postDraftUpdate: postDraftUpdate,
     };
 })();
