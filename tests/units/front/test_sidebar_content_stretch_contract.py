@@ -17,6 +17,7 @@ PITFALLS_CSS = REPO_ROOT / "src/front/static/ontology/css/ontology-pitfalls.css"
 ONTOLOGY_DQ_CSS = REPO_ROOT / "src/front/static/ontology/css/ontology-dataquality.css"
 QUERY_DQ_CSS = REPO_ROOT / "src/front/static/query/css/query-dataquality.css"
 QUERY_CHAT_CSS = REPO_ROOT / "src/front/static/query/css/query-chat.css"
+QUERY_SPARQL_CSS = REPO_ROOT / "src/front/static/query/css/query-sparql.css"
 BUSINESS_RULES_CSS = (
     REPO_ROOT / "src/front/static/ontology/css/ontology-business-rules.css"
 )
@@ -474,6 +475,27 @@ def test_existing_internal_scroll_variants_have_complete_flex_chains():
                 (
                     "#graphiql-container .graphiql-container",
                     {"flex": "1", "min-height": "0"},
+                ),
+            ),
+        ),
+        (
+            QUERY_SPARQL_CSS,
+            (
+                (
+                    ".query-language-content",
+                    {
+                        "flex": r"1\s+1\s+auto",
+                        "min-height": "0",
+                        "overflow": "hidden",
+                    },
+                ),
+                (
+                    ".sparql-playground",
+                    {
+                        "flex": r"1\s+1\s+auto",
+                        "min-height": "0",
+                        "overflow": "hidden",
+                    },
                 ),
             ),
         ),

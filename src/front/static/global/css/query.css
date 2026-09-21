@@ -103,7 +103,7 @@
     padding: 0;
 }
 
-#resultsContainer {
+#sparqlResultsContainer {
     flex: 1 1 0;
     display: flex;
     flex-direction: column;
@@ -114,7 +114,7 @@
 }
 
 /* Empty state styling */
-#resultsContainer .results-empty-state {
+#sparqlResultsContainer .results-empty-state {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -128,7 +128,7 @@
    ========================================================================== */
 
 /* Make Grid.js fill the container */
-#resultsContainer > .gridjs-container {
+#sparqlResultsContainer > .gridjs-container {
     flex: 1;
     display: flex !important;
     flex-direction: column !important;
@@ -136,40 +136,40 @@
     height: 100% !important;
 }
 
-#resultsContainer .gridjs-wrapper {
+#sparqlResultsContainer .gridjs-wrapper {
     flex: 1;
     min-height: 0;
     overflow: auto !important;
 }
 
-#resultsContainer .gridjs-table {
+#sparqlResultsContainer .gridjs-table {
     width: 100%;
 }
 
-#resultsContainer .gridjs-head {
+#sparqlResultsContainer .gridjs-head {
     flex-shrink: 0;
     padding: 8px 12px;
     background: #fff;
     border-bottom: 1px solid #e9ecef;
 }
 
-#resultsContainer .gridjs-footer {
+#sparqlResultsContainer .gridjs-footer {
     flex-shrink: 0;
     background: #ffffff;
     border-top: 1px solid #e9ecef;
 }
 
-#resultsContainer .gridjs-search {
+#sparqlResultsContainer .gridjs-search {
     width: 250px;
 }
 
-#resultsContainer .gridjs-search-input {
+#sparqlResultsContainer .gridjs-search-input {
     font-size: 0.85rem;
     padding: 6px 10px;
     border-radius: 4px;
 }
 
-#resultsContainer .gridjs-th {
+#sparqlResultsContainer .gridjs-th {
     background: #ffffff !important;
     color: #212529;
     font-weight: 600;
@@ -177,7 +177,7 @@
     white-space: nowrap;
 }
 
-#resultsContainer .gridjs-td {
+#sparqlResultsContainer .gridjs-td {
     font-size: 0.85rem;
     padding: 8px 12px;
     max-width: 300px;
@@ -186,20 +186,20 @@
     white-space: nowrap;
 }
 
-#resultsContainer .gridjs-tr:hover td {
+#sparqlResultsContainer .gridjs-tr:hover td {
     background: #ffffff;
 }
 
-#resultsContainer .gridjs-pagination {
+#sparqlResultsContainer .gridjs-pagination {
     padding: 8px 12px;
 }
 
-#resultsContainer .gridjs-pages button {
+#sparqlResultsContainer .gridjs-pages button {
     font-size: 0.8rem;
     padding: 4px 10px;
 }
 
-#resultsContainer .gridjs-summary {
+#sparqlResultsContainer .gridjs-summary {
     font-size: 0.8rem;
     color: #6c757d;
 }
