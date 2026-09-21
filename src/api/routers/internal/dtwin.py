@@ -159,11 +159,8 @@ async def execute_sparql(
 ):
     """Execute a SPARQL query via Spark SQL."""
     data = await request.json()
-    query = data.get("query", "")
+    query = sparql.require_read_only_sparql(data.get("query", ""))
     limit = data.get("limit")
-
-    if not query:
-        raise ValidationError("No query provided")
 
     domain = get_domain(session_mgr)
     domain.ensure_generated_content()
@@ -185,11 +182,8 @@ async def translate_sparql(
 ):
     """Translate a SPARQL query to SQL without executing."""
     data = await request.json()
-    sparql_query = data.get("query", "")
+    sparql_query = sparql.require_read_only_sparql(data.get("query", ""))
     limit = data.get("limit")
-
-    if not sparql_query:
-        raise ValidationError("No SPARQL query provided")
 
     domain = get_domain(session_mgr)
     domain.ensure_generated_content()
