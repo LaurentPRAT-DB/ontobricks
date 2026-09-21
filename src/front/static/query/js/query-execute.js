@@ -329,8 +329,17 @@ LIMIT ${limit}`,
     }
 
     function showInExplorer() {
-        // Task 4 replaces this guard with the Sigma bridge.
-        if (!currentResult || !isTripleProjection(currentResult.columns || [])) return;
+        const rows = currentResult?.results || [];
+        const columns = currentResult?.columns || [];
+        if (!rows.length || !isTripleProjection(columns)) return;
+
+        SidebarNav.switchTo('sigmagraph');
+        window.setTimeout(async () => {
+            const loaded = await SigmaGraph.loadQueryResults(rows, columns);
+            if (!loaded && typeof showNotification === 'function') {
+                showNotification('Could not display these SPARQL results.', 'error');
+            }
+        }, 150);
     }
 
     return {

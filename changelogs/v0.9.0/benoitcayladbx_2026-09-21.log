@@ -3152,3 +3152,55 @@ Tests:
 - `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py` → RED: 2 failed, 10 passed, 1 warning in 0.18s; GREEN: included in focused suite below.
 - `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py tests/e2e/dtwin/test_dtwin_flows.py tests/units/front/test_help_center_menu_sync.py tests/units/front/test_kg_readiness_indicator.py tests/units/front/test_kg_section_headers.py` → 44 passed, 12 skipped, 1 warning in 0.34s
 - `uv run --frozen pytest -q -m "not scenario"` → 6831 passed, 307 skipped, 6 deselected, 1 xfailed, 32 warnings in 51.31s
+
+## Add the explicit Show in Explorer bridge
+
+Context: Task 4 of the `staged-ontology-generate`/query-shell follow-up plan.
+`SPARQLPlayground` already kept Run on the SPARQL tab and gated
+`sparqlExploreBtn` on triple-shaped columns via a guarded `showInExplorer()`
+stub. This task wires that explicit action to a new `SigmaGraph.loadQueryResults`
+bridge so clicking "Show in Explorer" — and only that click — navigates to the
+Explorer section and renders the current SPARQL rows. Run continues to never
+navigate.
+
+Changes:
+
+1. `src/front/static/query/js/query-sigmagraph.js`
+   Add `SigmaGraph.loadQueryResults(results, columns)` to the module's public
+   API: guards on non-empty array input, shows the graph-loading overlay,
+   awaits `_waitForGraphLibs(10000)`, and on failure hides the overlay and
+   emits a `showNotification(..., 'error')` without throwing. On success it
+   defensively copies `results`/`columns` into `lastQueryResults`, calls the
+   existing `buildGraph`, resets selection/hover/search state exactly like
+   `_expandAndRenderGraph`, and calls `_render()`.
+2. `src/front/static/query/js/query-execute.js`
+   Replace the `showInExplorer()` guard stub with the real bridge: re-checks
+   `currentResult` is non-empty and triple-shaped, calls
+   `SidebarNav.switchTo('sigmagraph')`, then after a 150ms tick (letting the
+   section become visible) calls `SigmaGraph.loadQueryResults(rows, columns)`
+   and surfaces a fallback notification if it returns `false`. Run's
+   `execute()` body is untouched — no sidebar switch was added there.
+3. `tests/units/front/test_sparql_playground_contract.py`
+   Add `test_explorer_bridge_is_explicit_and_sigma_accepts_query_rows`,
+   asserting `SigmaGraph.loadQueryResults` is called from
+   `query-execute.js`, `loadQueryResults:` is defined on `SigmaGraph`, and the
+   explicit `SidebarNav.switchTo('sigmagraph')` call exists outside of
+   `execute()` (already covered by the pre-existing
+   `test_sparql_controller_has_samples_and_no_automatic_explorer_switch`).
+4. `tests/e2e/dtwin/test_dtwin_flows.py`
+   Add `TestQueryPlayground::test_show_in_explorer_stays_disabled_for_non_triples`,
+   confirming `#sparqlExploreBtn` stays disabled on the default (non-triple)
+   sample query — i.e. no implicit path ever enables/triggers the bridge.
+
+Modified files:
+- `src/front/static/query/js/query-sigmagraph.js`
+- `src/front/static/query/js/query-execute.js`
+- `tests/units/front/test_sparql_playground_contract.py`
+- `tests/e2e/dtwin/test_dtwin_flows.py`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests:
+- `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py` → RED: 1 failed, 12 passed; GREEN: 13 passed in 0.14s.
+- `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py tests/e2e/dtwin/test_dtwin_flows.py` → 13 passed, 13 skipped (e2e nightly-gated) in 0.46s; re-run with `ONTOBRICKS_E2E_FAKE_CREDS=1` to force the browser suite → 26 passed in 19.60s (no new warnings emitted).
+- `node --check` on both modified JS files → syntax OK.
+- `uv run --frozen pytest -q -m "not scenario"` → 6832 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.76s (no new warnings vs. baseline).

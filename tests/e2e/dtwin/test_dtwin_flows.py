@@ -109,3 +109,17 @@ class TestQueryPlayground:
         assert not page.evaluate(
             "SPARQLPlayground.isTripleProjection(['type','count'])"
         )
+
+    def test_show_in_explorer_stays_disabled_for_non_triples(
+        self, page, live_server
+    ):
+        page.goto(f"{live_server}/dtwin/?section=graphql&tab=sparql")
+        page.wait_for_load_state("domcontentloaded")
+        page.locator("#sparqlPlaygroundQuery").wait_for(state="visible")
+        disabled = page.evaluate(
+            """() => {
+                const button = document.getElementById('sparqlExploreBtn');
+                return button.disabled;
+            }"""
+        )
+        assert disabled

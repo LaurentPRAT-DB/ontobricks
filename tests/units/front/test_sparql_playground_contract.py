@@ -15,6 +15,7 @@ CSS = ROOT / "src/front/static/query/css/query-sparql.css"
 GLOBAL_QUERY_CSS = ROOT / "src/front/static/global/css/query.css"
 QUERY_JS = ROOT / "src/front/static/query/js/query.js"
 JS = ROOT / "src/front/static/query/js/query-execute.js"
+SIGMA_JS = ROOT / "src/front/static/query/js/query-sigmagraph.js"
 MENU = ROOT / "src/front/config/menu_config.json"
 
 
@@ -173,3 +174,11 @@ def test_execute_failure_does_not_clear_generated_sql():
     catch_body = catch_body[: catch_body.index("} finally {")]
     assert 'displayGeneratedSql("")' not in catch_body
     assert "displayGeneratedSql('')" not in catch_body
+
+
+def test_explorer_bridge_is_explicit_and_sigma_accepts_query_rows():
+    sparql_js = read(JS)
+    sigma_js = read(SIGMA_JS)
+    assert "SigmaGraph.loadQueryResults" in sparql_js
+    assert "loadQueryResults:" in sigma_js
+    assert "SidebarNav.switchTo('sigmagraph')" in sparql_js

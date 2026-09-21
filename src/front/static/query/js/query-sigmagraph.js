@@ -2684,6 +2684,44 @@ var SigmaGraph = (function () {
 
     return {
         init: init,
+        // Explicit bridge used by the SPARQL playground's "Show in
+        // Explorer" action. Only triple-shaped rows reach this call — the
+        // caller is responsible for that check and for switching to the
+        // sigmagraph section before invoking it. No implicit navigation
+        // happens here.
+        loadQueryResults: async function (results, columns) {
+            if (!Array.isArray(results) || results.length === 0) return false;
+            _hideEmptyState();
+            _showGraphLoading('Loading SPARQL results…');
+            await _waitForGraphLoadingPaint();
+
+            var librariesReady = await _waitForGraphLibs(10000);
+            if (!librariesReady || typeof buildGraph !== 'function') {
+                _hideGraphLoading();
+                if (typeof showNotification === 'function') {
+                    showNotification(
+                        'Graph libraries failed to load. Check your network and reload.',
+                        'error',
+                    );
+                }
+                return false;
+            }
+
+            lastQueryResults = {
+                results: results.slice(),
+                columns: (columns || []).slice(),
+            };
+            await buildGraph(lastQueryResults.results, lastQueryResults.columns);
+            _graphFilterActive = true;
+            _searchMatched = null;
+            _searchNeighbors = null;
+            _selectedNode = null;
+            _hoveredNode = null;
+            _setGraphLoadingStep('Rendering graph…');
+            await _waitForGraphLoadingPaint();
+            _render();
+            return true;
+        },
         reload: async function () {
             if (_hasData()) {
                 _showGraphLoading('Loading graph data…');
