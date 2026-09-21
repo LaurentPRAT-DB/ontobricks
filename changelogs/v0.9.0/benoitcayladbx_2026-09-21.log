@@ -1794,3 +1794,176 @@ Concerns:
   for direct/ad-hoc use and still covered by its own three existing unit
   test modules; no removal plan is proposed here beyond what SPEC.md
   already documents (no remaining production caller).
+
+---
+
+## Fix root cause of the below-gate live staged score (fixture shape + missing tracing)
+
+Context: The prior live eval (run `218202e1c9a64a6a98d4add618310e48`) scored
+`staged_live_aggregate=0.850`, below the requested `0.950` bar, on
+`excludes_existing_anchor_as_new`/`excludes_existing_alternate_label_as_new`.
+A read-only systematic investigation established this was **not** a dedup
+defect: `staged-locked-anchor-dedup-001`'s dataset metadata used
+`{catalog, schema, table}` keys, but every production metadata consumer
+(`agents.tools.metadata.tool_get_metadata`/`tool_get_table_detail`,
+`staged.py`/`engine.py`) keys off `name`/`full_name`. Against the real
+endpoint this made `get_metadata` return a table entry with `name: null`,
+`get_table_detail` could not resolve it, and — since this row has no
+`input.corpus` fallback to ground the model any other way — the model
+replied with prose instead of JSON, so `detect_entities` rejected the
+malformed answer *before its anchor-dedup logic ever ran*. The reported
+anchor/alt-label failures were downstream of that rejection, not independent
+dedup misses. `staged-detect-new-entities-001` had the identical malformed
+shape but happened to PASS live because its `input.corpus` grounded the
+model independently of the broken metadata tool — masking the bug. The same
+investigation found `--live` never called `agents.tracing.setup_tracing()`,
+so the `@trace_agent`/`@trace_llm`/`@trace_tool` decorators already on the
+staged entry points silently no-opped and the live run carried zero
+trace/span evidence. Followed TDD: each fix below has a test written and
+observed RED against the pre-fix code before the fix landed.
+
+Changes:
+
+1. tests/eval/datasets/agent_owl_generator/baseline.jsonl +
+   .planning/agents/agent_owl_generator/eval/dataset.jsonl (dataset fixture
+   fix, mirrors kept byte-identical)
+   Corrected the 4 staged rows whose `input.metadata.tables` entries used
+   the stale `{catalog, schema, table}` shape
+   (`staged-detect-new-entities-001`, `staged-default-inclusion-001`,
+   `staged-locked-anchor-dedup-001`, `staged-no-one-shot-default-001`) to
+   the real production shape (`name`/`full_name`, e.g. `{"name":
+   "purchase_orders", "full_name": "demo.sales.purchase_orders", ...}`),
+   matching `back/core/databricks/uc/MetadataService.py`'s actual Unity
+   Catalog fetch shape. **No production metadata tolerance for
+   `catalog`/`schema`/`table` was added anywhere** — the fixture was wrong,
+   not the production contract, per this closure's explicit instruction.
+   Diff is minimal: only the 4 malformed table objects changed, compact
+   JSON formatting preserved for every untouched line.
+2. tests/eval/test_staged_dataset_metadata_shape.py (new, 9 tests)
+   RED-first proof of #1: asserts neither mirrored dataset uses the stale
+   shape, every metadata table carries `name`+`full_name` (`full_name`
+   ending with `name`), the specific `staged-locked-anchor-dedup-001` row
+   resolves to the exact expected table, and — the strongest regression
+   guard — calls the REAL `agents.tools.metadata.tool_get_metadata`/
+   `tool_get_table_detail` functions (via a real `ToolContext`) against
+   every staged row's metadata and asserts no table entry ever has a null
+   `name`/`full_name`, catching this exact bug at its source rather than
+   only checking JSON field names. Plus a byte-identical-mirrors guard.
+3. tests/eval/staged_contract.py (Important — explicit detection-failure
+   diagnostics)
+   `score_staged_examples_live()` now calls `_run_detection_for_example()`
+   once, explicitly, per detect row — reusing the exact same cached call
+   `_score_constraint()` already made (no extra live round-trip: still one
+   LLM call per detect row) — and reports a new
+   `detection_returned_valid_structured_output` dimension (1.0/0.0) plus a
+   `[STAGED LIVE DETECTION FAILED]` diagnostic print naming the row and
+   explicitly stating "not a dedup miss" whenever `detect_entities()`
+   rejects/fails, so this failure mode is never again indistinguishable
+   from a real anchor/alternate-label dedup miss. No threshold changed;
+   the deterministic `owl_generator.staged_contract: 0.950` gate is
+   untouched.
+4. tests/eval/test_run_agent_owl_generator.py
+   (`TestScoreStagedExamplesLiveReportsDetectionFailureExplicitly`, 3 new
+   tests) RED-first proof of #3: a prose (non-JSON) fake reply scores
+   `detection_returned_valid_structured_output=0.0` and prints a diagnostic
+   naming the row + "not a dedup miss"/"dedup"; a valid-JSON reply scores
+   `1.0`; the diagnostic costs zero extra live calls (still exactly one
+   `call_serving_endpoint`/`detect_entities` call per detect row).
+5. tests/eval/run_agent_owl_generator.py (Important — tracing gap)
+   New `_init_live_tracing(tracking_uri, experiment_name)`: sets
+   `mlflow.set_tracking_uri()` then calls `agents.tracing.setup_tracing()`
+   — never passed `host`/`token` (its only parameter is the experiment
+   name, so no secret can be logged through this call by construction,
+   mirroring `agents.tracing._safe_inputs`'s own exclusion set) — and
+   prints an `[TRACING] ... -> enabled/DISABLED` diagnostic. Called from
+   `main()` under `--live`, *before* constructing the `live_runner`
+   lambda and before `run_contract(...)` — i.e. before `run_contract`'s own
+   per-example loop makes its first live call to
+   `_live_runner`/`staged.detect_entities`, and before
+   `score_staged_examples_live`'s completion-chain calls. Offline
+   (non-`--live`) mode never calls this — zero MLflow side effects, as
+   before.
+6. tests/eval/test_run_agent_owl_generator.py
+   (`TestLiveModeInitializesTracingBeforeAnyFoundationModelCall`, 5 new
+   tests) RED-first proof of #5: `_init_live_tracing` calls
+   `setup_tracing(experiment_name=...)` with no `host`/`token` kwarg at
+   all; its diagnostic print never contains a token value; `main()` calls
+   tracing setup before `run_contract` and before `_live_runner` actually
+   fire (proven via call-order tracking with monkeypatched collaborators,
+   using a real secret-shaped token string in `sys.argv` to prove it never
+   leaks into stdout); offline mode never initializes tracing.
+7. .planning/agents/agent_owl_generator/SPEC.md §10
+   Marked live-run attempt 1 (`218202e1...`) as a **FAILED live evaluation
+   caused by the dataset fixture bug** (not a code defect) — recorded
+   truthfully with the full root-cause explanation rather than deleted —
+   and added the new passing attempt 2 (`68ee4e8e...`) with its full metric
+   breakdown and trace-evidence confirmation (see Tests below).
+
+Modified/added files:
+- tests/eval/datasets/agent_owl_generator/baseline.jsonl
+- .planning/agents/agent_owl_generator/eval/dataset.jsonl
+- tests/eval/test_staged_dataset_metadata_shape.py (new)
+- tests/eval/staged_contract.py
+- tests/eval/run_agent_owl_generator.py
+- tests/eval/test_run_agent_owl_generator.py
+- .planning/agents/agent_owl_generator/SPEC.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- Focused RED/GREEN: all new tests observed RED against the pre-fix dataset
+  and pre-fix `staged_contract.py`/`run_agent_owl_generator.py` before each
+  fix landed (see #2, #4, #6 above), then GREEN after.
+- Focused suite: `uv run --frozen pytest -q tests/eval/` → **33 passed**
+  (was 28 before this session's new tests).
+- Offline eval (unweakened, unchanged): `uv run --frozen python
+  tests/eval/run_agent_owl_generator.py` → all 14 staged examples PASS,
+  staged-contract aggregate `1.000` (threshold `0.950`); all 10
+  parsed-corpus cases PASS, aggregate `1.000` (threshold `0.900`).
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → **6687
+  passed**, 304 skipped, 6 deselected, 1 xfailed, 32 warnings, no failures.
+- **Live eval, attempt 2 (real Databricks endpoint, no credentials
+  printed)** — same command as the prior session's live run:
+  ```
+  export ONTO_DBX_HOST=$(databricks auth env --profile DEFAULT | jq -r '.env.DATABRICKS_HOST')
+  export ONTO_DBX_TOKEN=$(databricks auth token DEFAULT -o json | jq -r '.access_token')
+  DATABRICKS_CONFIG_PROFILE=DEFAULT uv run --frozen python tests/eval/run_agent_owl_generator.py \
+    --live --host "$ONTO_DBX_HOST" --token "$ONTO_DBX_TOKEN" \
+    --endpoint databricks-claude-sonnet-5 --mlflow-tracking-uri databricks
+  ```
+  → MLflow run
+  `https://fe-vm-bcayla-demos.cloud.databricks.com/ml/experiments/1426639566663818/runs/68ee4e8e6211443591c63ec95847d17c`.
+  `judge_score=1.000` (≥ `0.900` required); `staged_live_aggregate=1.000`
+  (≥ `0.950` required) — **both required thresholds met**. Every
+  `staged_live_*` dimension is `1.000`, including the two that failed in
+  attempt 1 (`excludes_existing_anchor_as_new`,
+  `excludes_existing_alternate_label_as_new`) and the new
+  `detection_returned_valid_structured_output`. Completion chain
+  (`infer_relations`/`infer_attributes`/`infer_axioms`) all
+  `PASS (rejected=False)` — attempt 1 stopped at `infer_relations`
+  (`rejected=True`) because the completion chain's own draft depends on
+  nothing from the malformed row, so this improvement is attributable
+  entirely to detection succeeding earlier in the run, not to any change in
+  the completion chain itself.
+- **Trace evidence verification** (workspace MLflow API,
+  `mlflow.search_traces(run_id=..., experiment_ids=[...])`):
+  - Attempt 1 (`218202e1...`): **0 traces** — confirms the pre-fix run truly
+    carried no trace evidence (tracing was never initialized).
+  - Attempt 2 (`68ee4e8e...`): **7 traces**, all state `OK` — 4×
+    `owl_generator.detect` (each with nested `agent:llm` +
+    `tool:get_metadata`/`tool:list_documents`/`tool:read_document`/
+    `tool:get_table_detail` spans, 6-9 spans per trace) + 1× each of
+    `owl_generator.relations`/`.attributes`/`.axioms` (2 spans each:
+    the agent span + its `agent:llm` call) — proving `_init_live_tracing()`
+    genuinely enables tracing for this run, not merely prints a claim.
+
+Concerns:
+- `staged-no-one-shot-default-001`'s metadata was also fixed to the
+  name/full_name shape for consistency even though it is not exercised by
+  any live call (`stage: entry_point_contract` is a structural-only row) —
+  no behavioural test covers this row's metadata shape specifically beyond
+  the dataset-shape tests in #2, which do cover it.
+- The three `_run_live_completion_chain` substages (`relations`/
+  `attributes`/`axioms`) still only exercise one representative,
+  non-adversarial closed entity set per live run (unchanged from the prior
+  session) — this fix did not add additional live completion-chain
+  coverage, only fixed the detect-side fixture bug and the tracing gap.

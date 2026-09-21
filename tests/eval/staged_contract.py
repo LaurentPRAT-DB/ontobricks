@@ -32,6 +32,17 @@ completion-tagged row is deliberately adversarial/scripted-invalid, which a
 real endpoint cannot be made to reproduce on demand) and scored for entity
 closure and no-document-tool-access, the same properties the deterministic
 adversarial checks assert.
+
+Each detect row also reports an explicit
+``detection_returned_valid_structured_output`` dimension (1.0/0.0, from the
+same cached ``_run_detection_for_example`` call the per-constraint checks
+reuse — no extra live round-trip) — a rejected/invalid structured-output
+answer from ``detect_entities`` is a distinct failure mode from a dedup
+miss, and must be diagnosable as such rather than only masquerading as 0.0s
+on ``excludes_existing_anchor_as_new``/``excludes_existing_alternate_label_
+as_new`` etc. (final-review live-eval investigation: this is exactly what
+happened on ``staged-locked-anchor-dedup-001`` when its dataset metadata
+used the wrong shape — see the dataset fixture fix and SPEC.md §10).
 """
 
 from __future__ import annotations
@@ -802,6 +813,34 @@ def score_staged_examples_live(
     per_dimension: Dict[str, List[float]] = {}
     with live_endpoint(host, token, endpoint):
         for example in detect_rows:
+            # Run detection once, explicitly, BEFORE scoring constraints —
+            # `_run_detection_for_example` caches per example id, so this is
+            # the same call `_score_constraint` below reuses (no extra live
+            # round-trip). This lets a rejected/invalid structured-output
+            # failure be reported as its OWN dimension, distinct from the
+            # per-constraint dedup/inclusion scores it would otherwise only
+            # drag down silently (final-review live-eval investigation: a
+            # malformed-metadata-triggered rejection on
+            # ``staged-locked-anchor-dedup-001`` previously surfaced only as
+            # `excludes_existing_anchor_as_new`/`excludes_existing_alternate_
+            # label_as_new` failures, indistinguishable from a real dedup
+            # miss).
+            result, _ = _run_detection_for_example(example)
+            detection_ok = bool(result.success)
+            per_dimension.setdefault(
+                "detection_returned_valid_structured_output", []
+            ).append(1.0 if detection_ok else 0.0)
+            if not detection_ok:
+                print(
+                    f"[STAGED LIVE DETECTION FAILED] {example['id']}: "
+                    f"detect_entities() did not return valid structured "
+                    f"output (error={result.error!r}). The per-constraint "
+                    f"scores below for this row reflect that structured-"
+                    f"output failure, not an anchor/alternate-label dedup "
+                    f"miss — dedup logic is never reached when detection "
+                    f"itself is rejected."
+                )
+
             constraints = example.get("expected", {}).get("constraints", [])
             scores = [_score_constraint(example, c) for c in constraints]
             example_score = sum(scores) / len(scores) if scores else 1.0

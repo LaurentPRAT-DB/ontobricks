@@ -13,9 +13,15 @@ Databricks Foundation Model endpoint for BOTH contracts:
   (``score_staged_examples_live``), plus a representative
   ``infer_relations`` -> ``infer_attributes`` -> ``infer_axioms`` completion
   chain against the real endpoint.
+* Before any of the above runs, ``_init_live_tracing`` calls
+  ``agents.tracing.setup_tracing()`` so the ``@trace_agent``/``@trace_llm``/
+  ``@trace_tool`` decorators on the staged entry points and
+  ``call_serving_endpoint`` actually emit MLflow spans instead of silently
+  no-opping (a prior gap: live runs carried zero trace evidence).
 
 Deterministic/offline mode (default, no ``--live``) is unaffected: both
-contracts stay fully scripted/stub-based, no network required.
+contracts stay fully scripted/stub-based, no network required, and tracing
+is never initialised.
 """
 
 from __future__ import annotations
@@ -33,6 +39,9 @@ if str(ROOT / "src") not in sys.path:
 if str(ROOT / "tests" / "eval") not in sys.path:
     sys.path.insert(0, str(ROOT / "tests" / "eval"))
 
+import mlflow  # noqa: E402
+
+from agents.tracing import setup_tracing  # noqa: E402
 from document_corpus_contract import run_contract  # noqa: E402
 from staged_contract import score_staged_examples, score_staged_examples_live  # noqa: E402
 
@@ -224,6 +233,38 @@ def _live_runner(
     return tools_called, observed_text, [doc["name"] for doc in documents]
 
 
+def _init_live_tracing(tracking_uri: str | None, experiment_name: str) -> bool:
+    """Initialise MLflow tracing (``agents.tracing.setup_tracing``) BEFORE
+    any live Foundation Model call.
+
+    Final-review live-eval investigation finding: ``--live`` previously
+    never called ``setup_tracing()``, so the ``@trace_agent``/``@trace_llm``/
+    ``@trace_tool`` decorators already on
+    ``staged.detect_entities``/``infer_relations``/``infer_attributes``/
+    ``infer_axioms``/``call_serving_endpoint`` silently no-opped
+    (``agents.tracing._TRACING_READY`` stayed ``False`` for the whole
+    process) and the live MLflow run carried zero trace/span evidence. This
+    must run before ``run_contract`` — which calls ``live_runner`` once per
+    parsed-corpus example from inside its own example loop, *before* it sets
+    up its own MLflow run — so tracing is enabled for every live call this
+    eval makes, not only the ones after ``run_contract``'s own
+    ``mlflow.start_run()`` block starts.
+
+    Never receives ``host``/``token``: ``setup_tracing()``'s only parameter
+    is the experiment name, so no secret can be logged through this call by
+    construction (mirrors ``agents.tracing._safe_inputs``'s own
+    token/host/client exclusion for span inputs).
+    """
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
+    ready = setup_tracing(experiment_name=experiment_name)
+    print(
+        f"[TRACING] setup_tracing(experiment_name={experiment_name!r}) -> "
+        f"{'enabled' if ready else 'DISABLED (see log above for reason)'}"
+    )
+    return ready
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--live", action="store_true")
@@ -259,6 +300,8 @@ def main() -> None:
     live = None
     extra_mlflow_logging = None
     if args.live:
+        _init_live_tracing(args.mlflow_tracking_uri, args.mlflow_experiment)
+
         live = lambda example: _live_runner(  # noqa: E731
             example, host=args.host, token=args.token, endpoint=args.endpoint
         )
