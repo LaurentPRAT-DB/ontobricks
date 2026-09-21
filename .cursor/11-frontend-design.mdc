@@ -126,6 +126,29 @@ surface: `#obSubnav` is transparent and its segmented workspace control uses
   preview to reflect the current resolved color. The component preview block is
   `aria-hidden="true"` (decorative).
 
+**Aurora accent and cinematic gradient tokens (Aurora Pro)**
+
+- The **Aurora** accent hex is a second admin-configurable input, alongside
+  Primary, exposed in Settings → Configuration → UI → Theme (`aurora_color`,
+  stored in the `ui_branding` global-config document). When omitted it is
+  deterministically derived from Primary via an HSL hue rotation (see
+  `back.core.helpers.UIBranding._derive_aurora_hex`) — there is no unstyled or
+  undefined state.
+- `--db-gradient-primary` (`linear-gradient(120deg, var(--db-primary),
+  var(--db-gradient-end))`) is the only gradient used on filled CTAs
+  (`.btn-primary`, `.ob-subnav-save-btn`) and the selected L2 workspace chip.
+  `--db-gradient-end` is Primary mixed 45% toward Aurora, contrast-corrected
+  server-side against `--db-on-primary` — never hardcode a second color on a
+  button.
+- `--db-gradient-rail` (`linear-gradient(180deg, var(--db-primary),
+  var(--db-aurora))`) is reserved for the sidebar's 3px active-row leading bar
+  only.
+- `--db-halo` and `--db-canvas-warm` are the only Aurora-aware page-level
+  treatments; forms, tables, and modals stay flat `--db-surface-warm` with no
+  gradients.
+- Resting cards (`.card`) now carry `--db-shadow-sm` in addition to their
+  1px border — previously the shadow was overlay-only.
+
 ### Accent Use and Button Hierarchy
 
 The Clarity indigo accent (`--db-primary`) is used for high-signal moments:

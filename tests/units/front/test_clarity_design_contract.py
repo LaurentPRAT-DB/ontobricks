@@ -860,6 +860,10 @@ def test_frontend_design_rule_documents_new_palette_and_immutable_structure():
         "L1",
         "L2",
         "logo",
+        "Aurora",
+        "--db-gradient-primary",
+        "--db-gradient-rail",
+        "Settings → Configuration → UI",
     ]
     for statement in required_statements:
         assert statement in rule_text

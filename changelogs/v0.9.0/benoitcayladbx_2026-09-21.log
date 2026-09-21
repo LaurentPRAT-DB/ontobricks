@@ -2955,3 +2955,91 @@ Modified files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6778 passed,
 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.91s.
+
+## Aurora Pro visual refresh: admin-configurable Aurora accent and gradient CTAs
+
+Context: The Aurora Pro design direction asked for a modern, gradient-led
+shell (filled CTAs, selected L2 workspace chip, sidebar active rail, resting
+card shadow) driven by a second admin-configurable accent color alongside
+Primary, without touching navigation structure/IA. All new colors had to
+stay configurable from Settings → Configuration → UI, deterministically
+derived when omitted, and contrast-safe against `--db-on-primary`.
+
+Changes:
+
+1. `src/back/core/helpers/UIBranding.py`
+   Add `DEFAULT_AURORA_COLOR`, HSL round-trip helpers (`_rgb_to_hsl`,
+   `_hsl_to_rgb`), a generic `_mix_colors` primitive, and
+   `_derive_aurora_hex` / `_derive_gradient_end` / `_derive_canvas_tint`.
+   Extend `BrandPalette` and `UIBranding` with `aurora`, `aurora_rgb`,
+   `aurora_dark`, `gradient_end`, `canvas_tint`, `aurora_color`.
+   `derive_brand_palette` gains an optional `aurora_color` parameter;
+   `normalize_ui_branding` treats an invalid/missing stored Aurora as absent
+   and re-derives instead of failing. Add `validate_optional_hex_color` for
+   the save-path field validation (blank = derive, malformed = reject).
+2. `src/back/objects/session/GlobalConfigService.py`,
+   `src/back/objects/domain/SettingsService.py`,
+   `src/api/routers/internal/settings.py`
+   Persist and validate `aurora_color` end to end:
+   `SettingsService.save_ui_branding_result` gains `aurora_color` as its 3rd
+   positional parameter, validated via `validate_optional_hex_color` before
+   `normalize_ui_branding`; the `/settings/ui-branding` route accepts a new
+   `aurora_color` form field.
+3. `src/shared/fastapi/ui_branding.py`
+   `render_ui_branding_css_vars` now emits `--db-aurora`, `--db-aurora-rgb`,
+   `--db-aurora-dark`, `--db-gradient-end`, `--db-canvas-warm` at first paint,
+   and redefines `--db-shadow-primary` to `0 8px 20px rgba(primary_rgb, 0.35)`.
+4. `src/front/templates/settings.html`, `src/front/static/global/css/config.css`
+   Add an Aurora color picker (`#uiBrandingAuroraColor` /
+   `#uiBrandingAuroraHex`) mirroring Primary, plus an `#uiSwatchAurora` swatch
+   in the Theme card.
+5. `src/front/static/config/js/settings.js`
+   Mirror the Python HSL/Aurora/gradient-end/canvas-tint math exactly for
+   live preview: `deriveBrandPalette(primaryColor, auroraColor)` gains the
+   Aurora parameter; `UI_BRANDING_DEFAULTS` gains `aurora_color`;
+   `normalizeUIBrandingDraft`, `previewUIBranding`, `updateUIBrandingValidity`,
+   `updateUIBrandingDirtyState`, `isSavedUIBrandingDefaultState`, and
+   `saveUIBranding` all read/write Aurora; add `updateDraftAurora` and bind
+   the new inputs with the same validation/aria-invalid pattern as Primary.
+6. `src/front/static/global/css/main.css`
+   Add `--db-aurora`, `--db-aurora-rgb`, `--db-aurora-dark`,
+   `--db-gradient-end`, `--db-gradient-primary`, `--db-gradient-rail`,
+   `--db-halo` tokens; give resting `.card` a `--db-shadow-sm` box-shadow;
+   gradient-fill `.ob-subnav-link.active` (+ ordinal swap) and
+   `.ob-subnav-save-btn` with `--db-gradient-primary`.
+7. `src/front/static/global/css/sidebar-layout.css`,
+   `src/front/static/global/css/components.css`
+   Paint the sidebar active-row rail with `--db-gradient-rail` and the shared
+   `.btn-primary` CTA with `--db-gradient-primary` + `--db-shadow-primary`
+   (pressed/open states stay solid `--db-primary-darker`, unchanged).
+8. `.cursor/11-frontend-design.mdc`
+   Document the Aurora accent, `--db-gradient-primary`/`--db-gradient-rail`
+   contract, and the resting-card shadow addition.
+
+Modified files:
+- `src/back/core/helpers/UIBranding.py`
+- `src/back/objects/session/GlobalConfigService.py`
+- `src/back/objects/domain/SettingsService.py`
+- `src/back/core/helpers/__init__.py`
+- `src/api/routers/internal/settings.py`
+- `src/shared/fastapi/ui_branding.py`
+- `src/front/templates/settings.html`
+- `src/front/static/global/css/config.css`
+- `src/front/static/config/js/settings.js`
+- `src/front/static/global/css/main.css`
+- `src/front/static/global/css/sidebar-layout.css`
+- `src/front/static/global/css/components.css`
+- `tests/units/ui/test_branding.py`
+- `tests/units/settings/test_ui_branding.py`
+- `tests/units/api/test_ui_branding_settings.py`
+- `tests/units/front/test_ui_branding_rendering.py`
+- `tests/units/front/test_ui_branding_settings_contract.py`
+- `tests/units/front/test_clarity_design_contract.py`
+- `tests/units/front/test_segmented_subnav_contract.py`
+- `.cursor/11-frontend-design.mdc`
+- `docs/superpowers/specs/2026-09-21-aurora-pro-ui-design.md`
+- `docs/superpowers/plans/2026-09-21-aurora-pro-ui.md`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6800 passed,
+304 skipped, 6 deselected, 1 xfailed, 32 warnings in 46.52s.
