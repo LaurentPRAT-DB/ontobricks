@@ -605,3 +605,187 @@ def test_document_list_rows_escape_the_file_name():
         "document list row renders file.name without escapeHtml(): XSS risk "
         "on a substantially rewritten rendering path"
     )
+
+
+# ---------------------------------------------------------------------------
+# Class -> Entity rename (user-visible label only, `value="class"` kept)
+# ---------------------------------------------------------------------------
+
+
+def test_add_candidate_type_select_labels_entity_not_class():
+    """The Add Entity form's Type hint select must show the friendly
+    "Entity" label while keeping the technical `value="class"` attribute
+    the backend/schema still expects."""
+    html = _read(HTML)
+    select = re.search(
+        r'id="wizardNewCandidateType"[^>]*>(.*?)</select>', html, re.DOTALL
+    )
+    assert select, "wizardNewCandidateType select not found"
+    body = select.group(1)
+    assert '<option value="class" selected>Entity</option>' in body
+    assert ">Class<" not in body
+
+
+def test_edit_candidate_type_select_labels_entity_not_class():
+    """Same relabeling on the Stage 2 per-candidate edit variant of the
+    type hint select (renderCandidateRow in ontology-wizard-review.js)."""
+    js = _read(REVIEW_JS)
+    select_block = js[js.index('data-field="type_hint"') :]
+    select_block = select_block[: select_block.index("</select>")]
+    assert ">Entity</option>" in select_block
+    assert ">Class</option>" not in select_block
+
+
+def test_help_modal_glossary_leads_with_entity_not_class():
+    """The glossary's Entity/Class term must lead with the friendly
+    "Entity" label; "Class" stays only as a parenthetical OWL-term note,
+    never erased outright."""
+    help_modal = REPO_ROOT / "src/front/templates/partials/layout/help_modal.html"
+    html = _read(help_modal)
+    dt = re.search(r"<dt>(Entity[^<]*)</dt><dd>([^<]*(?:<[^d][^>]*>[^<]*</[^>]+>[^<]*)*)</dd>", html)
+    assert dt, "Entity/Class glossary entry not found"
+    assert dt.group(1).strip() == "Entity", (
+        "glossary term must lead with the plain 'Entity' label, "
+        f"got: {dt.group(1)!r}"
+    )
+    assert "Class" in dt.group(2), (
+        "the OWL 'Class' term must still be noted in the description, "
+        "not erased outright"
+    )
+
+
+def test_toast_messages_say_entities_not_classes():
+    """User-visible completion toasts must say "entities", not "classes" —
+    `stats.classes_added` (the data key) stays unchanged."""
+    js = _read(WIZARD_JS)
+    assert "stats.classes_added" in js, "classes_added data key must stay unchanged"
+    assert re.search(r"\}\s*classes\b", js) is None, (
+        "a user-visible toast still renders the word 'classes'"
+    )
+    assert re.search(r"\}\s*entities\b", js), (
+        "expected at least one toast to render '... entities' from "
+        "stats.classes_added"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Relationship / Attribute type-hint clarification (finding: data vs object
+# property ambiguity)
+# ---------------------------------------------------------------------------
+
+
+def test_add_candidate_type_select_relabels_relationship_and_attribute():
+    html = _read(HTML)
+    select = re.search(
+        r'id="wizardNewCandidateType"[^>]*>(.*?)</select>', html, re.DOTALL
+    )
+    assert select
+    body = select.group(1)
+    assert '<option value="object_property">Relationship (object property)</option>' in body
+    assert '<option value="data_property">Attribute (data property)</option>' in body
+
+
+def test_edit_candidate_type_select_relabels_relationship_and_attribute():
+    js = _read(REVIEW_JS)
+    select_block = js[js.index('data-field="type_hint"') :]
+    select_block = select_block[: select_block.index("</select>")]
+    assert "Relationship (object property)" in select_block
+    assert "Attribute (data property)" in select_block
+
+
+def test_add_candidate_form_has_relationship_vs_attribute_hint():
+    """A short one-line hint near the Type hint select clarifies the
+    Relationship/Attribute distinction, matching the existing
+    `.text-muted.small` hint style in this file."""
+    html = _read(HTML)
+    form = re.search(
+        r'id="wizardAddCandidateForm"[^>]*>(.*?)id="wizardNewCandidateDescription"',
+        html,
+        re.DOTALL,
+    )
+    assert form, "add-candidate form block not found"
+    block = form.group(1)
+    assert "text-muted" in block and "small" in block
+    assert re.search(r"[Rr]elationship links two entities", block)
+    assert re.search(r"[Aa]ttribute stores", block)
+
+
+def test_edit_candidate_row_has_matching_relationship_vs_attribute_hint():
+    """The Stage 2 duplicated dropdown (per-candidate edit) gets the same
+    hint for consistency, per the design's ambiguity-clarification note."""
+    js = _read(REVIEW_JS)
+    select_idx = js.index('data-field="type_hint"')
+    after_select = js[select_idx : select_idx + 900]
+    assert re.search(r"[Rr]elationship links", after_select)
+    assert re.search(r"[Aa]ttribute stores", after_select)
+
+
+# ---------------------------------------------------------------------------
+# Start Over: Complete pane discard-and-return-to-Configure
+# ---------------------------------------------------------------------------
+
+
+def test_complete_pane_has_start_over_button():
+    html = _read(HTML)
+    complete_block = re.search(
+        r'id="wizardCompletePane".*', html, re.DOTALL
+    )
+    assert complete_block
+    block = complete_block.group(0)
+    btn = re.search(
+        r'<button[^>]*data-action="wizard-complete-discard"[^>]*>(.*?)</button>',
+        block,
+        re.DOTALL,
+    )
+    assert btn, "Complete pane Start Over button (wizard-complete-discard) not found"
+    assert "btn-outline-danger" in btn.group(0)
+    assert "Start Over" in btn.group(1) or "Start Over" in btn.group(0)
+
+
+def test_start_over_action_is_wired_in_wizard_js():
+    js = _read(WIZARD_JS)
+    assert "wizard-complete-discard" in js
+    # Must hit the same discard endpoint the Review pane's discard already
+    # uses, and return to Configure the same way.
+    discard_fn = re.search(
+        r"function\s+(\w*[Ss]tartOver\w*|\w*[Dd]iscard\w*Complete\w*)\s*\([^)]*\)\s*\{([\s\S]*?)\n\}",
+        js,
+    )
+    assert discard_fn, "no Start-Over/discard-from-complete function found in ontology-wizard.js"
+    body = discard_fn.group(2)
+    assert "/ontology/wizard/generate/draft/discard" in body
+    assert "showConfirmDialog(" in body
+    assert "setWizardStage('configure')" in body or "onDraftDiscarded" in body
+
+
+def test_start_over_cancels_inflight_complete_task_tracking():
+    """Starting over while a completion task is still polling must clear
+    the sessionStorage task-id tracking, mirroring the stale-banner
+    re-detect guard's "don't silently discard unacted-on work" pattern."""
+    js = _read(WIZARD_JS)
+    discard_fn = re.search(
+        r"function\s+(\w*[Ss]tartOver\w*|\w*[Dd]iscard\w*Complete\w*)\s*\([^)]*\)\s*\{([\s\S]*?)\n\}",
+        js,
+    )
+    assert discard_fn
+    body = discard_fn.group(2)
+    assert "WIZARD_COMPLETE_TASK_KEY" in body
+
+
+def test_review_discard_button_still_works_and_is_relabeled_consistently():
+    """The existing Stage 2 Discard Draft button keeps its data-action
+    hook and behavior; only its label may change for consistency with the
+    new Stage 3 Start Over button."""
+    html = _read(HTML)
+    btn = re.search(
+        r'<button[^>]*data-action="wizard-review-discard"[^>]*>(.*?)</button>',
+        html,
+        re.DOTALL,
+    )
+    assert btn, "wizard-review-discard button not found"
+    assert "btn-outline-danger" in btn.group(0)
+    # Behavior is unchanged: still routed through discardDraft() in the
+    # review module, which posts to the same discard endpoint.
+    js = _read(REVIEW_JS)
+    assert "wizard-review-discard" in js
+    assert "/ontology/wizard/generate/draft/discard" in js

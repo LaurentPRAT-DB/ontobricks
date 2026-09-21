@@ -282,10 +282,16 @@
                     <div class="col-md-6">
                         <label class="form-label small text-muted" for="wizardNewCandidateType">Type hint</label>
                         <select class="form-select form-select-sm" id="wizardNewCandidateType">
-                            <option value="class" selected>Class</option>
-                            <option value="object_property">Object Property</option>
-                            <option value="data_property">Data Property</option>
+                            <option value="class" selected>Entity</option>
+                            <option value="object_property">Relationship (object property)</option>
+                            <option value="data_property">Attribute (data property)</option>
                         </select>
+                    </div>
+                    <div class="col-12">
+                        <div class="text-muted small">
+                            <i class="bi bi-info-circle me-1"></i>
+                            A Relationship links two entities together; an Attribute stores a single value (like a name or date) on one entity.
+                        </div>
                     </div>
                     <div class="col-12">
                         <label class="form-label small text-muted" for="wizardNewCandidateDescription">Description</label>
@@ -307,7 +313,7 @@
 
     <div class="d-flex justify-content-between">
         <button type="button" class="btn btn-outline-danger" data-action="wizard-review-discard">
-            <i class="bi bi-trash me-1"></i>Discard Draft
+            <i class="bi bi-trash me-1"></i>Discard Draft &amp; Start Over
         </button>
         <button type="button" class="btn btn-primary" id="wizardReviewContinueBtn"
                 data-action="wizard-review-continue" data-requires-llm disabled>
@@ -346,6 +352,10 @@
                 <button type="button" class="btn btn-primary ob-hidden" id="wizardCompleteRetryBtn"
                         data-action="wizard-complete-retry" data-requires-llm>
                     <i class="bi bi-arrow-clockwise me-1"></i>Retry
+                </button>
+                <button type="button" class="btn btn-outline-danger" id="wizardCompleteDiscardBtn"
+                        data-action="wizard-complete-discard">
+                    <i class="bi bi-trash me-1"></i>Start Over
                 </button>
             </div>
         </div>

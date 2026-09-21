@@ -281,12 +281,14 @@
             '</textarea>' +
             '<select class="form-select form-select-sm wizard-field-input mb-1" ' +
             'data-entity-id="' + id + '" data-field="type_hint" style="max-width:200px;" aria-label="Type hint">' +
-            '<option value="class"' + (candidate.type_hint === 'class' ? ' selected' : '') + '>Class</option>' +
+            '<option value="class"' + (candidate.type_hint === 'class' ? ' selected' : '') + '>Entity</option>' +
             '<option value="object_property"' + (candidate.type_hint === 'object_property' ? ' selected' : '') +
-            '>Object Property</option>' +
+            '>Relationship (object property)</option>' +
             '<option value="data_property"' + (candidate.type_hint === 'data_property' ? ' selected' : '') +
-            '>Data Property</option>' +
+            '>Attribute (data property)</option>' +
             '</select>' +
+            '<div class="text-muted small mb-1">A Relationship links two entities; ' +
+            'an Attribute stores a single value on this entity.</div>' +
             '<div class="wizard-chip-list" data-entity-id="' + id + '">' +
             altChips +
             '<input type="text" class="wizard-chip-input" data-entity-id="' + id + '" ' +

@@ -809,7 +809,7 @@ function renderCompleteChecklist(draft) {
         summaryEl.innerHTML =
             '<div class="alert alert-success mb-0">' +
             '<i class="bi bi-check-circle-fill me-2"></i>' +
-            `Merged ${stats.classes_added || 0} classes, ${stats.relations_added || 0} relations, ` +
+            `Merged ${stats.classes_added || 0} entities, ${stats.relations_added || 0} relations, ` +
             `${stats.attributes_added || 0} attributes, ${stats.axioms_added || 0} axioms into your ontology.` +
             '</div>';
     } else if (summaryEl) {
@@ -891,6 +891,77 @@ function retryGenerateCompletion() {
     startGenerateCompletion();
 }
 
+/**
+ * Stage 3 "Start Over": discard the current draft (whatever its state —
+ * still completing, failed, or already merged/`done`) and return to the
+ * Configure pane, same destination as the Review pane's discard button
+ * (`window.WizardCore.onDraftDiscarded`). Mirrors the confirm-dialog
+ * pattern used by `discardDraft()` in ontology-wizard-review.js — this
+ * lives here (not there) because it also needs to cancel this module's
+ * in-flight completion task polling/sessionStorage tracking, exactly like
+ * the stale-banner re-detect guard avoids silently discarding unacted-on
+ * work when a task is still running.
+ */
+async function discardDraftAndStartOver() {
+    const taskRunning = !!(wizardCurrentTaskId && sessionStorage.getItem(WIZARD_COMPLETE_TASK_KEY));
+
+    let stage = null;
+    try {
+        const response = await fetch('/ontology/wizard/generate/draft', { credentials: 'same-origin' });
+        const data = await response.json();
+        stage = data.success && data.draft ? data.draft.stage : null;
+    } catch (error) {
+        console.warn('[Wizard] Could not check draft stage before Start Over:', error);
+    }
+
+    const message = taskRunning
+        ? 'Completion is still running in the background. Starting over stops ' +
+          'tracking that task and discards the current draft — any relations, ' +
+          'attributes, or axioms completed so far are lost. Continue?'
+        : stage === 'done'
+            ? 'This draft has already been merged into your ontology. Starting ' +
+              'over only clears the draft record so you can run a fresh ' +
+              'detection cycle — the entities, relations, attributes, and ' +
+              'axioms already merged stay in your ontology. Continue?'
+            : 'Starting over discards the current draft — any relations, ' +
+              'attributes, or axioms completed so far are lost. Continue?';
+
+    const confirmed = await showConfirmDialog({
+        title: 'Start Over',
+        message: message,
+        confirmText: 'Start Over',
+        confirmClass: 'btn-outline-danger',
+        icon: 'arrow-counterclockwise',
+    });
+    if (!confirmed) return;
+
+    if (taskRunning) {
+        sessionStorage.removeItem(WIZARD_COMPLETE_TASK_KEY);
+        wizardCurrentTaskId = null;
+        disableWizardForm(false);
+    }
+
+    try {
+        const response = await fetch('/ontology/wizard/generate/draft/discard', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+        });
+        const data = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+            showNotification(data.message || 'Discarding the draft failed', 'error');
+            return;
+        }
+        showNotification('Draft discarded', 'info');
+        if (window.WizardReview && typeof window.WizardReview.reset === 'function') {
+            window.WizardReview.reset();
+        }
+        setWizardStage('configure');
+    } catch (error) {
+        showNotification('Discarding the draft failed: ' + error.message, 'error');
+    }
+}
+
 function resetCompleteChecklistToPending() {
     WIZARD_COMPLETE_SUBSTAGES.forEach(function (substage) {
         const li = document.querySelector('[data-substage="' + substage + '"]');
@@ -924,7 +995,7 @@ async function handleCompletionSuccess(result) {
 
     const stats = result.merge || {};
     showNotification(
-        `Ontology updated — +${stats.classes_added || 0} classes, ` +
+        `Ontology updated — +${stats.classes_added || 0} entities, ` +
         `+${stats.relations_added || 0} relations, +${stats.attributes_added || 0} attributes, ` +
         `+${stats.axioms_added || 0} axioms.`,
         'success'
@@ -1128,6 +1199,7 @@ window.initOntologyWizard = initOntologyWizard;
 window.loadWizardTemplate = loadWizardTemplate;
 window.startGenerateDetection = startGenerateDetection;
 window.retryGenerateCompletion = retryGenerateCompletion;
+window.discardDraftAndStartOver = discardDraftAndStartOver;
 window.updateWizardTableSelection = updateWizardTableSelection;
 window.selectAllWizardTables = selectAllWizardTables;
 window.updateWizardDocSelection = updateWizardDocSelection;
@@ -1158,6 +1230,9 @@ window.selectAllWizardDocs = selectAllWizardDocs;
                     break;
                 case 'wizard-complete-retry':
                     retryGenerateCompletion();
+                    break;
+                case 'wizard-complete-discard':
+                    discardDraftAndStartOver();
                     break;
                 case 'wizard-doc-preview': {
                     e.stopPropagation();

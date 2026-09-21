@@ -59,6 +59,7 @@ def _gated(css: str, selector: str) -> bool:
         "wizard-review-continue",
         "wizard-review-restart",
         "wizard-complete-retry",
+        "wizard-complete-discard",
     ],
 )
 def test_every_review_and_complete_mutation_action_is_gated(action: str):
@@ -91,6 +92,7 @@ def test_every_gated_action_actually_exists_in_the_wizard_markup_or_js():
         "wizard-review-continue",
         "wizard-review-restart",
         "wizard-complete-retry",
+        "wizard-complete-discard",
     ):
         assert action in haystack, f"gated action {action} no longer exists"
 

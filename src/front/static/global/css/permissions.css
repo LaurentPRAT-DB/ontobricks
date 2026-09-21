@@ -358,7 +358,8 @@ body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizar
 body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-discard"],
 body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-continue"],
 body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-review-restart"],
-body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-complete-retry"] {
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-complete-retry"],
+body:is(.read-only-version, .role-viewer, .read-only-locked) [data-action="wizard-complete-discard"] {
     pointer-events: none !important;
     opacity: 0.5 !important;
     cursor: not-allowed !important;

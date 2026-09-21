@@ -2691,3 +2691,132 @@ Modified/added files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6759 passed,
 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 56.42s.
+
+## Generate wizard: rename Class -> Entity, clarify Relationship/Attribute, add Start Over
+
+### Context
+
+User-approved frontend-only fix batch for the Generate ontology wizard
+(`_ontology_wizard.html` + `ontology-wizard.js` / `ontology-wizard-review.js`):
+(1) the wizard and Help Center glossary still showed the technical OWL term
+"Class" to end users instead of the app's established "Entity" vocabulary;
+(2) the Add/Edit candidate "Type hint" dropdown offered bare "Object
+Property" / "Data Property" options with no link back to the app's existing
+friendly split (Entities / Relationships / Attributes), which field
+feedback flagged as ambiguous; (3) Stage 3 (Complete) had no way back to
+Configure — only a hidden Retry button — unlike Stage 2, which already had
+a "Discard Draft" button wired to `discardDraft()`. No backend/agents code
+was touched; `value="class"` / `value="object_property"` /
+`value="data_property"` and the `stats.classes_added` data key are
+unchanged — only user-visible label text and wizard navigation changed.
+
+### Changes
+
+1. `src/front/templates/partials/ontology/_ontology_wizard.html`
+   Add-candidate "Type hint" `<select>`: relabeled `Class` -> `Entity`,
+   `Object Property` -> `Relationship (object property)`, `Data Property`
+   -> `Attribute (data property)` (values unchanged). Added a one-line
+   `.text-muted.small` hint under the select clarifying that a Relationship
+   links two entities while an Attribute stores a single value on one
+   entity. Relabeled the Stage 2 "Discard Draft" button to "Discard Draft &
+   Start Over" (same `data-action="wizard-review-discard"`, unchanged
+   behavior) for consistency with the new Stage 3 control. Added a Stage 3
+   "Start Over" button (`btn btn-outline-danger`, `id="wizardCompleteDiscardBtn"`,
+   `data-action="wizard-complete-discard"`) next to the existing Retry
+   button in the Complete pane's `d-flex gap-2` row.
+2. `src/front/static/ontology/js/ontology-wizard-review.js`
+   Same relabeling (`Entity` / `Relationship (object property)` /
+   `Attribute (data property)`) plus the matching one-line hint on the
+   Stage 2 per-candidate edit variant of the type-hint select
+   (`renderCandidateRow`), found duplicated during the "any other
+   Class/Classes text" sweep.
+3. `src/front/static/ontology/js/ontology-wizard.js`
+   Renamed the word "classes" -> "entities" in the two user-visible
+   completion toasts/summary strings (`renderCompleteChecklist`'s merge
+   summary and `handleCompletionSuccess`'s success toast); the underlying
+   `stats.classes_added` data key is untouched. Added
+   `discardDraftAndStartOver()`: fetches the current draft to distinguish
+   an in-flight/failed completion from an already-`done` (merged) draft
+   for accurate confirm copy, shows the shared `showConfirmDialog(...)`
+   (never a native `confirm()`), cancels `WIZARD_COMPLETE_TASK_KEY`
+   polling/sessionStorage tracking and re-enables the form if a completion
+   task is still running (mirrors the existing stale-banner re-detect
+   guard's "don't silently discard unacted-on work" pattern), then POSTs
+   the same `/ontology/wizard/generate/draft/discard` endpoint Stage 2 uses
+   and calls `setWizardStage('configure')` to return to Configure. Wired
+   `data-action="wizard-complete-discard"` into the existing delegated
+   click handler alongside `wizard-complete-retry`.
+4. `src/front/templates/partials/layout/help_modal.html`
+   Glossary entry reworded from `<dt>Entity / Class</dt>` to `<dt>Entity</dt>`
+   with the dd now stating "the underlying OWL term is *Class*" — leads
+   with the friendly term, keeps the technical mapping instead of erasing it.
+5. `src/front/static/global/css/permissions.css`
+   Added `[data-action="wizard-complete-discard"]` to the existing
+   read-only/role-viewer/edit-lock disable rule alongside the other
+   Stage 2/3 draft-mutating controls, per the file's own "every
+   draft-mutating control needs its own entry" contract.
+6. `tests/units/front/test_ontology_generate_wizard_staged.py`
+   New tests (RED before implementation, GREEN after): Entity label with
+   `value="class"` preserved in both the Add-candidate and per-candidate
+   edit type-hint selects; Relationship/Attribute relabeling + hint text in
+   both selects; help modal glossary leads with Entity; toast strings say
+   "entities" while `stats.classes_added` stays intact; Stage 3 Start Over
+   button exists, wired to the discard endpoint + `showConfirmDialog` +
+   return-to-Configure, and clears `WIZARD_COMPLETE_TASK_KEY`; Stage 2
+   discard button keeps its `data-action` and endpoint after the label
+   change.
+7. `tests/units/front/test_wizard_review_permissions_gate.py`
+   Added `wizard-complete-discard` to both the "every mutation action is
+   gated" and "every gated action still exists in markup/JS" parametrized
+   lists.
+
+### Scope notes / deliberately left as technical OWL/RDF/SPARQL terms
+
+Left unchanged per the task's explicit exemption for internal/technical
+vocabulary: `owl:Class` / `owl:equivalentClass` in code-sample text
+(`_query_api.html`), the SPARQL `<Class>` placeholder in
+`_ontology_business_rules.html`, the `equivalentClass` axiom `value=`
+attributes in `_ontology_axioms.html`/`ontology-axioms.js`, and every
+`*Class*`-named JS identifier/CSS class attribute across `mapping-*.js`,
+`ontology-entities.js`, `ontology-shared-panels.js`, etc. (className,
+classList, querySelector, existing `OntologyState.classes` data model).
+The Stage 2 read-only locked-anchor badge (`renderLockedAnchorRow`) still
+renders the raw `type_hint` value (e.g. lowercase `class`) rather than a
+friendly label — out of this batch's explicit known-targets list; flagging
+for a follow-up if the same clarity bar should apply there too.
+`docs/user-guide.md` and the Sphinx API docs were grepped for a
+wizard-specific "Class" type-option mention per the process step; none
+exists, so neither was touched.
+
+### Note on repo state
+
+This worktree had substantial pre-existing/concurrent uncommitted work on
+`src/agents/agent_owl_generator/**`, `src/api/routers/internal/ontology.py`,
+`src/back/core/task_manager/TaskManager.py`,
+`src/back/objects/ontology/GenerateWorkflow.py`, and a Stage-2/3 UI
+grid-layout redesign (`wizard-candidate-grid` / `wizard-locked-grid` /
+detect-live-list) partially landed in
+`tests/units/front/test_ontology_generate_wizard_staged.py` — none of it
+authored by this change, none of it touched by this change, and none of it
+staged/committed here (verified file-by-file and hunk-by-hunk via
+`git diff`/`git add -p`, then confirmed with an isolated `git stash
+--keep-index` test run). That parallel work is unrelated to and untouched
+by this frontend-only batch; it remains in the working tree exactly as it
+was, for whoever owns it to finish and commit separately.
+
+Modified files (this change only):
+- `src/front/templates/partials/ontology/_ontology_wizard.html`
+- `src/front/templates/partials/layout/help_modal.html`
+- `src/front/static/ontology/js/ontology-wizard.js`
+- `src/front/static/ontology/js/ontology-wizard-review.js`
+- `src/front/static/global/css/permissions.css`
+- `tests/units/front/test_ontology_generate_wizard_staged.py`
+- `tests/units/front/test_wizard_review_permissions_gate.py`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests: new/updated wizard tests RED before implementation (11 failing),
+GREEN after. Full suite run in isolation (this change's 7 files staged,
+all other pre-existing/concurrent worktree changes stashed via `git stash
+--keep-index` for the duration of the run only, then restored) via
+`uv run --frozen pytest -q -m "not scenario"` -> 6772 passed, 304 skipped,
+6 deselected, 1 xfailed, 32 warnings, 0 failed.
