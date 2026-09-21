@@ -799,6 +799,11 @@ class DomainSession:
                 "map": {},
             }
         )
+        # A Generate draft snapshots existing-anchor identities off the
+        # ontology at detection time; wiping the ontology invalidates that
+        # snapshot outright — never leave a stale draft resumable against
+        # entities that no longer exist.
+        self._data["generate_draft"] = None
         self.clear_generated_content()
         self.record_change(
             "ontology_reset", entity_type="ontology",
@@ -1479,6 +1484,11 @@ class DomainSession:
         self._data["domain"]["domain_folder"] = ""
         self._data["domain"]["last_update"] = ""
         self._data["domain"]["last_build"] = ""
+        # A Generate draft snapshots the *previous* domain/version's
+        # ontology and metadata identity at detection time; importing a
+        # different domain/version must never resurrect it — cross-domain/
+        # version leakage.
+        self._data["generate_draft"] = None
 
         # Import info into domain.info
         if "info" in data:

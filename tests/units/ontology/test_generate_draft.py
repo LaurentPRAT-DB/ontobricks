@@ -173,6 +173,28 @@ class TestGenerateEntityEdits:
         updated = entity.with_updates(alternate_labels=["Shipper", "Freight Co"])
         assert updated.alternate_labels == ["Shipper", "Freight Co"]
 
+    def test_with_updates_rejects_invalid_type_hint(self):
+        """with_updates is strict construction, not the from_dict migration
+        healing boundary: a caller-supplied invalid enum value must raise,
+        never be silently coerced back to a default."""
+        entity = GenerateEntity.new_candidate("Carrier")
+        with pytest.raises(DraftValidationError):
+            entity.with_updates(type_hint="not_a_real_type")
+
+    def test_with_updates_rejects_empty_canonical_label(self):
+        entity = GenerateEntity.new_candidate("Carrier")
+        with pytest.raises(DraftValidationError):
+            entity.with_updates(canonical_label="")
+
+    def test_with_candidate_updated_rejects_invalid_type_hint(self):
+        """Same strictness through the draft-level review mutation path."""
+        cand = GenerateEntity.new_candidate("Carrier", entity_id="cand-1")
+        draft = GenerateDraft(
+            draft_revision=0, stage=REVIEWING, source_fingerprint="fp", candidate_entities=[cand]
+        )
+        with pytest.raises(DraftValidationError):
+            draft.with_candidate_updated("cand-1", type_hint="bogus_type")
+
     def test_normalized_labels_includes_alternates_casefolded(self):
         entity = GenerateEntity.new_candidate(
             "Carrier", alternate_labels=["  Shipper  ", "FREIGHT co"]
@@ -445,6 +467,74 @@ class TestGenerateDraftSerialization:
         assert restored.completion_checkpoints["relations"]["status"] == "done"
         assert restored.completion_checkpoints["attributes"]["status"] == "pending"
         assert restored.completion_checkpoints["axioms"]["status"] == "pending"
+
+    def test_from_dict_normalizes_checkpoint_chain_when_later_stage_impossibly_done(self):
+        """A persisted draft cannot have 'attributes' done while its
+        predecessor 'relations' is pending — that ordering could never have
+        happened through with_checkpoint(). Deserialization must repair
+        this rather than resurrect an impossible state."""
+        restored = GenerateDraft.from_dict(
+            {
+                "completion_checkpoints": {
+                    "relations": {"status": "pending", "result": None},
+                    "attributes": {"status": "done", "result": {"attrs": []}},
+                    "axioms": {"status": "pending", "result": None},
+                }
+            }
+        )
+        assert restored.completion_checkpoints["relations"]["status"] == "pending"
+        assert restored.completion_checkpoints["attributes"]["status"] == "pending"
+        assert restored.completion_checkpoints["attributes"]["result"] is None
+        assert restored.completion_checkpoints["axioms"]["status"] == "pending"
+
+    def test_from_dict_normalizes_checkpoint_chain_cascades_to_axioms(self):
+        """relations failed → attributes must not remain 'done', and the
+        break must cascade: axioms cannot remain 'done' either."""
+        restored = GenerateDraft.from_dict(
+            {
+                "completion_checkpoints": {
+                    "relations": {"status": "failed", "result": None},
+                    "attributes": {"status": "done", "result": {"attrs": []}},
+                    "axioms": {"status": "done", "result": {"axioms": []}},
+                }
+            }
+        )
+        assert restored.completion_checkpoints["relations"]["status"] == "failed"
+        assert restored.completion_checkpoints["attributes"]["status"] == "pending"
+        assert restored.completion_checkpoints["axioms"]["status"] == "pending"
+        assert restored.completion_checkpoints["axioms"]["result"] is None
+
+    def test_from_dict_preserves_valid_in_progress_chain(self):
+        """A legitimately valid chain (relations done, attributes running,
+        axioms pending) must be preserved as-is, not over-corrected."""
+        restored = GenerateDraft.from_dict(
+            {
+                "completion_checkpoints": {
+                    "relations": {"status": "done", "result": {"rel": []}},
+                    "attributes": {"status": "running", "result": None},
+                    "axioms": {"status": "pending", "result": None},
+                }
+            }
+        )
+        assert restored.completion_checkpoints["relations"]["status"] == "done"
+        assert restored.completion_checkpoints["relations"]["result"] == {"rel": []}
+        assert restored.completion_checkpoints["attributes"]["status"] == "running"
+        assert restored.completion_checkpoints["axioms"]["status"] == "pending"
+
+    def test_from_dict_preserves_fully_done_chain(self):
+        restored = GenerateDraft.from_dict(
+            {
+                "completion_checkpoints": {
+                    "relations": {"status": "done", "result": {}},
+                    "attributes": {"status": "done", "result": {}},
+                    "axioms": {"status": "done", "result": {}},
+                }
+            }
+        )
+        assert all(
+            restored.completion_checkpoints[s]["status"] == "done"
+            for s in ("relations", "attributes", "axioms")
+        )
 
     def test_selected_source_config_is_deep_copied(self):
         cfg = {"tables": ["t1"]}
@@ -762,3 +852,59 @@ class TestGenerateDraftStore:
         assert store.load() is not None
         store.reset()
         assert store.load() is None
+
+    def test_load_returns_none_for_structurally_invalid_persisted_draft(
+        self, domain_session
+    ):
+        """A corrupted persisted draft (e.g. two candidates sharing the same
+        id — not healable by GenerateEntity.from_dict's per-field coercion)
+        must not raise out of load(); it must be treated as no resumable
+        draft, forcing re-detection, instead of crashing the caller."""
+        domain_session.data["generate_draft"] = {
+            "draft_revision": 1,
+            "stage": "reviewing",
+            "source_fingerprint": "sha256:abc",
+            "selected_source_config": {},
+            "existing_anchors": [],
+            "candidate_entities": [
+                {
+                    "id": "cand-1",
+                    "canonical_label": "Carrier",
+                    "type_hint": "class",
+                    "origin": "detected",
+                    "included": True,
+                    "locked": False,
+                },
+                {
+                    "id": "cand-1",
+                    "canonical_label": "Shipper",
+                    "type_hint": "class",
+                    "origin": "detected",
+                    "included": True,
+                    "locked": False,
+                },
+            ],
+            "completion_checkpoints": {},
+        }
+
+        store = GenerateDraftStore(domain_session)
+        assert store.load() is None
+
+    def test_load_returns_none_for_invalid_entity_missing_id(self, domain_session):
+        domain_session.data["generate_draft"] = {
+            "draft_revision": 1,
+            "stage": "reviewing",
+            "source_fingerprint": "sha256:abc",
+            "candidate_entities": [{"canonical_label": "Carrier"}],
+        }
+
+        store = GenerateDraftStore(domain_session)
+        assert store.load() is None
+
+    def test_load_of_valid_draft_still_works_after_hardening(self, domain_session):
+        """Guard against over-broad exception handling breaking the happy path."""
+        store = GenerateDraftStore(domain_session)
+        store.save(GenerateDraft.new(source_fingerprint="sha256:ok"))
+        loaded = store.load()
+        assert loaded is not None
+        assert loaded.source_fingerprint == "sha256:ok"

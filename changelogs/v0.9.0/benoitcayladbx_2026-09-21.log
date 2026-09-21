@@ -258,3 +258,89 @@ Tests:
 - GREEN (focused): `uv run --frozen pytest -q tests/units/ontology/test_generate_draft.py tests/units/domain/test_domain_session.py` → 131 passed.
 - Regression (ontology/domain/agents): `uv run --frozen pytest -q tests/units/ontology/ tests/units/domain/ tests/units/agents/` → 1135 passed.
 - Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6421 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 43.90s.
+
+## Address Task 2 review findings for the Generate draft/contract layer
+
+Context: Fixes both "Important" review findings plus two related hardening
+gaps flagged against the task-2 commit (`fb35d6b2`) for the
+`staged-ontology-generate` plan. No agent/API/UI code touched; draft error
+messages remain unchanged and user-facing (no error-exposure change). Strict
+TDD: each finding got a focused failing test, observed RED, then the
+minimal fix to GREEN.
+
+Changes:
+
+1. src/back/objects/ontology/GenerateDraft.py — `GenerateEntity.with_updates()`
+   **(Important)** Was calling `GenerateEntity.from_dict(merged)`, which
+   self-heals an unknown/invalid enum value (e.g. a bogus `type_hint`) back
+   to a safe default instead of raising — correct for the `from_dict`
+   migration boundary, wrong for a live human-review edit, where a bad
+   value should surface immediately. Changed to strict construction
+   (`GenerateEntity(**merged)`), so `__post_init__`'s validation raises
+   `DraftValidationError` for any invalid editable field. `from_dict`
+   itself is untouched and still heals persisted data on deserialize —
+   the two boundaries are now clearly separated by which constructor path
+   they go through.
+2. src/back/objects/session/DomainSession.py — `reset_ontology()` and
+   `import_from_file()`
+   **(Important)** Neither cleared a persisted Generate draft. A draft
+   snapshots existing-anchor identity off the ontology at detection time;
+   `reset_ontology()` wiping the ontology, or `import_from_file()` loading
+   a different domain/version into the same session, left a draft
+   resumable against entities that no longer exist (cross-ontology-reset
+   and cross-domain/version leakage) — the fingerprint mechanism designed
+   to catch a *changed* ontology never even ran because the caller doesn't
+   have to check it before resuming. Both methods now set
+   `self._data["generate_draft"] = None` alongside their other
+   reset/re-init steps.
+3. src/back/objects/ontology/GenerateDraft.py — `GenerateDraftStore.load()`
+   Hardened against a structurally invalid persisted draft (duplicate
+   entity ids, a missing required `id`/`canonical_label` on an entity, or
+   any other whole-draft invariant `GenerateEntity.from_dict`'s per-field
+   healing cannot repair). `GenerateDraft.from_dict` still raises
+   `DraftValidationError` for these — correct, since they are genuine data
+   corruption, not a schema evolution — but `load()` now catches that
+   specific exception, logs a warning, and returns `None`: the same safe
+   "no resumable draft, force re-detection" behavior as an absent draft,
+   instead of an unhandled exception surfacing wherever a caller resumes
+   the Review/Complete screen.
+4. src/back/objects/ontology/GenerateDraft.py — `_normalize_checkpoints()`
+   Added chain-consistency repair on the deserialize path: a substage can
+   only legitimately be `done`/`running`/`failed` if every predecessor is
+   `done` (enforced live by `with_checkpoint()`), so a persisted draft
+   where e.g. `relations` is `pending`/`failed` while `attributes` is
+   `done` could never have been produced by the normal flow. Once a
+   predecessor is found not `done`, every later substage (and its result)
+   is forced back to `pending`/`None`, cascading forward — a corrupted or
+   hand-edited checkpoint blob can no longer let Stage 3 resume claiming a
+   later substage is complete while an earlier one has not actually run.
+5. Explicitly left unchanged per review guidance: `DraftValidationError`/
+   `DraftRevisionConflict`/`DraftStaleError` messages remain user-facing as
+   before (no error-exposure change), and `_sorted_source_config()` stays
+   scoped to sorting top-level list values only (no recursive/nested
+   normalization) — no test in this pass or the prior one surfaced a case
+   needing it.
+6. tests/units/ontology/test_generate_draft.py /
+   tests/units/domain/test_domain_session.py
+   12 new focused tests: `with_updates`/`with_candidate_updated` rejecting
+   an invalid `type_hint` and an empty `canonical_label`; `reset_ontology()`
+   and `import_from_file()` clearing a persisted draft; `GenerateDraftStore
+   .load()` returning `None` (not raising) for a duplicate-id draft, a
+   missing-`id` entity, and confirming the happy path still loads
+   correctly after the hardening; and checkpoint-chain normalization for
+   an impossible `attributes done` while `relations` is `pending`, a
+   cascading `relations failed` case, and two negative controls (a valid
+   in-progress chain and a fully-done chain must be preserved unchanged).
+
+Modified files:
+- src/back/objects/ontology/GenerateDraft.py
+- src/back/objects/session/DomainSession.py
+- tests/units/ontology/test_generate_draft.py
+- tests/units/domain/test_domain_session.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/ontology/test_generate_draft.py tests/units/domain/test_domain_session.py` → 8 failed (the 8 new/updated assertions for findings 1/3/4 on the entity/draft/store side and 2 on the DomainSession side), 135 passed.
+- GREEN: same command → 143 passed.
+- Regression (ontology/domain/agents): `uv run --frozen pytest -q tests/units/ontology/ tests/units/domain/ tests/units/agents/` → 1150 passed.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6433 passed, 304 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.04s.

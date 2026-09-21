@@ -333,6 +333,52 @@ class TestGenerateDraftIntegration:
         domain_session.reset()
         assert domain_session.generate_draft_store.load() is None
 
+    def test_reset_ontology_clears_persisted_draft(self, domain_session):
+        """A Generate draft snapshots the ontology's existing entities at
+        detection time; wiping the ontology via ``reset_ontology()`` (a
+        separate, narrower reset than the whole-session ``reset()``) must
+        not leave a draft around that references entities that no longer
+        exist — cross-ontology-reset leakage."""
+        from back.objects.ontology.GenerateDraft import GenerateDraft
+
+        domain_session.generate_draft_store.save(
+            GenerateDraft.new(source_fingerprint="sha256:abc")
+        )
+        domain_session.reset_ontology()
+        assert domain_session.generate_draft_store.load() is None
+
+    def test_import_from_file_clears_persisted_draft(self, domain_session):
+        """Loading a different domain/version into the current session must
+        not resurrect a draft detected against the *previous* domain's
+        ontology/metadata — cross-domain/version leakage."""
+        from back.objects.ontology.GenerateDraft import GenerateDraft
+
+        domain_session.generate_draft_store.save(
+            GenerateDraft.new(source_fingerprint="sha256:abc")
+        )
+        domain_session.import_from_file(
+            {
+                "info": {"name": "OtherDomain"},
+                "versions": {
+                    "1": {
+                        "ontology": {
+                            "name": "Other",
+                            "base_uri": "http://other.org#",
+                            "classes": [],
+                            "properties": [],
+                            "constraints": [],
+                            "swrl_rules": [],
+                            "axioms": [],
+                            "expressions": [],
+                        },
+                        "assignment": {"entities": [], "relationships": []},
+                        "design_layout": {"views": {}, "map": {}},
+                    }
+                },
+            }
+        )
+        assert domain_session.generate_draft_store.load() is None
+
 
 class TestExportImport:
     def test_export_for_save(self, domain_session):

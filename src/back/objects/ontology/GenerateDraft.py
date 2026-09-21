@@ -37,9 +37,12 @@ from typing import (
 )
 
 from back.core.errors import ConflictError, ValidationError
+from back.core.logging import get_logger
 
 if TYPE_CHECKING:
     from back.objects.session.DomainSession import DomainSession
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Enumerations (kept as plain string constants — the persisted shape is a
@@ -109,15 +112,34 @@ def _normalize_checkpoints(raw: Optional[Dict[str, Any]]) -> Dict[str, Dict[str,
     a safe ``pending`` default rather than raising — this is the boundary
     that must tolerate an older persisted schema (migration), unlike
     :meth:`GenerateDraft.with_checkpoint`, which is strict.
+
+    Also repairs an **inconsistent chain**: a substage can only legitimately
+    be ``done``/``running``/``failed`` if every predecessor is ``done`` —
+    ``with_checkpoint()`` enforces this on every live transition, so a
+    persisted draft where e.g. ``relations`` is ``pending``/``failed`` while
+    ``attributes`` is ``done`` could never have been produced by the normal
+    flow. Once a predecessor is found not ``done``, every later substage is
+    forced back to ``pending`` (result cleared) regardless of what was
+    stored — the break cascades forward, since none of those later
+    substages could legitimately have started either.
     """
     raw = raw or {}
     normalized: Dict[str, Dict[str, Any]] = {}
+    predecessor_done = True
     for substage in _SUBSTAGE_ORDER:
         entry = raw.get(substage) or {}
         status = entry.get("status")
         if status not in _VALID_CHECKPOINT_STATUSES:
             status = CHECKPOINT_PENDING
-        normalized[substage] = {"status": status, "result": entry.get("result")}
+
+        if predecessor_done:
+            result = entry.get("result")
+        else:
+            status = CHECKPOINT_PENDING
+            result = None
+
+        normalized[substage] = {"status": status, "result": result}
+        predecessor_done = status == CHECKPOINT_DONE
     return normalized
 
 
@@ -268,6 +290,13 @@ class GenerateEntity:
         rejects any edit outright: per the design's Stage 2 contract, its
         id/canonical label/alternate labels "cannot be changed from this
         screen" — only Stage 3 (out of scope here) may later enrich it.
+
+        This is **strict construction**, not the ``from_dict`` migration
+        boundary: an invalid enum value (e.g. an unknown ``type_hint``) is a
+        live human-review edit, not an older persisted schema, so it raises
+        :class:`DraftValidationError` immediately rather than being
+        self-healed back to a default. Only ``from_dict`` (deserializing
+        potentially-older persisted data) heals unknown enum values.
         """
         if self.locked and kwargs:
             raise DraftValidationError(
@@ -280,7 +309,7 @@ class GenerateEntity:
             ):
                 raise DraftValidationError(f"{immutable_field!r} is immutable.")
         merged = {**self.to_dict(), **kwargs}
-        return GenerateEntity.from_dict(merged)
+        return GenerateEntity(**merged)
 
 
 def build_locked_anchors_from_classes(
@@ -641,11 +670,29 @@ class GenerateDraftStore:
         self._session = session
 
     def load(self) -> Optional[GenerateDraft]:
-        """Return the persisted draft, or ``None`` if none exists."""
+        """Return the persisted draft, or ``None`` if none exists.
+
+        ``GenerateDraft.from_dict`` already self-heals unknown/missing
+        per-field enum values (the ordinary schema-migration path), but a
+        handful of invariants can only be checked once the whole draft is
+        assembled (unique entity ids, unique normalized labels, a required
+        ``id``/``canonical_label`` on every entity). A persisted draft that
+        still fails one of *those* is corrupted beyond safe per-field
+        repair — rather than raise and take down whatever screen is trying
+        to resume, treat it exactly like "no draft": force re-detection.
+        """
         raw = self._session.data.get("generate_draft")
         if not raw:
             return None
-        return GenerateDraft.from_dict(raw)
+        try:
+            return GenerateDraft.from_dict(raw)
+        except DraftValidationError:
+            logger.warning(
+                "Discarding structurally invalid persisted Generate draft "
+                "(forcing re-detection).",
+                exc_info=True,
+            )
+            return None
 
     def save(self, draft: GenerateDraft) -> GenerateDraft:
         """Persist *draft*, enforcing optimistic concurrency.
