@@ -59,7 +59,7 @@ from agents.engine_base import (
     dispatch_tool,
     extract_message_content,
 )
-from agents.tracing import trace_agent
+from agents.tracing import trace_agent, trace_tool
 
 logger = get_logger(__name__)
 
@@ -162,6 +162,26 @@ def _build_context(
         warehouse_id=warehouse_id or "",
         metadata=md,
     )
+
+
+@trace_tool()
+def _dispatch_detection_tool(
+    ctx: ToolContext, tool_name: str, arguments: dict, *, trace_name: str
+) -> str:
+    """Dispatch one Stage-1 tool call with a per-tool MLflow TOOL span.
+
+    ``dispatch_tool`` (``agents.engine_base``) is shared by ~10 other agent
+    engines' ReAct loops; adding a span inside it would change every one of
+    their traces. ``trace_tool`` is otherwise applied statically per-handler
+    (e.g. ``agent_graph_interpreter.tools.tool_get_entity_details``), which
+    does not fit a tool name chosen dynamically per LLM tool call. This local
+    wrapper applies the same ``trace_tool`` decorator — scoped to just the
+    staged detection tool-dispatch call — with no change to ``dispatch_tool``
+    or the shared tool handlers themselves. The positional call signature
+    ``(ctx, tool_name, arguments)`` matches ``trace_tool``'s argument-index
+    contract exactly.
+    """
+    return dispatch_tool(TOOL_HANDLERS, ctx, tool_name, arguments, trace_name=trace_name)
 
 
 # =====================================================
@@ -307,8 +327,7 @@ def detect_entities(
                     )
                 )
                 t0 = time.time()
-                tool_result = dispatch_tool(
-                    TOOL_HANDLERS,
+                tool_result = _dispatch_detection_tool(
                     ctx,
                     tool_name,
                     arguments,

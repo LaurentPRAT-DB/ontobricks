@@ -233,8 +233,17 @@ append-only merge is still **(staged, planned)** for Task 4:
   each constraint `kind` maps to a deterministic check that exercises the
   real `detect_entities` / `infer_relations` / `infer_attributes` /
   `infer_axioms` / `GenerateDraft` code paths with scripted LLM responses
-  (no live endpoint required). The runner still structurally validates every
-  staged row first (`_validate_staged_examples`): a floor of 14 examples,
+  (no live endpoint required). Detection-tagged rows specifically drive the
+  real `staged.detect_entities()` orchestrator end-to-end — existing
+  anchors/metadata/corpus are built from that row's own `input`, only
+  `staged.call_serving_endpoint` is scripted, and a `get_metadata` tool
+  round-trip is dispatched for real through `dispatch_tool`/`TOOL_HANDLERS`
+  (offline-safe) — so the observed tool surface/dispatch (`does_not_parse`)
+  and dedup outcome (`excludes_existing_anchor_as_new`, etc.) reflect the
+  production code path, not a hand-written call to
+  `schemas.parse_detection_payload` alone. The runner still structurally
+  validates every staged row first (`_validate_staged_examples`): a floor of
+  14 examples,
   unique ids, a present `input.stage`, non-empty `expected.constraints`, and
   mandatory coverage of the `stage_no_rewrite_after_reject` and
   `stage_no_one_shot_default` constraint kinds, so neither review-flagged
@@ -251,14 +260,24 @@ Existing: `@trace_agent` on the entry point in `src/agents/agent_owl_generator/`
 has its own `@trace_agent(name=..., stage=...)` span
 (`owl_generator.detect` / `.relations` / `.attributes` / `.axioms`). Every
 staged span additionally carries `draft_id`, `draft_revision`, and `stage`
-(`detect` | `relations` | `attributes` | `axioms`) as trace tags/attributes
-when the caller passes them, so a resumed run's traces can be correlated
-across the checkpointed substages, and so an eval harness can assert
-stage-order and no-rewrite-after-reject directly from the trace without
-re-deriving it from prose output. **(staged, planned)** wiring `draft_id`/
-`draft_revision` from a persisted draft into every call is Task 4 (checkpoint
-persistence); the staged functions already accept and forward those kwargs
-to the trace today.
+(`detect` | `relations` | `attributes` | `axioms`) as **span attributes**
+(`Span.set_attributes`) when the caller passes them — not MLflow trace-level
+`tags` (`mlflow.set_trace_tag`/trace `tags=`), which this module does not
+use — so a resumed run's traces can be correlated across the checkpointed
+substages, and so an eval harness can assert stage-order and
+no-rewrite-after-reject directly from the trace without re-deriving it from
+prose output. **(staged, planned)** wiring `draft_id`/`draft_revision` from a
+persisted draft into every call is Task 4 (checkpoint persistence); the
+staged functions already accept and forward those kwargs to the trace today.
+
+Each Stage-1 tool dispatch (`detect_entities`'s `list_documents` /
+`read_document` / `get_metadata` / `get_table_detail` calls) additionally
+gets its own `@trace_tool` **TOOL** span via a local wrapper
+(`staged._dispatch_detection_tool`), carrying the tool name (input) and an
+`ok`/`error` status (output) derived from the dispatched JSON result. This is
+scoped to the staged detection path only — the shared `dispatch_tool`
+helper (used by ~10 other agent engines) and the shared tool handlers are
+unchanged.
 
 ## 9. Plan reference
 

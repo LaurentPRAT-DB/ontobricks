@@ -36,7 +36,6 @@ from back.objects.ontology.GenerateDraft import (
     _SUBSTAGE_ORDER,
 )
 from agents.agent_owl_generator import schemas, staged
-from agents.agent_owl_generator.tools import TOOL_DEFINITIONS
 
 
 # ---------------------------------------------------------------------------
@@ -68,64 +67,182 @@ def _closed_draft() -> GenerateDraft:
     )
 
 
+def _tool_call_answer(name: str, args: str = "{}") -> dict:
+    return {
+        "choices": [
+            {
+                "finish_reason": "tool_calls",
+                "message": {
+                    "content": None,
+                    "tool_calls": [{"id": "tc-1", "function": {"name": name, "arguments": args}}],
+                },
+            }
+        ],
+        "usage": {"prompt_tokens": 20, "completion_tokens": 5},
+    }
+
+
+def _existing_anchors_from_example(example: dict) -> List[GenerateEntity]:
+    """Build locked anchors from the dataset row's own ``existing_ontology``
+    — never a literal hard-coded in the check function."""
+    entities = example.get("input", {}).get("existing_ontology", {}).get("entities", [])
+    anchors: List[GenerateEntity] = []
+    for ent in entities:
+        label = ent.get("canonical_label") or ent.get("id") or ""
+        if not label:
+            continue
+        anchors.append(
+            _anchor(
+                ent.get("id") or f"cls-{label}",
+                label,
+                alts=list(ent.get("alternate_labels") or []),
+            )
+        )
+    return anchors
+
+
+def _build_scripted_detection_payload(example: dict) -> dict:
+    """Build the JSON object the scripted (mocked) LLM answer returns for one
+    detection dataset row, consistent with the row's own constraints, so the
+    real ``detect_entities()``/``schemas`` dedup and defaulting logic has
+    real work to do (rather than the check hand-writing the outcome)."""
+    constraints = {c["kind"]: c["value"] for c in example.get("expected", {}).get("constraints", [])}
+    wanted = list(example.get("expected", {}).get("contains", []))
+    if "min_new_candidate_entities" in constraints:
+        n = int(constraints["min_new_candidate_entities"])
+        i = 0
+        while len(wanted) < n:
+            wanted.append(f"SyntheticEntity{i}")
+            i += 1
+    if not wanted:
+        wanted = ["Placeholder"]
+
+    candidates = []
+    for i, label in enumerate(wanted):
+        entry: Dict[str, Any] = {"canonical_label": label}
+        if i == 0 and "synonyms_as_alternate_labels" in constraints:
+            alts = constraints["synonyms_as_alternate_labels"]
+            entry["alternate_labels"] = list(alts) if isinstance(alts, list) else [alts]
+        candidates.append(entry)
+
+    # Deliberately re-propose locked-anchor identities (by canonical label or
+    # alternate label) so the real dedup path has something to drop.
+    for kind in ("excludes_existing_anchor_as_new", "excludes_existing_alternate_label_as_new"):
+        if kind in constraints:
+            candidates.append({"canonical_label": str(constraints[kind])})
+
+    return {"candidate_entities": candidates}
+
+
+def _run_detection_for_example(example: dict):
+    """Run the REAL ``staged.detect_entities()`` orchestrator for one
+    detection dataset row.
+
+    Existing anchors, metadata, and selected docs come from the example's own
+    ``input`` — only ``staged.call_serving_endpoint`` is scripted (offline,
+    deterministic). A ``get_metadata`` tool round-trip is dispatched for real
+    first (offline-safe: it only reads ``ctx.metadata``, no network) so the
+    tool surface/dispatch asserted by callers reflects what the production
+    code path actually offered/ran, not a hand-picked static list.
+    """
+    anchors = _existing_anchors_from_example(example)
+    metadata = example.get("input", {}).get("metadata") or {"tables": []}
+    corpus = example.get("input", {}).get("corpus") or []
+    selected_docs = [d.get("name") for d in corpus if d.get("name")]
+    payload = json.dumps(_build_scripted_detection_payload(example))
+
+    with patch.object(staged, "call_serving_endpoint") as mock_llm:
+        mock_llm.side_effect = [_tool_call_answer("get_metadata"), _answer(payload)]
+        result = staged.detect_entities(
+            host="https://test.databricks.com",
+            token="tok",
+            endpoint_name="dbx-llm",
+            metadata=metadata,
+            guidelines="Detect the core entities of the domain.",
+            existing_anchors=anchors,
+            selected_docs=selected_docs,
+            registry={},
+        )
+    if mock_llm.call_args_list:
+        assert mock_llm.call_args_list[0].kwargs.get("trace_name") == "owl_generator.detect"
+    return result, mock_llm
+
+
 # ---------------------------------------------------------------------------
 # Per-constraint deterministic checks
 # ---------------------------------------------------------------------------
 
 
-def _c_all_included(_e, _c) -> bool:
-    cands = schemas.parse_detection_payload(
-        '{"candidate_entities": [{"canonical_label": "A"}, {"canonical_label": "B"}]}'
+def _c_all_included(example, _c) -> bool:
+    result, _ = _run_detection_for_example(example)
+    return (
+        result.success
+        and bool(result.candidate_entities)
+        and all(c.included for c in result.candidate_entities)
     )
-    return bool(cands) and all(c.included for c in cands)
 
 
-def _c_excludes_anchor(_e, constraint) -> bool:
+def _c_excludes_anchor(example, constraint) -> bool:
     label = str(constraint["value"])
-    cands = schemas.parse_detection_payload(
-        json.dumps({"candidate_entities": [{"canonical_label": label},
-                                           {"canonical_label": "BrandNew"}]}),
-        existing_anchors=[_anchor("cls-x", label)],
-    )
-    return label not in {c.canonical_label for c in cands}
+    result, _ = _run_detection_for_example(example)
+    return result.success and label not in {
+        c.canonical_label for c in result.candidate_entities
+    }
 
 
-def _c_excludes_anchor_alt(_e, constraint) -> bool:
+def _c_excludes_anchor_alt(example, constraint) -> bool:
     alt = str(constraint["value"])
-    cands = schemas.parse_detection_payload(
-        json.dumps({"candidate_entities": [{"canonical_label": alt}]}),
-        existing_anchors=[_anchor("cls-x", "Order", alts=[alt])],
-    )
-    return all(c.canonical_label != alt for c in cands)
+    result, _ = _run_detection_for_example(example)
+    return result.success and all(c.canonical_label != alt for c in result.candidate_entities)
 
 
-def _c_min_new_candidates(_e, constraint) -> bool:
+def _c_min_new_candidates(example, constraint) -> bool:
     n = int(constraint["value"])
-    items = ",".join('{"canonical_label": "E%d"}' % i for i in range(max(n, 1)))
-    cands = schemas.parse_detection_payload('{"candidate_entities": [%s]}' % items)
-    return len(cands) >= n
+    result, _ = _run_detection_for_example(example)
+    return result.success and len(result.candidate_entities) >= n
 
 
-def _c_synonyms_as_alt(_e, constraint) -> bool:
+def _c_synonyms_as_alt(example, constraint) -> bool:
     alts = constraint["value"] if isinstance(constraint["value"], list) else [constraint["value"]]
-    payload = json.dumps(
-        {"candidate_entities": [{"canonical_label": "Customer", "alternate_labels": alts}]}
+    result, _ = _run_detection_for_example(example)
+    if not result.success:
+        return False
+    return any(
+        all(a in c.alternate_labels for a in alts) for c in result.candidate_entities
     )
-    cands = schemas.parse_detection_payload(payload)
-    return len(cands) == 1 and all(a in cands[0].alternate_labels for a in alts)
 
 
-def _c_no_separate_synonym(_e, _c) -> bool:
-    payload = (
-        '{"candidate_entities": [{"canonical_label": "Customer", '
-        '"alternate_labels": ["Client", "Account Holder"]}]}'
-    )
-    return len(schemas.parse_detection_payload(payload)) == 1
+def _c_no_separate_synonym(example, _c) -> bool:
+    result, _ = _run_detection_for_example(example)
+    if not result.success:
+        return False
+    constraints = {c["kind"]: c["value"] for c in example["expected"]["constraints"]}
+    alts = constraints.get("synonyms_as_alternate_labels") or []
+    if isinstance(alts, str):
+        alts = [alts]
+    labels = {c.canonical_label for c in result.candidate_entities}
+    return not any(a in labels for a in alts)
 
 
-def _c_does_not_parse(_e, _c) -> bool:
-    names = {t["function"]["name"] for t in TOOL_DEFINITIONS}
-    return "ai_parse_document" not in names and "check_owl_pitfalls" not in names
+def _c_does_not_parse(example, constraint) -> bool:
+    banned = {"ai_parse_document", "check_owl_pitfalls"}
+    stage = example.get("input", {}).get("stage", "")
+    if stage != "detect":
+        # Non-detection rows (e.g. completion) never receive a tool surface
+        # at all — verified via the real completion orchestrator.
+        return _c_no_document_tools(example, constraint)
+
+    result, mock_llm = _run_detection_for_example(example)
+    if not result.success:
+        return False
+    # Tool surface actually offered to the model on any real call.
+    for call in mock_llm.call_args_list:
+        offered = {t["function"]["name"] for t in (call.kwargs.get("tools") or [])}
+        if offered & banned:
+            return False
+    # Tool calls actually dispatched during the real orchestrator run.
+    dispatched = {s.tool_name for s in result.steps if s.step_type == "tool_call"}
+    return not (dispatched & banned)
 
 
 def _c_append_only(_e, _c) -> bool:

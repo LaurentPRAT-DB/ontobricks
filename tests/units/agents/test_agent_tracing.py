@@ -219,3 +219,99 @@ class TestTraceAgentStageTags:
         assert recorded.get("stage") == "detect"
         assert recorded.get("draft_id") == "draft-1"
         assert recorded.get("draft_revision") == "4"
+
+
+class TestTraceToolStatus:
+    """Review fix (item 2/3): ``trace_tool``'s span carries both the tool
+    name (input) and an ok/error ``status`` (output) derived from the
+    dispatched result, both surfaced as **span attributes** — MLflow's
+    ``Span.set_attributes``/``set_inputs``/``set_outputs`` API, not trace-
+    level ``tags`` (see the docstring fix in ``trace_agent``/``trace_tool``:
+    this module never calls a trace-tags API)."""
+
+    def _fake_mlflow(self):
+        class _Span:
+            def __init__(self):
+                self.inputs = {}
+                self.outputs = {}
+
+            def set_inputs(self, data):
+                self.inputs.update(data)
+
+            def set_outputs(self, data):
+                self.outputs.update(data)
+
+        class _CM:
+            def __init__(self, span):
+                self._span = span
+
+            def __enter__(self_inner):
+                return self_inner._span
+
+            def __exit__(self_inner, *exc):
+                return False
+
+        span = _Span()
+        mock = MagicMock()
+        mock.start_span.return_value = _CM(span)
+
+        class _SpanType:
+            AGENT = "AGENT"
+            LLM = "LLM"
+            TOOL = "TOOL"
+
+        entities = MagicMock()
+        entities.SpanType = _SpanType
+        return mock, entities, span
+
+    def test_status_ok_for_a_plain_result(self):
+        mock_mlflow, mock_entities, span = self._fake_mlflow()
+        tracing_mod._TRACING_READY = True
+        try:
+            with patch.dict(
+                "sys.modules",
+                {"mlflow": mock_mlflow, "mlflow.entities": mock_entities},
+            ):
+                @trace_tool()
+                def dispatch(ctx, tool_name, arguments, *, trace_name="x"):
+                    return '{"tables": []}'
+
+                dispatch(None, "get_metadata", {})
+        finally:
+            tracing_mod._TRACING_READY = False
+        assert span.inputs["tool_name"] == "get_metadata"
+        assert span.outputs["status"] == "ok"
+
+    def test_status_error_for_a_json_error_result(self):
+        mock_mlflow, mock_entities, span = self._fake_mlflow()
+        tracing_mod._TRACING_READY = True
+        try:
+            with patch.dict(
+                "sys.modules",
+                {"mlflow": mock_mlflow, "mlflow.entities": mock_entities},
+            ):
+                @trace_tool()
+                def dispatch(ctx, tool_name, arguments, *, trace_name="x"):
+                    return '{"error": "table_name is required"}'
+
+                dispatch(None, "get_table_detail", {})
+        finally:
+            tracing_mod._TRACING_READY = False
+        assert span.outputs["status"] == "error"
+
+    def test_status_ok_for_a_non_json_string_result(self):
+        mock_mlflow, mock_entities, span = self._fake_mlflow()
+        tracing_mod._TRACING_READY = True
+        try:
+            with patch.dict(
+                "sys.modules",
+                {"mlflow": mock_mlflow, "mlflow.entities": mock_entities},
+            ):
+                @trace_tool()
+                def dispatch(ctx, tool_name, arguments, *, trace_name="x"):
+                    return "not json"
+
+                dispatch(None, "some_tool", {})
+        finally:
+            tracing_mod._TRACING_READY = False
+        assert span.outputs["status"] == "ok"

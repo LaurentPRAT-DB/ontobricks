@@ -549,3 +549,134 @@ Tests:
 - Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6482 passed,
   304 skipped, 6 deselected, 1 xfailed, 32 warnings in 44.74s (identical
   pass count to the pre-change baseline — no regressions).
+
+## Address Task 3 review findings for the staged owl-generator orchestration
+
+Context: Fixes five review findings against the task-3 commit (`3ff760a2`)
+for the `staged-ontology-generate` plan. No API/UI/session-orchestration
+code touched; the deprecated one-shot bridge (`engine.py`) removal stays
+scoped to Task 4 as before. Followed strict TDD: each finding got a
+focused failing test, an observed RED, then the minimal fix to GREEN.
+
+Changes:
+
+1. tests/eval/staged_contract.py — **(Important)** detection-tagged
+   constraint checks now exercise the real `staged.detect_entities()`
+   orchestrator instead of calling `schemas.parse_detection_payload()`
+   directly with a hand-written literal. New `_run_detection_for_example()`
+   builds existing anchors / metadata / selected docs from each dataset
+   row's own `input` (`existing_ontology`/`metadata`/`corpus`), scripts two
+   `staged.call_serving_endpoint` responses (a `get_metadata` tool-call
+   round-trip dispatched for real through `dispatch_tool`/`TOOL_HANDLERS` —
+   offline-safe, no network — followed by the final structured answer, its
+   candidates built by `_build_scripted_detection_payload()` from the row's
+   own constraints), and asserts the observed `trace_name`. Rewrote
+   `_c_all_included`, `_c_excludes_anchor`, `_c_excludes_anchor_alt`,
+   `_c_min_new_candidates`, `_c_synonyms_as_alt`, and `_c_no_separate_synonym`
+   to call it. `_c_does_not_parse` now branches on the row's own
+   `input.stage`: for a `detect` row it inspects the tool definitions
+   actually offered to the scripted LLM call (`mock_llm.call_args_list[...]
+   .kwargs["tools"]`) and the tool calls actually dispatched
+   (`DetectionResult.steps`) for `ai_parse_document`/`check_owl_pitfalls`,
+   rather than a static `TOOL_DEFINITIONS` name check that would pass even
+   if a bug caused one to be dispatched anyway; for the one completion-stage
+   row it delegates to `_c_no_document_tools` (real `infer_attributes()`
+   call, `tools=None`). The deterministic/offline eval and the pre-existing
+   parsed-corpus gate are unaffected — only `call_serving_endpoint` is
+   scripted, still no live endpoint.
+2. src/agents/agent_owl_generator/staged.py — per-tool MLflow tracing for
+   Stage-1 tool dispatch. Added `_dispatch_detection_tool()`, a local
+   `@trace_tool()`-wrapped wrapper around the existing `dispatch_tool()`
+   call in `detect_entities()`'s tool loop. `dispatch_tool` itself (shared
+   by ~10 other agent engines' ReAct loops) and the shared tool handlers
+   are untouched — adding a span inside the shared helper would have
+   changed every one of those agents' traces, which is out of scope here.
+   `trace_tool`'s existing per-handler pattern (statically decorating one
+   handler, e.g. `agent_graph_interpreter.tools.tool_get_entity_details`)
+   doesn't fit a tool name chosen dynamically per LLM tool call, so this is
+   a thin local dispatcher instead; its positional call signature
+   `(ctx, tool_name, arguments)` matches `trace_tool`'s existing
+   argument-index contract exactly, so no change was needed there either.
+3. src/agents/tracing.py — `trace_tool()` span outputs now include a
+   `status` (`"ok"`/`"error"`) alongside the existing `result_length`,
+   derived from whether the JSON result string carries a top-level `error`
+   key (`_tool_result_status()`, new) — so a tool call's name (already a
+   span input) and outcome are both visible on the trace. Purely additive;
+   the wrapped function's return value is unchanged (no handler behaviour
+   change).
+4. src/agents/tracing.py — terminology fix. `trace_agent()`'s local `tags`
+   variable renamed to `attributes` (it is passed to `Span.set_attributes`,
+   never a trace-tags API), and its docstring — plus the corresponding
+   passage in SPEC.md §8 — corrected from "trace tags/attributes" to
+   "span attributes … not MLflow trace-level tags (`mlflow.set_trace_tag`
+   / trace `tags=`), which this module does not use." No behaviour change;
+   this repo has no existing use of the real trace-tags API, so none was
+   added (avoiding overreach).
+5. tests/units/agents/test_owl_generator_staged.py — added a hard
+   regression test (`TestNoOneShotDefault`) asserting, via `ast`-parsing
+   `staged.py`'s own import statements, that it never imports
+   `agents.agent_owl_generator.engine` (the legacy one-shot bridge's
+   module), and a second test asserting the module source never references
+   the bridge's pitfall-rewrite-loop symbols (`tool_check_owl_pitfalls`,
+   `check_owl_pitfalls`, `_evaluate_ontology_stage`, `owl_eval_max_rounds`,
+   `MAX_OWL_EVAL_ROUNDS`) alongside the pre-existing `run_agent` check.
+   Both already passed with no production change needed (the invariant
+   already held) — this only hardens the regression coverage per the
+   review's Task-4 hand-off note. Also added `TestPerToolTracing` (3 tests:
+   named `tool:<name>` TOOL span with `ok` status, `error` status for a
+   failed dispatch, and byte-identical tool-result output whether or not
+   tracing is enabled).
+6. tests/units/agents/test_agent_tracing.py — added `TestTraceToolStatus`
+   (3 tests: `status="ok"` for a plain result, `status="error"` for a JSON
+   `{"error": ...}` result, `status="ok"` for a non-JSON string result).
+7. tests/eval/test_staged_contract.py (new) — 8 focused pytest tests
+   pinning finding 1: five tests assert the rewritten detection checks
+   call the real `staged.detect_entities` (via `patch.object(..., wraps=
+   staged.detect_entities)`) and that `_c_min_new_candidates` seeds the
+   real call from the example's own `existing_ontology` anchors (not a
+   literal); two tests pin `_c_does_not_parse`'s observed-behaviour
+   contract — a scripted `DetectionResult` with an actually-dispatched
+   `ai_parse_document` tool-call step must fail the check (a purely
+   static `TOOL_DEFINITIONS` check would incorrectly pass), and the real
+   detection run over the dataset's own example must pass; one test pins
+   the completion-stage row still going through `_c_no_document_tools`.
+8. .planning/agents/agent_owl_generator/SPEC.md — §7 now documents that
+   detection-tagged rows drive the real orchestrator end-to-end (tool
+   surface/dispatch and dedup outcome observed, not asserted from a direct
+   `schemas` call); §8 corrected to "span attributes" (not trace tags) and
+   documents the new per-tool `@trace_tool` TOOL spans for Stage-1
+   dispatch, scoped to the staged path. No eval dataset row, threshold, or
+   count changed — the aggregate is unaffected by this fix (still `1.000`).
+
+Modified files:
+- tests/eval/staged_contract.py
+- tests/eval/test_staged_contract.py (new)
+- src/agents/agent_owl_generator/staged.py
+- src/agents/tracing.py
+- tests/units/agents/test_owl_generator_staged.py
+- tests/units/agents/test_agent_tracing.py
+- .planning/agents/agent_owl_generator/SPEC.md
+- changelogs/v0.9.0/benoitcayladbx_2026-09-21.log
+
+Tests:
+- RED (focused, new failing assertions before the fix):
+  `uv run --frozen pytest -q tests/eval/test_staged_contract.py` → 7 failed,
+  1 passed (detection checks never called `detect_entities`; the scripted-
+  dispatch `does_not_parse` check returned `True` when it should have
+  reacted to an observed banned tool call).
+  `uv run --frozen pytest -q tests/units/agents/test_agent_tracing.py -k
+  TraceToolStatus` → 3 failed (`KeyError: 'status'`, not yet implemented).
+  `uv run --frozen pytest -q tests/units/agents/test_owl_generator_staged.py
+  -k "PerToolTracing or legacy_engine"` → 4 failed (no `_dispatch_detection_
+  tool`, no TOOL span, an over-strict draft of the legacy-import test).
+- GREEN (focused): `uv run --frozen pytest -q tests/units/agents/
+  tests/eval/test_staged_contract.py` → 245 passed.
+- Offline eval: `uv run --frozen python tests/eval/run_agent_owl_generator.py`
+  → all 14 staged examples PASS, staged-contract aggregate `1.000`
+  (threshold `0.950`); all 10 parsed-corpus cases PASS, aggregate `1.000`
+  (threshold `0.900`). No live MLflow run — same missing-credentials
+  blocker as prior Task 1/2/3 entries.
+- Full suite: `uv run --frozen pytest -q -m "not scenario"` → 6498 passed,
+  304 skipped, 6 deselected, 1 xfailed, 32 warnings in 55.86s (16 more
+  passing than the Task 3 baseline — the 16 new focused tests above; no
+  regressions).

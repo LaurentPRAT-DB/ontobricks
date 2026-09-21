@@ -6,9 +6,10 @@ plus a safe decorator that degrades to a no-op when MLflow is unavailable
 or not configured.
 """
 
+import json
 import os
 import functools
-from typing import Optional
+from typing import Any, Optional
 
 from back.core.logging import get_logger
 
@@ -68,9 +69,12 @@ def trace_agent(name: Optional[str] = None, *, stage: Optional[str] = None):
     """Decorator: wrap an agent entry point with an AGENT span.
 
     ``stage`` and the caller-supplied ``draft_id`` / ``draft_revision`` kwargs
-    are attached to the span as attributes/tags so a staged, resumable run's
-    traces correlate across the checkpointed substages and an eval harness can
-    assert stage identity directly from the trace (SPEC §8).
+    are attached to the span as **span attributes** (``Span.set_attributes``)
+    so a staged, resumable run's traces correlate across the checkpointed
+    substages and an eval harness can assert stage identity directly from the
+    trace (SPEC §8). These are span-level attributes, not MLflow trace-level
+    tags (``mlflow.set_trace_tag`` / trace ``tags=``) — this module does not
+    use that API.
     """
 
     def decorator(fn):
@@ -85,15 +89,15 @@ def trace_agent(name: Optional[str] = None, *, stage: Optional[str] = None):
                 name=name or fn.__name__, span_type=SpanType.AGENT
             ) as span:
                 span.set_inputs(_safe_inputs(kwargs))
-                tags = {}
+                attributes = {}
                 if stage:
-                    tags["stage"] = stage
+                    attributes["stage"] = stage
                 for key in ("draft_id", "draft_revision"):
                     value = kwargs.get(key)
                     if value is not None:
-                        tags[key] = str(value)
-                if tags:
-                    span.set_attributes(tags)
+                        attributes[key] = str(value)
+                if attributes:
+                    span.set_attributes(attributes)
                 result = fn(*args, **kwargs)
                 span.set_outputs(_safe_result(result))
                 return result
@@ -146,7 +150,14 @@ def trace_llm(name: Optional[str] = None):
 
 
 def trace_tool(name: Optional[str] = None):
-    """Decorator: wrap a tool-dispatch function with a TOOL span."""
+    """Decorator: wrap a tool-dispatch function with a TOOL span.
+
+    The tool's name is a span *input* (``tool_name``); the span *output*
+    carries ``result_length`` and a ``status`` of ``"ok"``/``"error"`` derived
+    from whether the JSON result string carries a top-level ``error`` key —
+    so a tool call's name and outcome are both visible on the trace without
+    changing what the wrapped function returns.
+    """
 
     def decorator(fn):
         @functools.wraps(fn)
@@ -169,13 +180,29 @@ def trace_tool(name: Optional[str] = None):
                 )
                 result = fn(*args, **kwargs)
                 span.set_outputs(
-                    {"result_length": len(result) if isinstance(result, str) else None}
+                    {
+                        "result_length": len(result) if isinstance(result, str) else None,
+                        "status": _tool_result_status(result),
+                    }
                 )
                 return result
 
         return wrapper
 
     return decorator
+
+
+def _tool_result_status(result: Any) -> str:
+    """``"error"`` when *result* is a JSON string carrying a top-level
+    ``error`` key (the shared ``dispatch_tool``/tool-handler error shape);
+    ``"ok"`` otherwise, including non-JSON or non-string results."""
+    if not isinstance(result, str):
+        return "ok"
+    try:
+        parsed = json.loads(result)
+    except (ValueError, TypeError):
+        return "ok"
+    return "error" if isinstance(parsed, dict) and "error" in parsed else "ok"
 
 
 def _safe_inputs(kwargs: dict) -> dict:
