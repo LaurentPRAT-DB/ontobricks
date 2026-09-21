@@ -109,7 +109,7 @@
     flex-direction: column;
     min-height: 0;
     max-height: 100%;
-    overflow: hidden;
+    overflow: auto;
     background: #ffffff;
 }
 
@@ -120,7 +120,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    color: #6c757d;
+    color: var(--db-text-muted);
 }
 
 /* ==========================================================================

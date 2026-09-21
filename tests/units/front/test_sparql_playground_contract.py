@@ -13,11 +13,32 @@ GRAPHQL = ROOT / "src/front/templates/partials/dtwin/_query_graphql.html"
 SPARQL = ROOT / "src/front/templates/partials/dtwin/_query_sparql.html"
 CSS = ROOT / "src/front/static/query/css/query-sparql.css"
 GLOBAL_QUERY_CSS = ROOT / "src/front/static/global/css/query.css"
+QUERY_JS = ROOT / "src/front/static/query/js/query.js"
 MENU = ROOT / "src/front/config/menu_config.json"
 
 
 def read(path):
     return path.read_text(encoding="utf-8")
+
+
+def _selector_blocks(css_text, selector):
+    css_text = __import__("re").sub(r"/\*.*?\*/", "", css_text, flags=__import__("re").DOTALL)
+    blocks = []
+    for selectors, declarations in __import__("re").findall(r"([^{}]+)\{([^{}]*)\}", css_text):
+        parts = [chunk.strip() for chunk in selectors.split(",")]
+        if selector in parts:
+            blocks.append(declarations)
+    return blocks
+
+
+def _winning_declaration(css_text, selector, prop):
+    import re
+
+    value = None
+    for block in _selector_blocks(css_text, selector):
+        for match in re.finditer(rf"(?:^|;)\s*{re.escape(prop)}\s*:\s*([^;]+)", block):
+            value = match.group(1).strip()
+    return value
 
 
 def test_query_shell_hosts_graphql_and_sparql_tabs():
@@ -47,6 +68,13 @@ def test_sparql_workspace_has_editor_results_and_actions():
         assert f'id="{element_id}"' in html
     assert 'style="' not in html
     assert "onclick=" not in html
+
+
+def test_query_shell_actions_stay_declarative_without_inline_handlers():
+    shell = read(SHELL)
+    for action in ("switch-domain", "ontology", "discussion"):
+        assert f'data-query-action="{action}"' in shell
+    assert "onclick=" not in shell
 
 
 def test_graphql_ids_are_preserved():
@@ -83,3 +111,23 @@ def test_sparql_css_uses_shared_tokens_and_responsive_stack():
     global_css = read(GLOBAL_QUERY_CSS)
     assert "#sparqlResultsContainer > .gridjs-container" in global_css
     assert "#resultsContainer" not in global_css
+    assert (
+        _winning_declaration(global_css, "#sparqlResultsContainer", "overflow")
+        == "auto"
+    )
+    assert (
+        _winning_declaration(
+            global_css, "#sparqlResultsContainer .results-empty-state", "color"
+        )
+        == "var(--db-text-muted)"
+    )
+
+
+def test_query_shell_action_mappings_are_wired_in_js():
+    js = read(QUERY_JS)
+    assert "switch-domain" in js
+    assert "_openGraphSwitcherModal" in js
+    assert "ontology" in js
+    assert "OntologyViewer.open" in js
+    assert "discussion" in js
+    assert "openTwinDiscussion" in js

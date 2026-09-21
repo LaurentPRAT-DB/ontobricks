@@ -61,7 +61,6 @@
     flex: 1 1 auto;
     min-height: 0;
     flex-direction: column;
-    overflow: auto;
 }
 
 .sparql-results-container .results-empty-state {
@@ -70,7 +69,6 @@
     align-items: center;
     justify-content: center;
     flex-direction: column;
-    color: var(--db-text-muted);
 }
 
 .sparql-sql-disclosure {

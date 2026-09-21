@@ -98,12 +98,53 @@ window.openTwinDiscussion = openTwinDiscussion;
 
 // Configure sidebar navigation
 window.SIDEBAR_NAV_MANUAL_INIT = true;
+const _QUERY_SHELL_ACTION_MAP = {
+    'switch-domain': '_openGraphSwitcherModal',
+    'ontology': 'OntologyViewer.open',
+    'discussion': 'openTwinDiscussion'
+};
+
+function _resolveQueryShellAction(path) {
+    const parts = String(path || '').split('.');
+    let context = window;
+    for (let i = 0; i < parts.length - 1; i++) {
+        if (!context) return { fn: null, context: null };
+        context = context[parts[i]];
+    }
+    const key = parts[parts.length - 1];
+    return {
+        fn: context && typeof context[key] === 'function' ? context[key] : null,
+        context: context || null
+    };
+}
+
+function _bindQueryShellActions() {
+    if (window.__obQueryShellActionsBound) return;
+    window.__obQueryShellActionsBound = true;
+
+    document.addEventListener('click', function(event) {
+        const trigger = event.target.closest('[data-query-action]');
+        if (!trigger) return;
+
+        const action = trigger.getAttribute('data-query-action');
+        const targetPath = _QUERY_SHELL_ACTION_MAP[action];
+        if (!targetPath) return;
+
+        event.preventDefault();
+        const resolved = _resolveQueryShellAction(targetPath);
+        if (resolved.fn) {
+            resolved.fn.call(resolved.context);
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const urlParams = new URLSearchParams(window.location.search);
     const initialSection = urlParams.get('section');
     const focusEntityUri = urlParams.get('focus');
     const bridgeDomain = urlParams.get('domain') || urlParams.get('project');
 
+    _bindQueryShellActions();
     _initQueryPage(initialSection, focusEntityUri, bridgeDomain);
 });
 
