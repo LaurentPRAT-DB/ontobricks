@@ -140,3 +140,23 @@ Modified files:
 - tests/units/graphdb/test_entity_search_sql.py
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6839 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.89s.
+
+## Extract entity-search text-match clause helper
+
+Context: Task 2 of the cached Graph Reads plan. The label/URI LIKE-clause
+construction in `preview_select_sql` is shared logic that Tasks 3 and 4 will
+reuse for GraphQL and MCP find seed builders. Extract it into a standalone
+helper without changing Explorer Preview SQL output.
+
+Changes:
+
+1. src/back/core/graphdb/entity_search.py
+   Add `_entity_search_text_clause` and refactor `preview_select_sql` to call it.
+2. tests/units/graphdb/test_entity_search_sql.py
+   Add unit tests for empty value, any/contains, label/exact, and id/starts cases.
+
+Modified files:
+- src/back/core/graphdb/entity_search.py
+- tests/units/graphdb/test_entity_search_sql.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6843 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.49s.

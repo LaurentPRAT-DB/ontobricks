@@ -6,6 +6,7 @@ import pytest
 
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.entity_search import (
+    _entity_search_text_clause,
     entity_search_select,
     is_asserted_only_relation,
     is_missing_relation_error,
@@ -33,6 +34,25 @@ def test_asserted_only_suffixes() -> None:
     assert is_asserted_only_relation("g_x_v1_sync") is True
     assert is_asserted_only_relation("cat.sch.g_graph") is False
     assert is_asserted_only_relation("Domain_V1") is False
+
+
+def test_entity_search_text_clause_empty_value_returns_empty_string() -> None:
+    assert _entity_search_text_clause(field="any", match_type="contains", value="", escape=_escape) == ""
+
+
+def test_entity_search_text_clause_any_contains_both_columns() -> None:
+    clause = _entity_search_text_clause(field="any", match_type="contains", value="Jac", escape=_escape)
+    assert clause == "(label_lc LIKE '%jac%' OR uri_lc LIKE '%jac%')"
+
+
+def test_entity_search_text_clause_label_exact() -> None:
+    clause = _entity_search_text_clause(field="label", match_type="exact", value="Ada", escape=_escape)
+    assert clause == "(label_lc = 'ada')"
+
+
+def test_entity_search_text_clause_id_starts() -> None:
+    clause = _entity_search_text_clause(field="id", match_type="starts", value="Cust", escape=_escape)
+    assert clause == "(uri_lc LIKE 'cust%')"
 
 
 def test_entity_search_select_projects_typed_instances() -> None:

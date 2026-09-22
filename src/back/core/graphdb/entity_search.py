@@ -52,6 +52,45 @@ def entity_search_select(spo: str) -> str:
     )
 
 
+def _entity_search_text_clause(
+    *,
+    field: str,
+    match_type: str,
+    value: str,
+    escape: Escape,
+) -> str:
+    """Return a ``label_lc``/``uri_lc`` LIKE/equality clause, or ``""``.
+
+    Shared by ``preview_select_sql`` (Explorer Preview), and — from this
+    plan's Task 3/4 — the GraphQL and MCP find seed builders. Only searches
+    ``rdfs:label`` and the subject URI, same fields Explorer Preview already
+    searches.
+    """
+    if not value:
+        return ""
+    safe_value = escape(value.lower())
+    search_label = field in ("label", "any")
+    search_id = field in ("id", "any")
+
+    def _match(column: str) -> str:
+        if match_type == "exact":
+            return f"{column} = '{safe_value}'"
+        if match_type == "starts":
+            return f"{column} LIKE '{safe_value}%'"
+        if match_type == "ends":
+            return f"{column} LIKE '%{safe_value}'"
+        return f"{column} LIKE '%{safe_value}%'"
+
+    text_clauses = []
+    if search_label:
+        text_clauses.append(_match("label_lc"))
+    if search_id:
+        text_clauses.append(_match("uri_lc"))
+    if not text_clauses:
+        return ""
+    return f"({' OR '.join(text_clauses)})"
+
+
 def preview_select_sql(
     *,
     search_table: str,
@@ -69,28 +108,11 @@ def preview_select_sql(
     clauses: list[str] = []
     if entity_type:
         clauses.append(f"type_uri = '{escape(entity_type)}'")
-
-    safe_value = escape(value.lower()) if value else ""
-    search_label = field in ("label", "any")
-    search_id = field in ("id", "any")
-
-    def _match(column: str) -> str:
-        if match_type == "exact":
-            return f"{column} = '{safe_value}'"
-        if match_type == "starts":
-            return f"{column} LIKE '{safe_value}%'"
-        if match_type == "ends":
-            return f"{column} LIKE '%{safe_value}'"
-        return f"{column} LIKE '%{safe_value}%'"
-
-    if value:
-        text_clauses = []
-        if search_label:
-            text_clauses.append(_match("label_lc"))
-        if search_id:
-            text_clauses.append(_match("uri_lc"))
-        if text_clauses:
-            clauses.append(f"({' OR '.join(text_clauses)})")
+    text_clause = _entity_search_text_clause(
+        field=field, match_type=match_type, value=value, escape=escape
+    )
+    if text_clause:
+        clauses.append(text_clause)
 
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     return (
