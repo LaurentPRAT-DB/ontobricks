@@ -12,6 +12,7 @@ __all__ = [
     "Escape",
     "entity_search_select",
     "is_asserted_only_relation",
+    "is_missing_relation_error",
     "preview_select_sql",
     "sort_preview_rows",
 ]
@@ -21,6 +22,16 @@ def is_asserted_only_relation(table_name: str) -> bool:
     """Whether *table_name* excludes the inferred companion."""
     leaf = table_name.rsplit(".", 1)[-1]
     return leaf.endswith("_data") or leaf.endswith("_sync")
+
+
+def is_missing_relation_error(exc: Exception) -> bool:
+    """Whether *exc* reports that a referenced table/view does not exist."""
+    message = str(exc).lower()
+    return (
+        "table_or_view_not_found" in message
+        or "does not exist" in message
+        or "undefined table" in message
+    )
 
 
 def entity_search_select(spo: str) -> str:

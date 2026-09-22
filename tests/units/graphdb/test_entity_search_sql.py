@@ -8,6 +8,7 @@ from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.entity_search import (
     entity_search_select,
     is_asserted_only_relation,
+    is_missing_relation_error,
     preview_select_sql,
     sort_preview_rows,
 )
@@ -18,6 +19,13 @@ pytestmark = pytest.mark.unit
 
 def _escape(value: str) -> str:
     return value.replace("'", "''")
+
+
+def test_is_missing_relation_error_matches_known_markers() -> None:
+    assert is_missing_relation_error(RuntimeError("TABLE_OR_VIEW_NOT_FOUND: g")) is True
+    assert is_missing_relation_error(RuntimeError("relation g does not exist")) is True
+    assert is_missing_relation_error(RuntimeError("undefined table g")) is True
+    assert is_missing_relation_error(RuntimeError("permission denied")) is False
 
 
 def test_asserted_only_suffixes() -> None:

@@ -25,6 +25,7 @@ from back.core.graphdb.adjacency import expand_entity_neighbors_sql
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.entity_search import (
     is_asserted_only_relation,
+    is_missing_relation_error,
     preview_select_sql,
     sort_preview_rows,
 )
@@ -889,12 +890,7 @@ class GraphDBBackend(ABC):
                     ]
                 )
             except Exception as exc:  # noqa: BLE001
-                message = str(exc).lower()
-                if (
-                    "table_or_view_not_found" not in message
-                    and "does not exist" not in message
-                    and "undefined table" not in message
-                ):
+                if not is_missing_relation_error(exc):
                     raise
                 logger.info(
                     "Entity-search table is unavailable; using SPO Preview fallback: %s",

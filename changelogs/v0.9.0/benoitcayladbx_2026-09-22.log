@@ -117,3 +117,26 @@ Modified files:
 - tests/units/front/test_sparql_playground_contract.py
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6838 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.47s.
+
+## Extract is_missing_relation_error helper
+
+Context: Task 1 of the cached graph-reads plan. The missing-relation
+exception classification in `find_preview_seeds` was inline and duplicated;
+extracting it enables reuse by upcoming companion-table branches in Tasks 6
+and 8.
+
+Changes:
+
+1. src/back/core/graphdb/entity_search.py
+   Add `is_missing_relation_error` and export it from `__all__`.
+2. src/back/core/graphdb/GraphDBBackend.py
+   Replace the inline except-block markers with the shared helper.
+3. tests/units/graphdb/test_entity_search_sql.py
+   Add unit tests for known missing-relation and non-matching error markers.
+
+Modified files:
+- src/back/core/graphdb/entity_search.py
+- src/back/core/graphdb/GraphDBBackend.py
+- tests/units/graphdb/test_entity_search_sql.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6839 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.89s.
