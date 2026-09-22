@@ -56,13 +56,6 @@
     resize: none;
 }
 
-.sparql-results-container {
-    display: flex;
-    flex: 1 1 auto;
-    min-height: 0;
-    flex-direction: column;
-}
-
 .sparql-results-container .results-empty-state {
     display: flex;
     flex: 1 1 auto;

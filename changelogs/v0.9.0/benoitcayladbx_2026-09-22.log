@@ -180,3 +180,49 @@ Modified files:
 - tests/units/graphdb/test_entity_search_sql.py
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6843 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.49s.
+
+## Resolve the final SPARQL playground review
+
+Context: The final playground review found that lexical mutation matching
+rejected valid queries, malformed text could reach domain access, and retired
+query UI state remained coupled to triple-store synchronization. The review
+also identified duplicate result layout ownership and non-token Grid.js colors.
+
+Changes:
+
+1. src/back/core/w3c/sparql/QuerySafety.py
+   Replace mutation-word matching with RDFLib query/update grammar classification and fail closed for malformed input.
+2. src/front/static/query/js/query.js
+   Remove superseded result globals and global copy/download actions.
+3. src/front/static/query/js/query-sync.js
+   Remove stale query-result UI writes while preserving graph readiness, rebuild, notification, and navigation behavior.
+4. src/front/static/query/js/query-execute.js
+   Normalize result guards and the Explorer navigation string style without changing behavior.
+5. src/front/static/query/css/query-sparql.css
+   Remove duplicate result-container flex declarations while preserving empty-state and mobile behavior.
+6. src/front/static/global/css/query.css
+   Replace SPARQL/Grid hardcoded colors with canonical app-shell tokens.
+7. tests/back/core/w3c/sparql/test_query_safety.py
+   Cover valid mutation-word identifiers/literals, prologued and WITH updates, and malformed input.
+8. tests/units/api/test_dtwin_sparql_routes.py
+   Prove update and malformed input rejection occurs before domain access.
+9. tests/units/front/test_sparql_playground_contract.py
+   Cover dead-state removal, retained sync flow, CSS ownership/cascade, token colors, and local style.
+
+Modified files:
+- src/back/core/w3c/sparql/QuerySafety.py
+- src/front/static/query/js/query.js
+- src/front/static/query/js/query-sync.js
+- src/front/static/query/js/query-execute.js
+- src/front/static/query/css/query-sparql.css
+- src/front/static/global/css/query.css
+- tests/back/core/w3c/sparql/test_query_safety.py
+- tests/units/api/test_dtwin_sparql_routes.py
+- tests/units/front/test_sparql_playground_contract.py
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/back/core/w3c/sparql/test_query_safety.py tests/units/api/test_dtwin_sparql_routes.py tests/units/front/test_sparql_playground_contract.py` → 12 failed, 40 passed, 1 warning in 1.43s.
+- GREEN: `uv run --frozen pytest -q tests/back/core/w3c/sparql/test_query_safety.py tests/units/api/test_dtwin_sparql_routes.py tests/units/front/test_sparql_playground_contract.py` → 52 passed, 1 warning in 1.20s.
+- Focused: `uv run --frozen pytest -q tests/back/core/w3c/sparql/test_query_safety.py tests/units/api/test_dtwin_sparql_routes.py tests/units/agents/test_agent_dtwin_chat.py tests/units/front/test_sparql_playground_contract.py tests/units/front/test_sidebar_content_stretch_contract.py` → 223 passed, 1 warning in 1.54s.
+- Browser: `ONTOBRICKS_E2E_FAKE_CREDS=1 uv run --frozen pytest -q tests/e2e/dtwin/test_dtwin_flows.py::TestQueryPlayground` → 4 passed, 1 warning in 13.44s.
+- Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6860 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.64s.

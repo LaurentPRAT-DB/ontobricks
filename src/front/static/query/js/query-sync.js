@@ -1445,31 +1445,6 @@ async function loadTripleStore(options = {}) {
         tripleStoreHasData = count > 0;
         updateDataMenus();
 
-        // Populate global query state (same as after a query execution)
-        if (typeof queryResults !== 'undefined') {
-            queryResults = data.results;
-        }
-        if (typeof generatedSql !== 'undefined') {
-            generatedSql = data.generated_sql || `SELECT * FROM ${triplestoreTable}`;
-        }
-
-        // Update badges
-        const badge = document.getElementById('resultCountBadge');
-        if (badge) badge.textContent = count;
-        const resultCount = document.getElementById('resultCount');
-        if (resultCount) resultCount.textContent = count + ' results';
-
-        // Display results in the Results section
-        if (typeof displayResults === 'function') {
-            displayResults({
-                success: true,
-                results: data.results,
-                columns: data.columns || ['subject', 'predicate', 'object'],
-                count: count,
-                generated_sql: data.generated_sql || ''
-            });
-        }
-
         // Flag for visualization to rebuild graph
         if (typeof graphJustBuilt !== 'undefined') {
             graphJustBuilt = true;

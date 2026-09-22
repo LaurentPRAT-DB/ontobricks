@@ -15,6 +15,7 @@ CSS = ROOT / "src/front/static/query/css/query-sparql.css"
 GLOBAL_QUERY_CSS = ROOT / "src/front/static/global/css/query.css"
 QUERY_JS = ROOT / "src/front/static/query/js/query.js"
 JS = ROOT / "src/front/static/query/js/query-execute.js"
+SYNC_JS = ROOT / "src/front/static/query/js/query-sync.js"
 SIGMA_JS = ROOT / "src/front/static/query/js/query-sigmagraph.js"
 MENU = ROOT / "src/front/config/menu_config.json"
 
@@ -221,6 +222,44 @@ def test_mobile_result_minimum_wins_actual_stylesheet_cascade():
     assert effective_minimum == "15rem"
 
 
+def test_local_results_container_leaves_flex_layout_to_global_owner():
+    local_css = read(CSS)
+    for prop in ("display", "flex", "min-height", "flex-direction"):
+        assert _winning_declaration(local_css, ".sparql-results-container", prop) is None
+
+    assert (
+        _winning_declaration(
+            local_css, ".sparql-results-container .results-empty-state", "display"
+        )
+        == "flex"
+    )
+
+
+def test_sparql_grid_scope_uses_only_canonical_shell_color_tokens():
+    import re
+
+    css = read(GLOBAL_QUERY_CSS)
+    scoped_blocks = []
+    for selectors, declarations in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        if any(
+            selector.strip().startswith("#sparqlResultsContainer")
+            for selector in selectors.split(",")
+        ):
+            scoped_blocks.append(declarations)
+
+    scoped_css = "\n".join(scoped_blocks).lower()
+    for hardcoded in ("#ffffff", "#fff", "#212529", "#e9ecef", "#6c757d"):
+        assert hardcoded not in scoped_css
+    for token in (
+        "var(--db-surface-warm)",
+        "var(--db-text)",
+        "var(--db-border)",
+        "var(--db-text-muted)",
+    ):
+        assert token in scoped_css
+    assert "var(--db-surface)" not in scoped_css
+
+
 def test_sparql_keyboard_targets_have_explicit_visible_focus_styles():
     css = read(CSS)
     tab_selector = ".nav-tabs.ob-tabs.query-language-tabs .nav-link:focus-visible"
@@ -293,6 +332,43 @@ def test_query_page_initializes_only_the_selected_language_tab():
     assert "SPARQLPlayground.init()" in js
 
 
+def test_query_entrypoint_has_no_orphaned_result_state_or_actions():
+    import re
+
+    js = read(QUERY_JS)
+    assert re.search(r"\b(?:let|const|var)\s+queryResults\b", js) is None
+    assert re.search(r"\b(?:let|const|var)\s+generatedSql\b", js) is None
+    assert re.search(r"\bfunction\s+copyGeneratedSql\s*\(", js) is None
+    assert re.search(r"\bfunction\s+downloadResults\s*\(", js) is None
+
+    # CSV remains owned by the SPARQLPlayground closure.
+    assert "function downloadResults()" in read(JS)
+
+
+def test_sync_load_retains_graph_flow_without_stale_query_ui_coupling():
+    js = read(SYNC_JS)
+    body = js[js.index("async function loadTripleStore(") :]
+    body = body[: body.index("\n/**\n * Update the standalone Insight")]
+
+    for retained in (
+        "tripleStoreHasData = count > 0",
+        "updateDataMenus()",
+        "graphJustBuilt = true",
+        "showNotification(`Loaded ${count} triples from triple store`",
+        "SidebarNav.switchTo('sigmagraph')",
+    ):
+        assert retained in body
+
+    for stale in (
+        "queryResults",
+        "generatedSql",
+        "resultCountBadge",
+        "resultCount",
+        "displayResults(",
+    ):
+        assert stale not in body
+
+
 def test_query_reentry_without_pending_tab_does_not_force_graphql():
     js = read(QUERY_JS)
     assert "function getActiveQueryTabName()" in js
@@ -315,12 +391,20 @@ def test_execute_failure_does_not_clear_generated_sql():
     assert "displayGeneratedSql('')" not in catch_body
 
 
+def test_explorer_switch_uses_local_double_quote_style():
+    js = read(JS)
+    show_body = js[js.index("function showInExplorer()") :]
+    show_body = show_body[: show_body.index("\n    return {")]
+    assert 'SidebarNav.switchTo("sigmagraph")' in show_body
+    assert "SidebarNav.switchTo('sigmagraph')" not in show_body
+
+
 def test_explorer_bridge_is_explicit_and_sigma_accepts_query_rows():
     sparql_js = read(JS)
     sigma_js = read(SIGMA_JS)
     assert "SigmaGraph.loadQueryResults" in sparql_js
     assert "loadQueryResults:" in sigma_js
-    assert "SidebarNav.switchTo('sigmagraph')" in sparql_js
+    assert 'SidebarNav.switchTo("sigmagraph")' in sparql_js
 
     # The bridge must hand off to Sigma directly (no timer race with
     # SigmaGraph's own ~100ms section-entry init) and must switch the
@@ -328,7 +412,7 @@ def test_explorer_bridge_is_explicit_and_sigma_accepts_query_rows():
     show_body = sparql_js[sparql_js.index("function showInExplorer()") :]
     show_body = show_body[: show_body.index("\n    return {")]
     assert "setTimeout" not in show_body
-    switch_idx = show_body.index("SidebarNav.switchTo('sigmagraph')")
+    switch_idx = show_body.index('SidebarNav.switchTo("sigmagraph")')
     load_idx = show_body.index("SigmaGraph.loadQueryResults(")
     assert switch_idx < load_idx
 

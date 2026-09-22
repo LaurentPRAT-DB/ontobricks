@@ -2,23 +2,28 @@
 
 from __future__ import annotations
 
-import re
+from rdflib.plugins.sparql.parser import parseQuery, parseUpdate
 
 from back.core.errors import ValidationError
 
-_MUTATING_SPARQL = re.compile(
-    r"\b(DROP|DELETE|INSERT|CREATE|CLEAR|LOAD|COPY|MOVE|ADD)\b",
-    re.IGNORECASE,
-)
-
 
 def require_read_only_sparql(query: str) -> str:
-    """Return stripped SPARQL text or reject an empty/mutating query."""
+    """Return stripped query text after structural SPARQL validation."""
     text = query.strip() if isinstance(query, str) else ""
     if not text:
         raise ValidationError("No SPARQL query provided")
-    if _MUTATING_SPARQL.search(text):
+
+    try:
+        parseQuery(text)
+        return text
+    except Exception:
+        pass
+
+    try:
+        parseUpdate(text)
+    except Exception as exc:
+        raise ValidationError("Invalid SPARQL query.") from exc
+    else:
         raise ValidationError(
             "SPARQL execution is read-only; mutating operations are not allowed."
         )
-    return text

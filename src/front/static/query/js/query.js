@@ -31,9 +31,6 @@
 // Enable full-width layout for this page
 document.body.classList.add('full-width-layout');
 
-let queryResults = null;
-let generatedSql = null;
-
 // D3.js graph state (exposed globally for query-sigmagraph.js)
 var d3Simulation = null;
 var d3Svg = null;
@@ -310,41 +307,6 @@ function _applyFocusEntityWhenReady(uri, retries) {
     if (retries > 0) {
         setTimeout(function () { _applyFocusEntityWhenReady(uri, retries - 1); }, 500);
     }
-}
-
-function copyGeneratedSql() {
-    if (!generatedSql) return;
-    navigator.clipboard.writeText(generatedSql).then(() => {
-        const btn = event.target.closest('button');
-        const original = btn.innerHTML;
-        btn.innerHTML = '<i class="bi bi-check"></i> Copied!';
-        setTimeout(() => btn.innerHTML = original, 1500);
-    });
-}
-
-function downloadResults() {
-    if (!queryResults || queryResults.length === 0) return;
-    
-    const columns = Object.keys(queryResults[0]);
-    let csv = columns.join(',') + '\n';
-    
-    for (const row of queryResults) {
-        csv += columns.map(col => {
-            const val = row[col] || '';
-            if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-                return '"' + val.replace(/"/g, '""') + '"';
-            }
-            return val;
-        }).join(',') + '\n';
-    }
-    
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'sparql_results.csv';
-    a.click();
-    URL.revokeObjectURL(url);
 }
 
 // escapeHtml is provided globally by utils.js

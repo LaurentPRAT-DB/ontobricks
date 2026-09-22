@@ -329,8 +329,8 @@ LIMIT ${limit}`,
     }
 
     function showInExplorer() {
-        const rows = currentResult?.results || [];
-        const columns = currentResult?.columns || [];
+        const rows = currentResult && Array.isArray(currentResult.results) ? currentResult.results : [];
+        const columns = currentResult && Array.isArray(currentResult.columns) ? currentResult.columns : [];
         if (!rows.length || !isTripleProjection(columns)) return;
 
         // Switch section, then hand the rows straight to the Sigma bridge —
@@ -339,7 +339,7 @@ LIMIT ${limit}`,
         // state synchronously, so it is safe even if SigmaGraph's own
         // section-entry init runs concurrently. The click handler need not
         // await this promise chain.
-        SidebarNav.switchTo('sigmagraph');
+        SidebarNav.switchTo("sigmagraph");
         SigmaGraph.loadQueryResults(rows, columns).then((loaded) => {
             if (!loaded && typeof showNotification === "function") {
                 showNotification("Could not display these SPARQL results.", "error");

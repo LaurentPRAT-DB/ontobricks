@@ -16,10 +16,21 @@ class JsonRequest:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("route", [dtwin.execute_sparql, dtwin.translate_sparql])
-async def test_mutating_sparql_is_rejected_before_domain_lookup(route):
-    request = JsonRequest({"query": "DELETE WHERE { ?s ?p ?o }"})
+@pytest.mark.parametrize(
+    ("query", "message"),
+    [
+        (
+            "WITH <https://example.com/g> "
+            "DELETE { ?s ?p ?o } WHERE { ?s ?p ?o }",
+            "read-only",
+        ),
+        ("SELECT WHERE {", "Invalid SPARQL query"),
+    ],
+)
+async def test_invalid_sparql_is_rejected_before_domain_lookup(route, query, message):
+    request = JsonRequest({"query": query})
 
-    with pytest.raises(ValidationError, match="read-only"):
+    with pytest.raises(ValidationError, match=message):
         if route is dtwin.execute_sparql:
             await route(request, session_mgr=None, settings=None)
         else:

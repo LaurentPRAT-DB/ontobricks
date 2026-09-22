@@ -110,7 +110,7 @@
     min-height: 0;
     max-height: 100%;
     overflow: auto;
-    background: #ffffff;
+    background: var(--db-surface-warm);
 }
 
 /* Empty state styling */
@@ -149,14 +149,14 @@
 #sparqlResultsContainer .gridjs-head {
     flex-shrink: 0;
     padding: 8px 12px;
-    background: #fff;
-    border-bottom: 1px solid #e9ecef;
+    background: var(--db-surface-warm);
+    border-bottom: 1px solid var(--db-border);
 }
 
 #sparqlResultsContainer .gridjs-footer {
     flex-shrink: 0;
-    background: #ffffff;
-    border-top: 1px solid #e9ecef;
+    background: var(--db-surface-warm);
+    border-top: 1px solid var(--db-border);
 }
 
 #sparqlResultsContainer .gridjs-search {
@@ -170,8 +170,8 @@
 }
 
 #sparqlResultsContainer .gridjs-th {
-    background: #ffffff !important;
-    color: #212529;
+    background: var(--db-surface-warm) !important;
+    color: var(--db-text);
     font-weight: 600;
     font-size: 0.85rem;
     white-space: nowrap;
@@ -187,7 +187,7 @@
 }
 
 #sparqlResultsContainer .gridjs-tr:hover td {
-    background: #ffffff;
+    background: var(--db-surface-warm);
 }
 
 #sparqlResultsContainer .gridjs-pagination {
@@ -201,7 +201,7 @@
 
 #sparqlResultsContainer .gridjs-summary {
     font-size: 0.8rem;
-    color: #6c757d;
+    color: var(--db-text-muted);
 }
 
 /* ==========================================================================
