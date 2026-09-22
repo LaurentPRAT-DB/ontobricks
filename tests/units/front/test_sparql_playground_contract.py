@@ -391,6 +391,14 @@ def test_execute_failure_does_not_clear_generated_sql():
     assert "displayGeneratedSql('')" not in catch_body
 
 
+def test_generated_sql_disclosure_opens_when_sql_is_displayed():
+    js = read(JS)
+    start = js.index("function displayGeneratedSql(sql)")
+    body = js[start : js.index("\n    function displayError(", start)]
+    assert 'target.closest("details")' in body
+    assert "disclosure.open = true;" in body
+
+
 def test_explorer_switch_uses_local_double_quote_style():
     js = read(JS)
     show_body = js[js.index("function showInExplorer()") :]

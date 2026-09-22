@@ -131,7 +131,9 @@ class TestQueryPlayground:
         page.locator("#sparqlPlaygroundQuery").wait_for(state="visible")
 
         explore_btn = page.locator("#sparqlExploreBtn")
+        sql_disclosure = page.locator(".sparql-sql-disclosure")
         assert explore_btn.is_disabled()
+        assert not sql_disclosure.evaluate("(element) => element.open")
 
         triple_result = {
             "success": True,
@@ -180,6 +182,8 @@ class TestQueryPlayground:
         page.locator("#sparqlRunBtn").click()
         page.locator("#sparqlExploreBtn:not([disabled])").wait_for(state="visible")
         assert not explore_btn.is_disabled()
+        assert sql_disclosure.evaluate("(element) => element.open")
+        assert page.locator("#sparqlGeneratedSql").text_content() == "SELECT * FROM t"
 
         explore_btn.click()
         page.wait_for_function("window.__explorerCalls.length >= 2")

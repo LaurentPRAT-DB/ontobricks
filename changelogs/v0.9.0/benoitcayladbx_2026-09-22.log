@@ -421,3 +421,26 @@ Modified files:
 - tests/units/core/test_lakebase_flat_store.py
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6881 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 50.81s.
+
+## Reveal generated SQL after SPARQL execution
+
+Context: The SPARQL playground updated the Generated SQL text after a
+successful run but left its disclosure collapsed. Successful executions now
+open the disclosure automatically so the generated warehouse query is
+immediately visible.
+
+Changes:
+
+1. src/front/static/query/js/query-execute.js
+   Open the Generated SQL details element whenever execution displays generated SQL.
+2. tests/units/front/test_sparql_playground_contract.py
+   Add a regression contract for the disclosure-opening behavior.
+3. tests/e2e/dtwin/test_dtwin_flows.py
+   Verify the disclosure starts collapsed, opens after Run, and contains the generated SQL.
+
+Modified files:
+- src/front/static/query/js/query-execute.js
+- tests/units/front/test_sparql_playground_contract.py
+- tests/e2e/dtwin/test_dtwin_flows.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6882 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.57s.
