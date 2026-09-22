@@ -310,7 +310,44 @@ Post-write maintenance also preserves read performance:
   `INSERT ... ON CONFLICT DO NOTHING` or `DELETE ... USING`; small mutations
   avoid staging overhead.
 
-## 10. Query bounds and cancellation
+## 10. GraphQL and MCP find read the same companions
+
+`query_graphql`'s typed list resolver (`SchemaMetadata._query_subjects` →
+`GraphDBBackend.find_subjects_by_type`) and its nested-field triple loader
+(`SchemaMetadata._load_triples` → `GraphDBBackend.get_triples_for_subjects`)
+read `_entity_search` and `_props` when ready, instead of the reader-facing
+SPO relation. `search` on the GraphQL list resolver then matches only
+`rdfs:label`/URI (`_entity_search`'s `label_lc`/`uri_lc`) — the same fields
+Explorer Preview searches — rather than every literal predicate.
+
+MCP's `describe_entity` and the shared `/triples/find` route
+(`DigitalTwin.find_triples_bfs` → `GraphDBBackend.bfs_traversal`) seed from
+`_entity_search` and walk `_adj_out`/`_adj_in` instead of a `WITH RECURSIVE`
+scan of the SPO relation, when both companions are ready. Hop endpoints then
+require both sides of an edge to have an `rdf:type` assertion, matching
+Explorer's own adjacency restriction; a companion-missing graph (pre-build,
+pre-refresh) or a missing-table error mid-query falls back to the exact
+`WITH RECURSIVE` SQL used before this change.
+
+`entity_type` keeps two matching modes that already existed before this
+change and are preserved exactly: GraphQL/Preview take a full class URI
+(`type_uri` equality); MCP's `describe_entity`/`/triples/find` take a bare
+local name (`type_uri` suffix match, `#name` / `/name`).
+
+Neo4j is unaffected — its `find_subjects_by_type`, `get_triples_for_subjects`,
+and `bfs_traversal` overrides use native Cypher and never reach these
+companion branches.
+
+Implementation:
+
+- `back/core/graphdb/entity_search.py`: `entity_search_uri_search_sql`,
+  `entity_search_seed_sql`, `_entity_search_text_clause`,
+  `is_missing_relation_error`.
+- `back/core/graphdb/adjacency.py`: `seeded_bfs_sql`.
+- `back/core/graphdb/GraphDBBackend.py`: `find_subjects_by_type`,
+  `get_triples_for_subjects`, `bfs_traversal`.
+
+## 11. Query bounds and cancellation
 
 Graph reads are protected independently from long-running build operations:
 
@@ -330,7 +367,7 @@ client deadline and cancel timed-out statements.
 
 Implementation: `src/back/core/query_limits.py`.
 
-## 11. Lakehouse/RT query transport
+## 12. Lakehouse/RT query transport
 
 Build and graph reads can use different warehouses:
 
@@ -356,7 +393,7 @@ classification covers cold-start/auto-scaling 5xx responses and stale pooled
 connections; SQL errors and unsupported-protocol configuration errors fail
 immediately.
 
-## 12. Neo4j native indexes and traversal
+## 13. Neo4j native indexes and traversal
 
 Neo4j does not mirror the SQL graph-index companions. Each graph gets a marker
 label and a uniqueness constraint on node `uri`; Neo4j uses the constraint's
@@ -373,7 +410,7 @@ Implementation:
 - `src/back/core/graphdb/neo4j/Neo4jWriteOps.py`
 - `src/back/core/graphdb/neo4j/Neo4jReadOps.py`
 
-## 13. Connection and transfer efficiency
+## 14. Connection and transfer efficiency
 
 Lakebase uses a connection pool rather than opening a Postgres connection for
 each graph query. Expansion is returned in one result set instead of one
@@ -389,7 +426,7 @@ session cache. Only successful, known results are cached; transient failures
 are not stored as false negatives. This cache reduces page-level metadata
 queries but does not cache Explorer neighborhoods or query result sets.
 
-## 14. Browser-observed timings
+## 15. Browser-observed timings
 
 Explorer records the latest completed search timing as:
 
@@ -421,7 +458,7 @@ consistent with warehouse/cache warm-up.
 
 Implementation: `src/front/static/query/js/query-sigmagraph.js`.
 
-## 15. Concrete operating example
+## 16. Concrete operating example
 
 After a Build or after reasoning/cohort writes:
 
@@ -439,7 +476,7 @@ After a Build or after reasoning/cohort writes:
 For a Lakehouse table-mode domain, use a full Build when source tables changed;
 Refresh cache alone only reindexes the existing `_data` snapshot.
 
-## 16. Backend summary
+## 17. Backend summary
 
 | Technique | Lakehouse | Lakebase | Neo4j |
 |-----------|-----------|----------|-------|
@@ -451,7 +488,7 @@ Refresh cache alone only reindexes the existing `_data` snapshot.
 | Statement timeout | Warehouse/SEA | Postgres | Driver/query behavior |
 | Dedicated RT read transport | Optional | N/A | N/A |
 
-## 17. Planned, not yet implemented
+## 18. Planned, not yet implemented
 
 Application-side Preview sorting, Starts-with default, asserted search,
 Lakebase trigram indexes, and Lakehouse search clustering/Bloom are shipped.
@@ -466,7 +503,7 @@ See:
 - `docs/superpowers/plans/2026-09-15-search-transversal-next.md`
 - `docs/superpowers/plans/2026-09-16-expansion-fallback-latency.md`
 
-## 18. Parallel companion rebuild — measured performance
+## 19. Parallel companion rebuild — measured performance
 
 On 2026-09-17, a **Refresh cache** on the BIGCustomers Lakehouse domain
 (~1.35 M entity-search rows, ~1.70 M adjacency rows, ~7.64 M props rows) was

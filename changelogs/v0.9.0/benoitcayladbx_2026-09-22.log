@@ -251,6 +251,58 @@ Tests:
 - GREEN: `uv run --frozen pytest tests/units/graphdb/test_entity_search_sql.py -v` → 19 passed in 0.88s.
 - Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6864 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.53s.
 
+## Add seeded adjacency BFS builder
+
+Context: Task 5 of the cached graph reads plan adds a generalized, unbounded
+leveled-CTE BFS builder for MCP find-and-traverse. Unlike the fixed-URI-list
+`bfs_sql`, `seeded_bfs_sql` accepts an arbitrary seed subquery and walks
+`_adj_out`/`_adj_in` via the existing `_anti_join` helper, returning
+`(entity, min_lvl)` rows. Wiring into `bfs_traversal` is deferred to Task 8.
+
+Changes:
+
+1. src/back/core/graphdb/adjacency.py
+   Add `seeded_bfs_sql` with per-level adjacency anti-joins and a union of
+   every visited level; export via `__all__`.
+2. tests/units/graphdb/test_adjacency_sql.py
+   Add four SQL-shape tests for depth-zero seed-only output, Spark LEFT ANTI
+   JOIN per level, Postgres NOT EXISTS per level, and level-number unions.
+
+Modified files:
+- src/back/core/graphdb/adjacency.py
+- tests/units/graphdb/test_adjacency_sql.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6868 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.53s.
+
+## Wire find_subjects_by_type to entity-search companion
+
+Context: Task 6 of the cached graph reads plan. `GraphDBBackend.find_subjects_by_type`
+— called by GraphQL's typed list resolver (`SchemaMetadata._query_subjects`) —
+now reads the `_entity_search`/`_entity_search_asserted` companion via
+`entity_search_uri_search_sql` when ready, falling back to the unchanged
+legacy SPO query when the companion is not ready or a missing-table error
+occurs mid-query.
+
+Changes:
+
+1. src/back/core/graphdb/GraphDBBackend.py
+   Prepend a companion-aware branch gated by `entity_search_ready`, using
+   `entity_search_uri_search_sql` with exact `type_uri` equality and the
+   shared text clause; leave the legacy SPO body unchanged as fallback.
+2. tests/units/graphdb/test_graphdb_adjacency_contract.py
+   Add three contract tests: companion path used when ready, fallback when
+   not ready, and fallback on a missing-table error mid-query.
+3. tests/units/core/test_lakebase_flat_store.py
+   Add `test_find_subjects_by_type_uses_entity_search_when_ready` for the
+   companion SQL path.
+
+Modified files:
+- src/back/core/graphdb/GraphDBBackend.py
+- tests/units/graphdb/test_graphdb_adjacency_contract.py
+- tests/units/core/test_lakebase_flat_store.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6872 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 56.71s.
+
 ## Wire get_triples_for_subjects to property companion
 
 Context: Task 7 of the cached graph reads plan. `get_triples_for_subjects` —
@@ -325,3 +377,47 @@ Tests:
 - RED: `uv run --frozen pytest tests/units/graphdb/test_graphdb_adjacency_contract.py -k bfs_traversal -v` → 2 failed, 2 passed.
 - GREEN: `uv run --frozen pytest tests/units/graphdb/test_graphdb_adjacency_contract.py tests/units/core/test_lakebase_flat_store.py tests/units/dtwin/test_digitaltwin_api.py -v` → 124 passed.
 - Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6881 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.57s.
+
+## Read GraphQL and MCP find through the graph-cache companions
+
+Context: Explorer Preview/Expansion already read the `_entity_search`,
+`_adj_out`/`_adj_in`, and `_props` companion tables instead of the
+reader-facing SPO relation. GraphQL's typed list/nested-field resolvers and
+MCP's `describe_entity` / `/triples/find` find-and-traverse path did not —
+every call rescanned the live union relation. This change makes both read
+the same companions when ready, with an exact fallback to the previous SQL
+when a companion is missing or a missing-table error occurs mid-query.
+
+Changes:
+
+1. src/back/core/graphdb/entity_search.py
+   Add `entity_search_uri_search_sql` (exact-type-URI match, for GraphQL/
+   Preview-style callers) and `entity_search_seed_sql` (local-name-suffix
+   type match, for MCP find-style callers), both built on a newly extracted
+   `_entity_search_text_clause` helper. Add `is_missing_relation_error`,
+   extracted from `find_preview_seeds`'s existing fallback detection.
+2. src/back/core/graphdb/adjacency.py
+   Add `seeded_bfs_sql`, a leveled adjacency BFS seeded from an arbitrary
+   subquery instead of a fixed URI list, returning `(entity, min_lvl)` rows.
+3. src/back/core/graphdb/GraphDBBackend.py
+   `find_subjects_by_type`, `get_triples_for_subjects`, and `bfs_traversal`
+   each gain a companion-aware branch gated by `entity_search_ready` /
+   `adjacency_ready` / `supports_props`, falling back to the exact previous
+   SQL when the companion is not ready or a missing-table error occurs.
+4. docs/optimizations.md, docs/architecture.md
+   Document the new companion-aware read paths and the two `entity_type`
+   matching modes (full-URI exact vs. local-name suffix) that predate this
+   change and remain unchanged.
+
+Modified files:
+- src/back/core/graphdb/entity_search.py
+- src/back/core/graphdb/adjacency.py
+- src/back/core/graphdb/GraphDBBackend.py
+- docs/optimizations.md
+- docs/architecture.md
+- tests/units/graphdb/test_entity_search_sql.py
+- tests/units/graphdb/test_adjacency_sql.py
+- tests/units/graphdb/test_graphdb_adjacency_contract.py
+- tests/units/core/test_lakebase_flat_store.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6881 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 50.81s.

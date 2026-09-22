@@ -961,6 +961,9 @@ normalized URI/label fields and type metadata; `_props` has a btree index on
 `subject`. `rebuild_adjacency` reads hops/`_props` from the union view and
 asserted Preview from `_sync`.
 Neo4j uses native Bolt traversal/search and has no graph-index companions.
+GraphQL's typed list/nested-field resolvers and MCP's `describe_entity` /
+`/triples/find` find-and-traverse path read these same companions when
+ready — see `docs/optimizations.md` § 10.
 
 The **Refresh cache** action (builder/admin, Lakehouse and Lakebase only)
 reindexes `_adj_out`, `_adj_in`, `_entity_search`, and `_props` without
