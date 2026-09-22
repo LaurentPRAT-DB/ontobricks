@@ -43,6 +43,20 @@ def _winning_declaration(css_text, selector, prop):
     return value
 
 
+def _media_block(css_text, condition):
+    start = css_text.index(f"@media {condition}")
+    opening_brace = css_text.index("{", start)
+    depth = 1
+    cursor = opening_brace + 1
+    while depth:
+        if css_text[cursor] == "{":
+            depth += 1
+        elif css_text[cursor] == "}":
+            depth -= 1
+        cursor += 1
+    return css_text[opening_brace + 1 : cursor - 1]
+
+
 def test_query_shell_hosts_graphql_and_sparql_tabs():
     shell = read(SHELL)
     assert "GraphQL" in shell
@@ -123,6 +137,61 @@ def test_sparql_css_uses_shared_tokens_and_responsive_stack():
         )
         == "var(--db-text-muted)"
     )
+
+
+def test_mobile_sparql_stack_restores_natural_flow_and_result_scroll_owner():
+    mobile_css = _media_block(read(CSS), "(max-width: 991.98px)")
+    assert _winning_declaration(mobile_css, ".query-language-content", "flex") == "none"
+    assert (
+        _winning_declaration(mobile_css, ".query-language-content", "overflow")
+        == "visible"
+    )
+    assert (
+        _winning_declaration(
+            mobile_css, ".query-language-content > .tab-pane.active", "flex"
+        )
+        == "none"
+    )
+    assert _winning_declaration(mobile_css, ".sparql-playground", "overflow") == "visible"
+    assert (
+        _winning_declaration(
+            mobile_css, ".sparql-playground #sparqlResultsContainer", "min-height"
+        )
+        == "15rem"
+    )
+    assert (
+        _winning_declaration(
+            mobile_css, ".sparql-playground #sparqlResultsContainer", "overflow"
+        )
+        == "auto"
+    )
+
+
+def test_sparql_keyboard_targets_have_explicit_visible_focus_styles():
+    css = read(CSS)
+    tab_selector = ".nav-tabs.ob-tabs.query-language-tabs .nav-link:focus-visible"
+    assert (
+        _winning_declaration(css, tab_selector, "outline")
+        == "2px solid var(--db-primary)"
+    )
+    assert _winning_declaration(css, tab_selector, "box-shadow") == "none"
+
+    control_selectors = (
+        "#sparqlSample:focus-visible",
+        "#sparqlResultLimit:focus-visible",
+        "#sparqlDownloadBtn:focus-visible",
+        "#sparqlExploreBtn:focus-visible",
+        "#sparqlPlaygroundQuery:focus-visible",
+    )
+    for selector in control_selectors:
+        assert (
+            _winning_declaration(css, selector, "outline")
+            == "2px solid var(--db-primary)"
+        )
+        assert (
+            _winning_declaration(css, selector, "box-shadow")
+            == "var(--db-focus-ring)"
+        )
 
 
 def test_generated_sql_has_scoped_readable_token_colors():

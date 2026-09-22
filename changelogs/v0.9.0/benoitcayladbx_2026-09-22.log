@@ -79,3 +79,22 @@ Modified files:
 - docs/sphinx/api/app.core.w3c.rst
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6835 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.75s.
+
+## Restore mobile SPARQL results and keyboard focus
+
+Context: Browser verification found that the stacked mobile SPARQL workspace
+collapsed successful query results to zero height and did not reliably expose
+visible keyboard focus on its language tabs and controls.
+
+Changes:
+
+1. src/front/static/query/css/query-sparql.css
+   Restore natural mobile flow, reserve a scrollable result surface, and add scoped token-based focus-visible indicators.
+2. tests/units/front/test_sparql_playground_contract.py
+   Add parsed CSS contracts for the effective mobile cascade, result scroll ownership, and explicit keyboard focus styles.
+
+Modified files:
+- src/front/static/query/css/query-sparql.css
+- tests/units/front/test_sparql_playground_contract.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6837 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.06s.

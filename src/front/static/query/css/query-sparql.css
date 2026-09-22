@@ -93,14 +93,45 @@
     color: var(--db-text);
 }
 
+.nav-tabs.ob-tabs.query-language-tabs .nav-link:focus-visible {
+    outline: 2px solid var(--db-primary);
+    outline-offset: -3px;
+    box-shadow: none;
+}
+
+#sparqlSample:focus-visible,
+#sparqlResultLimit:focus-visible,
+#sparqlDownloadBtn:focus-visible,
+#sparqlExploreBtn:focus-visible,
+#sparqlPlaygroundQuery:focus-visible {
+    outline: 2px solid var(--db-primary);
+    outline-offset: -3px;
+    box-shadow: var(--db-focus-ring);
+}
+
 @media (max-width: 991.98px) {
+    .query-language-content {
+        flex: none;
+        overflow: visible;
+    }
+
+    .query-language-content > .tab-pane.active {
+        flex: none;
+    }
+
     .sparql-playground {
+        flex: none;
         grid-template-columns: 1fr;
-        overflow: auto;
+        overflow: visible;
     }
 
     .sparql-editor-pane {
         border-right: 0;
         border-bottom: 1px solid var(--db-border);
+    }
+
+    .sparql-playground #sparqlResultsContainer {
+        min-height: 15rem;
+        overflow: auto;
     }
 }
