@@ -2688,35 +2688,55 @@ var SigmaGraph = (function () {
         // Explorer" action. Only triple-shaped rows reach this call — the
         // caller is responsible for that check and for switching to the
         // sigmagraph section before invoking it. No implicit navigation
-        // happens here.
+        // happens here, and this function is self-sufficient: it kicks off
+        // `_loadGraphLibs()` itself and does not rely on `SigmaGraph.init()`
+        // having been scheduled elsewhere.
+        //
+        // Race note: `query.js` wires a `sidebarSectionChanged` listener
+        // that schedules `SigmaGraph.init()` ~100ms after the section
+        // becomes active (see `initQueryPlayground`'s `onSectionChange`).
+        // Because the caller switches to the sigmagraph section and then
+        // calls this function with no artificial delay, that scheduled
+        // `init()` can run concurrently with the awaits below. `init()`
+        // only wipes `d3NodesData`/`d3LinksData`/`_graph` when
+        // `_graphFilterActive` is falsy, so we flip that flag (and cache
+        // the rows into `lastQueryResults`) synchronously, before the first
+        // `await`, so a concurrent `init()` always takes its "already
+        // active" branch and never clears the rows we are about to render.
+        // On failure we restore the prior flag/cache so a genuine load
+        // failure cannot mask an existing, already-rendered graph as
+        // "active" when nothing new was actually built.
         loadQueryResults: async function (results, columns) {
             if (!Array.isArray(results) || results.length === 0) return false;
-            _hideEmptyState();
-            _showGraphLoading('Loading SPARQL results…');
-            await _waitForGraphLoadingPaint();
 
-            var librariesReady = await _waitForGraphLibs(10000);
-            if (!librariesReady || typeof buildGraph !== 'function') {
-                _hideGraphLoading();
-                if (typeof showNotification === 'function') {
-                    showNotification(
-                        'Graph libraries failed to load. Check your network and reload.',
-                        'error',
-                    );
-                }
-                return false;
-            }
+            var priorFilterActive = _graphFilterActive;
+            var priorQueryResults = lastQueryResults;
 
+            _graphFilterActive = true;
             lastQueryResults = {
                 results: results.slice(),
                 columns: (columns || []).slice(),
             };
-            await buildGraph(lastQueryResults.results, lastQueryResults.columns);
-            _graphFilterActive = true;
             _searchMatched = null;
             _searchNeighbors = null;
             _selectedNode = null;
             _hoveredNode = null;
+
+            _hideEmptyState();
+            _showGraphLoading('Loading SPARQL results…');
+            _loadGraphLibs();
+            await _waitForGraphLoadingPaint();
+
+            var librariesReady = await _waitForGraphLibs(10000);
+            if (!librariesReady || typeof buildGraph !== 'function') {
+                console.error('[SigmaGraph] loadQueryResults: graph libraries unavailable');
+                _hideGraphLoading();
+                _graphFilterActive = priorFilterActive;
+                lastQueryResults = priorQueryResults;
+                return false;
+            }
+
+            await buildGraph(lastQueryResults.results, lastQueryResults.columns);
             _setGraphLoadingStep('Rendering graph…');
             await _waitForGraphLoadingPaint();
             _render();

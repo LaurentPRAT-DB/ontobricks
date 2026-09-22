@@ -333,13 +333,18 @@ LIMIT ${limit}`,
         const columns = currentResult?.columns || [];
         if (!rows.length || !isTripleProjection(columns)) return;
 
+        // Switch section, then hand the rows straight to the Sigma bridge —
+        // no artificial timer. `SigmaGraph.loadQueryResults` is
+        // self-sufficient (loads its own libs) and claims graph-filter
+        // state synchronously, so it is safe even if SigmaGraph's own
+        // section-entry init runs concurrently. The click handler need not
+        // await this promise chain.
         SidebarNav.switchTo('sigmagraph');
-        window.setTimeout(async () => {
-            const loaded = await SigmaGraph.loadQueryResults(rows, columns);
-            if (!loaded && typeof showNotification === 'function') {
-                showNotification('Could not display these SPARQL results.', 'error');
+        SigmaGraph.loadQueryResults(rows, columns).then((loaded) => {
+            if (!loaded && typeof showNotification === "function") {
+                showNotification("Could not display these SPARQL results.", "error");
             }
-        }, 150);
+        });
     }
 
     return {

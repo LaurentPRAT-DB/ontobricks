@@ -3204,3 +3204,73 @@ Tests:
 - `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py tests/e2e/dtwin/test_dtwin_flows.py` → 13 passed, 13 skipped (e2e nightly-gated) in 0.46s; re-run with `ONTOBRICKS_E2E_FAKE_CREDS=1` to force the browser suite → 26 passed in 19.60s (no new warnings emitted).
 - `node --check` on both modified JS files → syntax OK.
 - `uv run --frozen pytest -q -m "not scenario"` → 6832 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 48.76s (no new warnings vs. baseline).
+
+## Fix Task 4 review Important findings (self-sufficient loader, no timer, dedup notification)
+
+Context: Code review of "Add the explicit Show in Explorer bridge" found
+three Important findings and one adjacent Minor. The user chose the hardened
+implementation over the original timer handoff: `SigmaGraph.loadQueryResults`
+must not depend on `SigmaGraph.init()` having been scheduled elsewhere, the
+150ms timer coupling in `showInExplorer()` must go, and a graph-library
+failure must produce exactly one user notification. Also strengthened the
+weak Task 4 tests (pure string presence / a statically-disabled button) into
+real behavioral coverage.
+
+Changes:
+
+1. `src/front/static/query/js/query-sigmagraph.js`
+   `loadQueryResults` now calls `_loadGraphLibs()` itself (no longer relies
+   on `SigmaGraph.init()`'s call). It also claims `_graphFilterActive` and
+   caches `lastQueryResults` **synchronously, before its first `await`**, so
+   a `SigmaGraph.init()` concurrently scheduled by query.js's
+   `sidebarSectionChanged` → 100ms timer sees the flag already set and takes
+   its "already active" branch instead of resetting `d3NodesData` /
+   `d3LinksData` / `_graph` out from under the rows being loaded. On a
+   library-load failure it restores the prior flag/cache (so a failed load
+   can't mask an existing, already-rendered graph as "active") and no
+   longer calls `showNotification` itself — it `console.error`s and returns
+   `false`, leaving the single user-facing toast to the caller.
+2. `src/front/static/query/js/query-execute.js`
+   `showInExplorer()` drops the `window.setTimeout(..., 150)` handoff:
+   after validating rows/columns it calls `SidebarNav.switchTo('sigmagraph')`
+   then chains `SigmaGraph.loadQueryResults(rows, columns).then(...)`
+   directly — no timer, and the sole failure notification lives here.
+3. `tests/units/front/test_sparql_playground_contract.py`
+   Strengthened `test_explorer_bridge_is_explicit_and_sigma_accepts_query_rows`
+   with a `showInExplorer()` body-order assertion (no `setTimeout`, `switchTo`
+   before `loadQueryResults`). Added
+   `test_load_query_results_starts_its_own_lib_load_before_waiting` (proves
+   `_loadGraphLibs()` precedes `await _waitForGraphLibs()`) and
+   `test_load_query_results_claims_graph_filter_state_before_any_await`
+   (proves `_graphFilterActive = true` is set before the function's first
+   `await`).
+4. `tests/e2e/dtwin/test_dtwin_flows.py`
+   Replaced the "statically disabled button" check with
+   `test_show_in_explorer_switches_then_loads_sigma_bridge_with_query_rows`:
+   mocks `/dtwin/execute` (`page.route`) with a triple-shaped result, runs
+   the query through the real UI to prove `#sparqlExploreBtn` goes from
+   disabled to enabled, stubs `SidebarNav.switchTo` / `SigmaGraph.
+   loadQueryResults` to record call order/args, clicks Show in Explorer, and
+   asserts `switchTo` fires before `loadQueryResults` with the exact
+   executed rows/columns — deterministic and network-independent.
+
+Modified files:
+- `src/front/static/query/js/query-sigmagraph.js`
+- `src/front/static/query/js/query-execute.js`
+- `tests/units/front/test_sparql_playground_contract.py`
+- `tests/e2e/dtwin/test_dtwin_flows.py`
+- `changelogs/v0.9.0/benoitcayladbx_2026-09-21.log`
+
+Tests:
+- RED (new assertions against pre-fix code, JS temporarily reverted via
+  `git stash`): `test_explorer_bridge_is_explicit_and_sigma_accepts_query_rows`,
+  `test_load_query_results_starts_its_own_lib_load_before_waiting`, and
+  `test_load_query_results_claims_graph_filter_state_before_any_await` all
+  failed as expected (3 failed, 12 passed). The new e2e behavioral test
+  passed even against the pre-fix timer code (it asserts final order/args,
+  which the old code also produced, just via a timer) — the "no timer"
+  requirement itself is covered by the static test above.
+- GREEN: `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py` → 15 passed in 0.13s.
+- `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py tests/e2e/dtwin/test_dtwin_flows.py` → 15 passed, 13 skipped (e2e nightly-gated) in 0.47s.
+- Forced e2e: `ONTOBRICKS_E2E_FAKE_CREDS=1 uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py tests/e2e/dtwin/test_dtwin_flows.py` → 28 passed in 19.37s.
+- `uv run --frozen pytest -q -m "not scenario"` → 6834 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.58s (+2 vs. Task 4 baseline of 6832 = the 2 new unit contract tests; no regressions).

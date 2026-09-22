@@ -182,3 +182,42 @@ def test_explorer_bridge_is_explicit_and_sigma_accepts_query_rows():
     assert "SigmaGraph.loadQueryResults" in sparql_js
     assert "loadQueryResults:" in sigma_js
     assert "SidebarNav.switchTo('sigmagraph')" in sparql_js
+
+    # The bridge must hand off to Sigma directly (no timer race with
+    # SigmaGraph's own ~100ms section-entry init) and must switch the
+    # section before it loads the rows.
+    show_body = sparql_js[sparql_js.index("function showInExplorer()") :]
+    show_body = show_body[: show_body.index("\n    return {")]
+    assert "setTimeout" not in show_body
+    switch_idx = show_body.index("SidebarNav.switchTo('sigmagraph')")
+    load_idx = show_body.index("SigmaGraph.loadQueryResults(")
+    assert switch_idx < load_idx
+
+
+def test_load_query_results_starts_its_own_lib_load_before_waiting():
+    """`loadQueryResults` must be self-sufficient: it kicks off
+    `_loadGraphLibs()` itself, before it awaits `_waitForGraphLibs()`,
+    rather than depending on `SigmaGraph.init()` (scheduled by the
+    sidebarSectionChanged listener in query.js) having run first."""
+    sigma_js = read(SIGMA_JS)
+    start = sigma_js.index("loadQueryResults: async function")
+    body = sigma_js[start:]
+    body = body[: body.index("\n        reload: async function")]
+    load_libs_idx = body.index("_loadGraphLibs()")
+    wait_libs_idx = body.index("_waitForGraphLibs(10000)")
+    assert load_libs_idx < wait_libs_idx
+
+
+def test_load_query_results_claims_graph_filter_state_before_any_await():
+    """The public loader must set `_graphFilterActive` / `lastQueryResults`
+    synchronously, before its first `await`, so a concurrently scheduled
+    `SigmaGraph.init()` sees the flag already set and takes its
+    "already active" branch instead of wiping d3NodesData/d3LinksData out
+    from under the rows we are about to render."""
+    sigma_js = read(SIGMA_JS)
+    start = sigma_js.index("loadQueryResults: async function")
+    body = sigma_js[start:]
+    body = body[: body.index("\n        reload: async function")]
+    first_await_idx = body.index("await ")
+    filter_flag_idx = body.index("_graphFilterActive = true;")
+    assert filter_flag_idx < first_await_idx

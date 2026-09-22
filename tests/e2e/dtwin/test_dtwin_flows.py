@@ -11,6 +11,8 @@ Merges two previously separate test files:
   cause this suite to fail.
 """
 
+import json
+
 import pytest
 
 
@@ -110,16 +112,80 @@ class TestQueryPlayground:
             "SPARQLPlayground.isTripleProjection(['type','count'])"
         )
 
-    def test_show_in_explorer_stays_disabled_for_non_triples(
+    def test_show_in_explorer_switches_then_loads_sigma_bridge_with_query_rows(
         self, page, live_server
     ):
+        """Behavioral coverage for the explicit Show-in-Explorer bridge.
+
+        Mocks ``/dtwin/execute`` with a triple-shaped result so the flow
+        stays deterministic and network-independent, runs the query through
+        the real UI to prove ``#sparqlExploreBtn`` starts disabled and
+        becomes enabled only after a triple projection, then stubs
+        ``SidebarNav.switchTo`` and ``SigmaGraph.loadQueryResults`` to prove
+        the click (a) switches section before loading, and (b) hands the
+        loader the exact rows/columns from the executed query — with no
+        timer in between.
+        """
         page.goto(f"{live_server}/dtwin/?section=graphql&tab=sparql")
         page.wait_for_load_state("domcontentloaded")
         page.locator("#sparqlPlaygroundQuery").wait_for(state="visible")
-        disabled = page.evaluate(
+
+        explore_btn = page.locator("#sparqlExploreBtn")
+        assert explore_btn.is_disabled()
+
+        triple_result = {
+            "success": True,
+            "results": [
+                {
+                    "subject": "http://example.com/a",
+                    "predicate": "http://example.com/rel",
+                    "object": "http://example.com/b",
+                }
+            ],
+            "columns": ["subject", "predicate", "object"],
+            "generated_sql": "SELECT * FROM t",
+        }
+        page.route(
+            "**/dtwin/execute",
+            lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(triple_result),
+            ),
+        )
+
+        # Stub the two collaborators the bridge calls so this test never
+        # touches the real graph-rendering/CDN-library pipeline.
+        page.evaluate(
             """() => {
-                const button = document.getElementById('sparqlExploreBtn');
-                return button.disabled;
+                window.__explorerCalls = [];
+                // SidebarNav is a top-level `const` (no `window.` property);
+                // SigmaGraph is a top-level `var`. Reference both as bare
+                // globals so the stub actually replaces the binding the
+                // bridge closures call through.
+                SidebarNav.switchTo = function (section) {
+                    window.__explorerCalls.push({ fn: 'switchTo', section });
+                };
+                SigmaGraph.loadQueryResults = function (rows, columns) {
+                    window.__explorerCalls.push({
+                        fn: 'loadQueryResults',
+                        rows: JSON.parse(JSON.stringify(rows)),
+                        columns: JSON.parse(JSON.stringify(columns)),
+                    });
+                    return Promise.resolve(true);
+                };
             }"""
         )
-        assert disabled
+
+        page.locator("#sparqlRunBtn").click()
+        page.locator("#sparqlExploreBtn:not([disabled])").wait_for(state="visible")
+        assert not explore_btn.is_disabled()
+
+        explore_btn.click()
+        page.wait_for_function("window.__explorerCalls.length >= 2")
+
+        calls = page.evaluate("() => window.__explorerCalls")
+        assert [c["fn"] for c in calls] == ["switchTo", "loadQueryResults"]
+        assert calls[0]["section"] == "sigmagraph"
+        assert calls[1]["rows"] == triple_result["results"]
+        assert calls[1]["columns"] == triple_result["columns"]
