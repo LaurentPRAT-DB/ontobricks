@@ -11,6 +11,7 @@ Escape = Callable[[str], str]
 __all__ = [
     "Escape",
     "entity_search_select",
+    "entity_search_uri_search_sql",
     "is_asserted_only_relation",
     "is_missing_relation_error",
     "preview_select_sql",
@@ -89,6 +90,36 @@ def _entity_search_text_clause(
     if not text_clauses:
         return ""
     return f"({' OR '.join(text_clauses)})"
+
+
+def entity_search_uri_search_sql(
+    *,
+    search_table: str,
+    type_uri: str = "",
+    search: str = "",
+    limit: int,
+    offset: int = 0,
+    escape: Escape,
+) -> str:
+    """Bounded, ordered subject lookup for GraphQL's typed list resolver.
+
+    *type_uri* is matched by exact equality (a full class URI, same
+    semantics as Explorer Preview's ``entity_type``) — unlike
+    :func:`entity_search_seed_sql`, which matches a bare local name.
+    """
+    clauses: list[str] = []
+    if type_uri:
+        clauses.append(f"type_uri = '{escape(type_uri)}'")
+    text_clause = _entity_search_text_clause(
+        field="any", match_type="contains", value=search, escape=escape
+    )
+    if text_clause:
+        clauses.append(text_clause)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    return (
+        f"SELECT uri FROM {search_table}{where} "
+        f"ORDER BY uri LIMIT {int(limit)} OFFSET {int(offset)}"
+    )
 
 
 def preview_select_sql(

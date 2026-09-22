@@ -18,6 +18,26 @@ Modified files:
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6835 passed, 308 skipped, 6 deselected, 1 xfailed in 47.54s.
 
+## Add entity-search builder for typed GraphQL lookups
+
+Context: Task 3 of the cached graph reads plan adds a bounded SQL builder for
+GraphQL typed subject lookup against the `_entity_search` companion table.
+The builder matches `type_uri` by exact equality and optionally applies the
+shared label/URI text clause; wiring into GraphQL is deferred to Task 6.
+
+Changes:
+
+1. src/back/core/graphdb/entity_search.py
+   Add `entity_search_uri_search_sql` and export it via `__all__`.
+2. tests/units/graphdb/test_entity_search_sql.py
+   Add three unit tests covering type filter, text search, and pagination SQL shape.
+
+Modified files:
+- src/back/core/graphdb/entity_search.py
+- tests/units/graphdb/test_entity_search_sql.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6860 passed, 308 skipped, 6 deselected, 1 xfailed in 49.41s.
+
 ## Add the Knowledge Graph SPARQL playground
 
 Context: Add a read-only SPARQL workspace beside GraphQL on the Knowledge

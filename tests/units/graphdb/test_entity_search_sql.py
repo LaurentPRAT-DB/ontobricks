@@ -8,6 +8,7 @@ from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.entity_search import (
     _entity_search_text_clause,
     entity_search_select,
+    entity_search_uri_search_sql,
     is_asserted_only_relation,
     is_missing_relation_error,
     preview_select_sql,
@@ -127,6 +128,46 @@ def test_preview_select_sql_has_no_warehouse_order_by() -> None:
     )
     assert "ORDER BY" not in sql
     assert "LIMIT 501" in sql
+
+
+def test_entity_search_uri_search_sql_exact_type_and_pagination() -> None:
+    sql = entity_search_uri_search_sql(
+        search_table="g_entity_search",
+        type_uri="http://ex.org/Customer",
+        search="",
+        limit=50,
+        offset=10,
+        escape=_escape,
+    )
+    assert sql == (
+        "SELECT uri FROM g_entity_search WHERE type_uri = 'http://ex.org/Customer' "
+        "ORDER BY uri LIMIT 50 OFFSET 10"
+    )
+
+
+def test_entity_search_uri_search_sql_adds_text_clause_when_search_given() -> None:
+    sql = entity_search_uri_search_sql(
+        search_table="g_entity_search",
+        type_uri="http://ex.org/Customer",
+        search="Jac",
+        limit=50,
+        offset=0,
+        escape=_escape,
+    )
+    assert "type_uri = 'http://ex.org/Customer'" in sql
+    assert "(label_lc LIKE '%jac%' OR uri_lc LIKE '%jac%')" in sql
+    assert " AND " in sql
+
+
+def test_entity_search_uri_search_sql_no_type_filter() -> None:
+    sql = entity_search_uri_search_sql(
+        search_table="g_entity_search",
+        type_uri="",
+        search="",
+        limit=10,
+        escape=_escape,
+    )
+    assert sql == "SELECT uri FROM g_entity_search ORDER BY uri LIMIT 10 OFFSET 0"
 
 
 def test_sort_preview_rows_orders_type_then_label_then_uri() -> None:
