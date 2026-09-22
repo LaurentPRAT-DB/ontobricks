@@ -229,3 +229,39 @@ def test_graphdb_backend_adjacency_defaults():
     store.rebuild_adjacency("g")
     assert store.adjacency_ready("g") is False
     assert store.entity_search_ready("g") is False
+
+
+def test_find_subjects_by_type_uses_entity_search_when_ready():
+    store = FakeStore()
+    store._search_ready = True
+    store.find_subjects_by_type("g", "http://ex/Customer", limit=10, offset=5)
+    assert len(store.queries) == 1
+    sql = store.queries[0]
+    assert "g_entity_search" in sql
+    assert "type_uri = 'http://ex/Customer'" in sql
+    assert "LIMIT 10 OFFSET 5" in sql
+
+
+def test_find_subjects_by_type_falls_back_when_entity_search_not_ready():
+    store = FakeStore()
+    store._search_ready = False
+    store.find_subjects_by_type("g", "http://ex/Customer", limit=10, offset=0)
+    assert len(store.queries) == 1
+    sql = store.queries[0]
+    assert "g_entity_search" not in sql
+    assert "predicate = '" in sql
+
+
+def test_find_subjects_by_type_falls_back_on_missing_table_error():
+    store = FakeStore()
+    store._search_ready = True
+    with patch.object(
+        store,
+        "execute_query",
+        side_effect=[RuntimeError("TABLE_OR_VIEW_NOT_FOUND"), [{"subject": "http://ex/1"}]],
+    ) as execute:
+        subs = store.find_subjects_by_type("g", "http://ex/Customer", limit=10, offset=0)
+    assert subs == ["http://ex/1"]
+    assert execute.call_count == 2
+    assert "g_entity_search" in execute.call_args_list[0].args[0]
+    assert "g_entity_search" not in execute.call_args_list[1].args[0]

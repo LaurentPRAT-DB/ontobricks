@@ -24,6 +24,7 @@ from back.core.helpers import sql_escape as _shared_sql_escape
 from back.core.graphdb.adjacency import expand_entity_neighbors_sql
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.entity_search import (
+    entity_search_uri_search_sql,
     is_asserted_only_relation,
     is_missing_relation_error,
     preview_select_sql,
@@ -597,7 +598,38 @@ class GraphDBBackend(ABC):
 
         When *search* is given, matches against all literal values for the
         subject (label, data properties, etc.) — not just ``rdfs:label``.
+
+        When the entity-search companion is ready, reads it instead — a
+        Build/Refresh-cache snapshot rather than the live graph, and
+        *search* then matches only ``rdfs:label``/URI (same fields Explorer
+        Preview searches). Falls back to the SPO query below when the
+        companion is missing or a missing-table error occurs mid-query.
         """
+        if self.entity_search_ready(table_name):
+            if is_asserted_only_relation(table_name):
+                search_table = self.entity_search_asserted_table_id(table_name)
+            else:
+                search_table = self.entity_search_table_id(table_name)
+            sql = entity_search_uri_search_sql(
+                search_table=self._sql_relation(search_table),
+                type_uri=type_uri,
+                search=search or "",
+                limit=limit,
+                offset=offset,
+                escape=self._sql_escape,
+            )
+            try:
+                rows = self.execute_query(sql)
+                return [r["uri"] for r in rows]
+            except Exception as exc:  # noqa: BLE001
+                if not is_missing_relation_error(exc):
+                    raise
+                logger.info(
+                    "Entity-search table is unavailable for typed lookup; "
+                    "using SPO fallback: %s",
+                    exc,
+                )
+
         esc_type = self._sql_escape(type_uri)
         conditions = [
             f"predicate = '{RDF_TYPE}'",

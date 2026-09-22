@@ -303,7 +303,7 @@ def test_default_schema_constant():
 
 def test_find_subjects_by_type_delegates(auth):
     store = LakebaseFlatStore(auth, schema="g")
-    with patch.object(
+    with patch.object(store, "table_exists", return_value=False), patch.object(
         store,
         "execute_query",
         return_value=[{"subject": "http://ex/1"}, {"subject": "http://ex/2"}],
@@ -315,6 +315,20 @@ def test_find_subjects_by_type_delegates(auth):
             offset=0,
         )
     assert subs == ["http://ex/1", "http://ex/2"]
+
+
+def test_find_subjects_by_type_uses_entity_search_when_ready(auth):
+    store = LakebaseFlatStore(auth, schema="g")
+    with patch.object(store, "table_exists", return_value=True), patch.object(
+        store,
+        "execute_query",
+        return_value=[{"uri": "http://ex/1"}],
+    ) as execute:
+        subs = store.find_subjects_by_type(
+            "G_V1", "http://ex.org/Customer", limit=10, offset=0
+        )
+    assert subs == ["http://ex/1"]
+    assert "g_v1_entity_search" in execute.call_args.args[0]
 
 
 def test_bfs_traversal_sql_path(auth):
