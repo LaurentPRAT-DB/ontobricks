@@ -133,8 +133,11 @@ def test_generated_sql_pane_is_persistent_below_editor_and_outside_results():
 
 def test_query_shell_actions_stay_declarative_without_inline_handlers():
     shell = read(SHELL)
-    for action in ("switch-domain", "ontology", "discussion"):
+    for action in ("ontology", "discussion"):
         assert f'data-query-action="{action}"' in shell
+    assert 'data-query-action="switch-domain"' not in shell
+    assert "Switch domain" not in shell
+    assert "Graph DB:" not in shell
     assert "onclick=" not in shell
 
 
@@ -339,8 +342,7 @@ def test_generated_sql_pane_has_fixed_basis_and_owns_internal_scroll():
 
 def test_query_shell_action_mappings_are_wired_in_js():
     js = read(QUERY_JS)
-    assert "switch-domain" in js
-    assert "_openGraphSwitcherModal" in js
+    assert "switch-domain" not in js
     assert "ontology" in js
     assert "OntologyViewer.open" in js
     assert "discussion" in js

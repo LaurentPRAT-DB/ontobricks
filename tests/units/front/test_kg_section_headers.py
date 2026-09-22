@@ -1,8 +1,8 @@
-"""KG Explorer / Query / Chat section headers omit the redundant Domain line.
+"""KG section headers omit domain/graph-DB chrome already shown in the navbar.
 
-The first header (navbar) already shows the current domain, version, and
-status. Repeating "Domain: … vN Draft" in the page subtitle was noise.
-Graph DB name + Switch domain stay.
+The L2 header already shows the current domain, version, and status. Repeating
+"Domain: …", "Graph DB: …", or a Switch domain control under the section
+subtitle was noise.
 """
 
 from pathlib import Path
@@ -16,13 +16,33 @@ _TEMPLATES = (
     REPO_ROOT / "src/front/templates/partials/dtwin/_query_sigmagraph.html",
     REPO_ROOT / "src/front/templates/partials/dtwin/_query_query.html",
     REPO_ROOT / "src/front/templates/partials/dtwin/_query_chat.html",
+    REPO_ROOT / "src/front/templates/partials/dtwin/_query_dataquality.html",
+    REPO_ROOT / "src/front/templates/partials/dtwin/_query_reasoning.html",
+    REPO_ROOT / "src/front/templates/partials/dtwin/_query_cohorts.html",
+    REPO_ROOT / "src/front/templates/partials/dtwin/_query_analytics.html",
+    REPO_ROOT / "src/front/templates/partials/dtwin/_query_insights.html",
 )
 
 
-@pytest.mark.parametrize("template", _TEMPLATES, ids=("explorer", "query", "chat"))
-def test_kg_data_tab_header_has_no_domain_line(template: Path):
+@pytest.mark.parametrize(
+    "template",
+    _TEMPLATES,
+    ids=(
+        "explorer",
+        "query",
+        "chat",
+        "dataquality",
+        "reasoning",
+        "cohorts",
+        "analytics",
+        "insights",
+    ),
+)
+def test_kg_section_header_has_no_domain_or_graph_db_line(template: Path):
     html = template.read_text(encoding="utf-8")
-    assert "Domain:" not in html
-    assert "js-version-status-badge" not in html
-    assert "Graph DB:" in html
-    assert "Switch domain" in html
+    header = html.split('<div class="section-header', 1)[1]
+    header = header.split("</div>", 1)[0]
+    assert "Domain:" not in header
+    assert "Graph DB:" not in header
+    assert "Switch domain" not in header
+    assert "js-version-status-badge" not in header

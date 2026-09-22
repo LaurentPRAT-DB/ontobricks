@@ -479,3 +479,47 @@ Tests:
 - Focused browser flow: `ONTOBRICKS_E2E_FAKE_CREDS=1 uv run --frozen pytest -q tests/e2e/dtwin/test_dtwin_flows.py::TestQueryPlayground` → 4 passed, 1 warning in 14.25s.
 - Browser layout: deterministic mocked execution at 1440×900 and 390×844 → 1 passed, 1 warning in 10.23s; no console or first-party response errors.
 - Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6883 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.58s.
+
+## Remove KG header domain and switch-domain chrome
+
+Context: Knowledge Graph section subtitles still repeated the current domain
+or Graph DB name plus a Switch domain button, even though the L2 navbar
+already owns that context. Those lines are now removed from every KG
+sub-page header.
+
+Changes:
+
+1. src/front/templates/partials/dtwin/_query_query.html
+   Keep the Query subtitle and drop Graph DB plus Switch domain.
+2. src/front/templates/partials/dtwin/_query_chat.html
+   Keep the Chat subtitle and drop Graph DB plus Switch domain.
+3. src/front/templates/partials/dtwin/_query_sigmagraph.html
+   Keep the Explorer subtitle and drop Graph DB plus Switch domain.
+4. src/front/templates/partials/dtwin/_query_dataquality.html
+   Keep the Data Quality subtitle and drop Domain, version, and Switch domain.
+5. src/front/templates/partials/dtwin/_query_reasoning.html
+   Keep the Inference subtitle and drop Domain, version, and Switch domain.
+6. src/front/templates/partials/dtwin/_query_cohorts.html
+   Keep the Cohorts subtitle and drop Domain, version, and Graph DB.
+7. src/front/static/query/js/query.js
+   Remove the unused Query-shell switch-domain action mapping.
+8. src/front/static/query/js/query-dataquality.js
+   Remove the unused Data Quality graph-switcher click handler.
+9. tests/units/front/test_kg_section_headers.py
+   Require every KG section header to omit Domain, Graph DB, and Switch domain.
+10. tests/units/front/test_sparql_playground_contract.py
+    Assert the Query shell no longer wires switch-domain.
+
+Modified files:
+- src/front/templates/partials/dtwin/_query_query.html
+- src/front/templates/partials/dtwin/_query_chat.html
+- src/front/templates/partials/dtwin/_query_sigmagraph.html
+- src/front/templates/partials/dtwin/_query_dataquality.html
+- src/front/templates/partials/dtwin/_query_reasoning.html
+- src/front/templates/partials/dtwin/_query_cohorts.html
+- src/front/static/query/js/query.js
+- src/front/static/query/js/query-dataquality.js
+- tests/units/front/test_kg_section_headers.py
+- tests/units/front/test_sparql_playground_contract.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6888 passed, 308 skipped, 6 deselected, 1 xfailed in 49.64s.

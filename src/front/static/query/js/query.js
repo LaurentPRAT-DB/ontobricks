@@ -96,7 +96,6 @@ window.openTwinDiscussion = openTwinDiscussion;
 // Configure sidebar navigation
 window.SIDEBAR_NAV_MANUAL_INIT = true;
 const _QUERY_SHELL_ACTION_MAP = {
-    'switch-domain': '_openGraphSwitcherModal',
     'ontology': 'OntologyViewer.open',
     'discussion': 'openTwinDiscussion'
 };
