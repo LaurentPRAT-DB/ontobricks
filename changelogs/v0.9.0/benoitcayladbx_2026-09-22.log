@@ -250,3 +250,78 @@ Tests:
 - RED: `uv run --frozen pytest tests/units/graphdb/test_entity_search_sql.py -k seed_sql -v` → ImportError: cannot import name 'entity_search_seed_sql'.
 - GREEN: `uv run --frozen pytest tests/units/graphdb/test_entity_search_sql.py -v` → 19 passed in 0.88s.
 - Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6864 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.53s.
+
+## Wire get_triples_for_subjects to property companion
+
+Context: Task 7 of the cached graph reads plan. `get_triples_for_subjects` —
+called by GraphQL's `SchemaMetadata._load_triples`, MCP's
+`DigitalTwin.find_triples_bfs`, and the "Expand neighbours" route — now reads
+the `_props` companion table when the backend supports it, with transparent
+fallback to SPO for unsupported backends or a missing companion table.
+
+Changes:
+
+1. src/back/core/graphdb/GraphDBBackend.py
+   Add `execute_expand_with_props_fallback` import; replace method body to
+   delegate to props companion (or SPO fallback) based on `supports_props`.
+2. tests/units/graphdb/test_graphdb_adjacency_contract.py
+   Add `setup_function` cache-reset guard and 4 new contract tests covering
+   props-backed path, SPO-only path, missing-table fallback, and empty-subjects
+   short-circuit.
+
+Modified files:
+- src/back/core/graphdb/GraphDBBackend.py
+- tests/units/graphdb/test_graphdb_adjacency_contract.py
+
+Tests:
+- RED: `uv run --frozen pytest tests/units/graphdb/test_graphdb_adjacency_contract.py -k get_triples_for_subjects -v` → 2 failed, 2 passed.
+- GREEN: `uv run --frozen pytest tests/units/graphdb/test_graphdb_adjacency_contract.py -k get_triples_for_subjects -v` → 4 passed.
+- Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6876 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 50.30s.
+## Wire bfs_traversal to the adjacency + entity-search companions
+
+Context: Task 8 of the cached graph reads plan — the highest-risk task.
+`GraphDBBackend.bfs_traversal`, called (via `DigitalTwin.find_triples_bfs`)
+by MCP's `describe_entity` tool and Graph Chat's find-and-traverse flow, now
+seeds from `entity_search_seed_sql` (Task 4) and walks `_adj_out`/`_adj_in`
+via `seeded_bfs_sql` (Task 5) when both companions are ready, falling back
+to the existing `WITH RECURSIVE` SPO CTE (built from the caller-supplied
+`seed_where`) when they are not, or on a missing-table error mid-query. The
+seed-input threading was already resolved by earlier tasks: `bfs_traversal`
+already accepted `search`/`entity_type` as separate optional parameters
+(alongside `seed_where`), and `DigitalTwin.find_triples_bfs` already passed
+them through — this task only had to consume them.
+
+Changes:
+
+1. src/back/core/graphdb/GraphDBBackend.py
+   Import `seeded_bfs_sql` (adjacency) and `entity_search_seed_sql`
+   (entity_search); prepend the companion-aware branch to `bfs_traversal`,
+   leaving the legacy SPO recursive-CTE body unchanged as the fallback.
+2. tests/units/graphdb/test_graphdb_adjacency_contract.py
+   Add 4 FakeStore contract tests: companion path used when both ready,
+   fallback when adjacency not ready, fallback when entity-search not
+   ready, fallback on a missing-table error mid-query (2-call sequence).
+3. tests/units/core/test_lakebase_flat_store.py
+   Add `table_exists` mock to the existing `test_bfs_traversal_sql_path`
+   (now required because `bfs_traversal` probes readiness before falling
+   back — the unmocked call previously never touched `table_exists` and a
+   live pool connection isn't available in this unit test) and add
+   `test_bfs_traversal_uses_companions_when_ready` for the companion SQL.
+4. tests/units/dtwin/test_digitaltwin_api.py
+   `TestBfsTraversalSql._capture_sql` uses a bare
+   `MagicMock(spec=GraphDBBackend)`; `adjacency_ready`/`entity_search_ready`
+   now default to a truthy `MagicMock()` return value instead of `False`,
+   which entered the new companion branch and blew up unpacking
+   `adjacency_table_ids()`. Pin both to `False` so this class keeps testing
+   only the legacy SPO SQL generation it was written for.
+
+Modified files:
+- src/back/core/graphdb/GraphDBBackend.py
+- tests/units/graphdb/test_graphdb_adjacency_contract.py
+- tests/units/core/test_lakebase_flat_store.py
+- tests/units/dtwin/test_digitaltwin_api.py
+
+Tests:
+- RED: `uv run --frozen pytest tests/units/graphdb/test_graphdb_adjacency_contract.py -k bfs_traversal -v` → 2 failed, 2 passed.
+- GREEN: `uv run --frozen pytest tests/units/graphdb/test_graphdb_adjacency_contract.py tests/units/core/test_lakebase_flat_store.py tests/units/dtwin/test_digitaltwin_api.py -v` → 124 passed.
+- Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6881 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.57s.

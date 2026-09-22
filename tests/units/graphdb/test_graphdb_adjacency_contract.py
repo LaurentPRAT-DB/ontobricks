@@ -309,3 +309,55 @@ def test_get_triples_for_subjects_returns_empty_list_for_no_subjects():
     store = FakeStore()
     assert store.get_triples_for_subjects("g", []) == []
     assert store.queries == []
+
+
+def test_bfs_traversal_uses_adjacency_and_entity_search_when_ready():
+    store = FakeStore()
+    store._adj_ready = True
+    store._search_ready = True
+    store.bfs_traversal("g", " WHERE subject = 'x'", depth=2, entity_type="Customer")
+    assert len(store.queries) == 1
+    sql = store.queries[0]
+    assert "g_entity_search" in sql
+    assert "g_adj_out" in sql
+    assert "g_adj_in" in sql
+    assert "WITH RECURSIVE" not in sql
+    assert "(LOWER(type_uri) LIKE '%#customer' OR LOWER(type_uri) LIKE '%/customer')" in sql
+
+
+def test_bfs_traversal_falls_back_when_adjacency_not_ready():
+    store = FakeStore()
+    store._adj_ready = False
+    store._search_ready = True
+    store.bfs_traversal("g", " WHERE subject = 'x'", depth=2)
+    assert len(store.queries) == 1
+    assert "WITH RECURSIVE" in store.queries[0]
+    assert "g_entity_search" not in store.queries[0]
+
+
+def test_bfs_traversal_falls_back_when_entity_search_not_ready():
+    store = FakeStore()
+    store._adj_ready = True
+    store._search_ready = False
+    store.bfs_traversal("g", " WHERE subject = 'x'", depth=2)
+    assert len(store.queries) == 1
+    assert "WITH RECURSIVE" in store.queries[0]
+
+
+def test_bfs_traversal_falls_back_on_missing_table_error():
+    store = FakeStore()
+    store._adj_ready = True
+    store._search_ready = True
+    with patch.object(
+        store,
+        "execute_query",
+        side_effect=[
+            RuntimeError("TABLE_OR_VIEW_NOT_FOUND: g_adj_out"),
+            [{"entity": "http://seed", "min_lvl": 0}],
+        ],
+    ) as execute:
+        rows = store.bfs_traversal("g", " WHERE subject = 'x'", depth=1)
+    assert rows == [{"entity": "http://seed", "min_lvl": 0}]
+    assert execute.call_count == 2
+    assert "g_entity_search" in execute.call_args_list[0].args[0]
+    assert "WITH RECURSIVE" in execute.call_args_list[1].args[0]

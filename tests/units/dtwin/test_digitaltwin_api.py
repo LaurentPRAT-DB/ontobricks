@@ -287,6 +287,10 @@ class TestBfsTraversalSql:
 
         store = MagicMock(spec=GraphDBBackend)
         store.execute_query = fake_execute
+        # Force the legacy SPO path: this class tests the recursive-CTE SQL
+        # generation, not the adjacency/entity-search companion path.
+        store.adjacency_ready.return_value = False
+        store.entity_search_ready.return_value = False
         store.bfs_traversal = lambda *a, **kw: GraphDBBackend.bfs_traversal(
             store, *a, **kw
         )

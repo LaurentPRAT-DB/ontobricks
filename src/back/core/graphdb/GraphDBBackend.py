@@ -21,10 +21,11 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple
 
 from back.core.logging import get_logger
 from back.core.helpers import sql_escape as _shared_sql_escape
-from back.core.graphdb.adjacency import expand_entity_neighbors_sql
+from back.core.graphdb.adjacency import expand_entity_neighbors_sql, seeded_bfs_sql
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.props import execute_expand_with_props_fallback
 from back.core.graphdb.entity_search import (
+    entity_search_seed_sql,
     entity_search_uri_search_sql,
     is_asserted_only_relation,
     is_missing_relation_error,
@@ -787,8 +788,46 @@ class GraphDBBackend(ABC):
         *search* and *entity_type* are structured parameters for future
         non-SQL backends (Cypher, Gremlin) that cannot use raw SQL fragments.
 
+        When both the adjacency and entity-search companions are ready,
+        seeds from the entity-search index (structured *search*/*entity_type*
+        rather than *seed_where*) and walks ``_adj_out``/``_adj_in`` instead
+        of the raw SPO relation — same typed-endpoint restriction Explorer's
+        expansion already has. Falls back to the SPO recursive CTE below
+        when either companion is missing, or on a missing-table error
+        mid-query.
+
         Returns rows with ``entity`` and ``min_lvl`` columns.
         """
+        if self.adjacency_ready(table_name) and self.entity_search_ready(table_name):
+            if is_asserted_only_relation(table_name):
+                search_table = self.entity_search_asserted_table_id(table_name)
+            else:
+                search_table = self.entity_search_table_id(table_name)
+            seed_sql = entity_search_seed_sql(
+                search_table=self._sql_relation(search_table),
+                entity_type=entity_type,
+                search=search,
+                escape=self._sql_escape,
+            )
+            adj_out, adj_in = self.adjacency_table_ids(table_name)
+            sql = seeded_bfs_sql(
+                flavor=self.sql_flavor(),
+                adj_out=self._sql_relation(adj_out),
+                adj_in=self._sql_relation(adj_in),
+                seed_sql=seed_sql,
+                depth=depth,
+            )
+            try:
+                return self.execute_query(sql) or []
+            except Exception as exc:  # noqa: BLE001
+                if not is_missing_relation_error(exc):
+                    raise
+                logger.info(
+                    "Adjacency/entity-search companions unavailable for BFS "
+                    "find; using SPO fallback: %s",
+                    exc,
+                )
+
         edge_filters = (
             f"t.predicate != '{RDF_TYPE}' "
             f"AND t.predicate NOT LIKE '%#label' "

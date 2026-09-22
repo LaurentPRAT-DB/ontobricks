@@ -333,13 +333,30 @@ def test_find_subjects_by_type_uses_entity_search_when_ready(auth):
 
 def test_bfs_traversal_sql_path(auth):
     store = LakebaseFlatStore(auth, schema="g")
-    with patch.object(
+    with patch.object(store, "table_exists", return_value=False), patch.object(
         store,
         "execute_query",
         return_value=[{"entity": "http://seed", "min_lvl": 0}],
     ):
         rows = store.bfs_traversal("G_V1", " WHERE subject = 'http://seed'", depth=3)
     assert rows == [{"entity": "http://seed", "min_lvl": 0}]
+
+
+def test_bfs_traversal_uses_companions_when_ready(auth):
+    store = LakebaseFlatStore(auth, schema="g")
+    with patch.object(store, "table_exists", return_value=True), patch.object(
+        store,
+        "execute_query",
+        return_value=[{"entity": "http://ex/1", "min_lvl": 0}],
+    ) as execute:
+        rows = store.bfs_traversal(
+            "G_V1", " WHERE subject = 'http://seed'", depth=1, entity_type="Customer"
+        )
+    assert rows == [{"entity": "http://ex/1", "min_lvl": 0}]
+    sql = execute.call_args.args[0]
+    assert "g_v1_entity_search" in sql
+    assert "g_v1_adj_out" in sql
+    assert "g_v1_adj_in" in sql
 
 
 # ---------------------------------------------------------------
