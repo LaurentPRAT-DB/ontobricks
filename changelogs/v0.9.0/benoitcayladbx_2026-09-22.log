@@ -1,0 +1,19 @@
+## Keep generated SQL readable
+
+Context: The SPARQL playground's Generated SQL text inherited a white
+foreground from generic code styling while its panel remained white. Scoped
+design-token colors now guarantee readable SQL without affecting other code
+blocks.
+
+Changes:
+
+1. src/front/static/query/css/query-sparql.css
+   Add scoped foreground, background, border, radius, and padding styles for the Generated SQL block.
+2. tests/units/front/test_sparql_playground_contract.py
+   Add a regression contract that requires explicit readable token colors on the SQL container and code.
+
+Modified files:
+- src/front/static/query/css/query-sparql.css
+- tests/units/front/test_sparql_playground_contract.py
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 6835 passed, 308 skipped, 6 deselected, 1 xfailed in 47.54s.

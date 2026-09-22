@@ -81,6 +81,16 @@
     max-height: 12rem;
     overflow: auto;
     margin: 0.5rem 0 0;
+    border: 1px solid var(--db-border);
+    border-radius: var(--db-radius-control);
+    background: var(--db-canvas-warm);
+    color: var(--db-text);
+    padding: 0.75rem;
+}
+
+.sparql-sql-disclosure pre code {
+    background: transparent;
+    color: var(--db-text);
 }
 
 @media (max-width: 991.98px) {

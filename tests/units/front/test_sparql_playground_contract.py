@@ -125,6 +125,22 @@ def test_sparql_css_uses_shared_tokens_and_responsive_stack():
     )
 
 
+def test_generated_sql_has_scoped_readable_token_colors():
+    css = read(CSS)
+    assert (
+        _winning_declaration(css, ".sparql-sql-disclosure pre", "background")
+        == "var(--db-canvas-warm)"
+    )
+    assert (
+        _winning_declaration(css, ".sparql-sql-disclosure pre", "color")
+        == "var(--db-text)"
+    )
+    assert (
+        _winning_declaration(css, ".sparql-sql-disclosure pre code", "color")
+        == "var(--db-text)"
+    )
+
+
 def test_query_shell_action_mappings_are_wired_in_js():
     js = read(QUERY_JS)
     assert "switch-domain" in js
