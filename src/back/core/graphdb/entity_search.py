@@ -10,6 +10,7 @@ Escape = Callable[[str], str]
 
 __all__ = [
     "Escape",
+    "entity_search_seed_sql",
     "entity_search_select",
     "entity_search_uri_search_sql",
     "is_asserted_only_relation",
@@ -90,6 +91,37 @@ def _entity_search_text_clause(
     if not text_clauses:
         return ""
     return f"({' OR '.join(text_clauses)})"
+
+
+def entity_search_seed_sql(
+    *,
+    search_table: str,
+    entity_type: str = "",
+    search: str = "",
+    escape: Escape,
+) -> str:
+    """Unbounded seed lookup for MCP/Graph Chat find, mirroring the legacy
+    ``build_find_seed_where`` SPO seed clause.
+
+    *entity_type* is matched as a **local-name suffix** against ``type_uri``
+    (case-insensitive ``#name`` / ``/name``) — MCP's ``describe_entity`` and
+    ``/triples/find`` document ``entity_type`` as a bare local name, not a
+    full URI (unlike :func:`entity_search_uri_search_sql`, used by GraphQL
+    and Explorer Preview, which both take a full class URI).
+    """
+    clauses: list[str] = []
+    if entity_type:
+        esc = escape(entity_type.lower())
+        clauses.append(
+            f"(LOWER(type_uri) LIKE '%#{esc}' OR LOWER(type_uri) LIKE '%/{esc}')"
+        )
+    text_clause = _entity_search_text_clause(
+        field="any", match_type="contains", value=search, escape=escape
+    )
+    if text_clause:
+        clauses.append(text_clause)
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    return f"SELECT uri FROM {search_table}{where}"
 
 
 def entity_search_uri_search_sql(

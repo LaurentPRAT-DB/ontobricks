@@ -7,6 +7,7 @@ import pytest
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
 from back.core.graphdb.entity_search import (
     _entity_search_text_clause,
+    entity_search_seed_sql,
     entity_search_select,
     entity_search_uri_search_sql,
     is_asserted_only_relation,
@@ -157,6 +158,56 @@ def test_entity_search_uri_search_sql_adds_text_clause_when_search_given() -> No
     assert "type_uri = 'http://ex.org/Customer'" in sql
     assert "(label_lc LIKE '%jac%' OR uri_lc LIKE '%jac%')" in sql
     assert " AND " in sql
+
+
+def test_entity_search_seed_sql_matches_type_local_name_suffix() -> None:
+    sql = entity_search_seed_sql(
+        search_table="g_entity_search",
+        entity_type="Customer",
+        search="",
+        escape=_escape,
+    )
+    assert sql == (
+        "SELECT uri FROM g_entity_search WHERE "
+        "(LOWER(type_uri) LIKE '%#customer' OR LOWER(type_uri) LIKE '%/customer')"
+    )
+
+
+def test_entity_search_seed_sql_combines_type_and_search() -> None:
+    sql = entity_search_seed_sql(
+        search_table="g_entity_search",
+        entity_type="Customer",
+        search="Jac",
+        escape=_escape,
+    )
+    assert "(LOWER(type_uri) LIKE '%#customer' OR LOWER(type_uri) LIKE '%/customer')" in sql
+    assert "(label_lc LIKE '%jac%' OR uri_lc LIKE '%jac%')" in sql
+    assert " AND " in sql
+    assert "LIMIT" not in sql
+    assert "OFFSET" not in sql
+
+
+def test_entity_search_seed_sql_search_only_has_no_type_clause() -> None:
+    sql = entity_search_seed_sql(
+        search_table="g_entity_search",
+        entity_type="",
+        search="ada",
+        escape=_escape,
+    )
+    assert sql == (
+        "SELECT uri FROM g_entity_search WHERE "
+        "(label_lc LIKE '%ada%' OR uri_lc LIKE '%ada%')"
+    )
+
+
+def test_entity_search_seed_sql_escapes_entity_type() -> None:
+    sql = entity_search_seed_sql(
+        search_table="g_entity_search",
+        entity_type="O'Brien",
+        search="",
+        escape=lambda s: s.replace("'", "''"),
+    )
+    assert "o''brien" in sql
 
 
 def test_entity_search_uri_search_sql_no_type_filter() -> None:

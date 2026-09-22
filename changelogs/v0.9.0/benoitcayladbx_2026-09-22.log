@@ -226,3 +226,27 @@ Tests:
 - Focused: `uv run --frozen pytest -q tests/back/core/w3c/sparql/test_query_safety.py tests/units/api/test_dtwin_sparql_routes.py tests/units/agents/test_agent_dtwin_chat.py tests/units/front/test_sparql_playground_contract.py tests/units/front/test_sidebar_content_stretch_contract.py` → 223 passed, 1 warning in 1.54s.
 - Browser: `ONTOBRICKS_E2E_FAKE_CREDS=1 uv run --frozen pytest -q tests/e2e/dtwin/test_dtwin_flows.py::TestQueryPlayground` → 4 passed, 1 warning in 13.44s.
 - Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6860 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 47.64s.
+
+## Add entity-search seed builder for MCP find
+
+Context: Task 4 of the cached graph reads plan adds an unbounded SQL builder
+for MCP/Graph Chat find-and-traverse BFS seeding against the `_entity_search`
+companion table. Unlike the GraphQL builder, it matches `entity_type` as a
+bare local-name suffix on `type_uri` (case-insensitive `#name` / `/name`),
+mirroring legacy MCP find semantics. Wiring into MCP is deferred to Task 8.
+
+Changes:
+
+1. src/back/core/graphdb/entity_search.py
+   Add `entity_search_seed_sql` with local-name type suffix matching and optional text clause; export via `__all__`.
+2. tests/units/graphdb/test_entity_search_sql.py
+   Add four SQL-shape tests for type suffix, combined filters, search-only, and entity-type escaping.
+
+Modified files:
+- src/back/core/graphdb/entity_search.py
+- tests/units/graphdb/test_entity_search_sql.py
+
+Tests:
+- RED: `uv run --frozen pytest tests/units/graphdb/test_entity_search_sql.py -k seed_sql -v` → ImportError: cannot import name 'entity_search_seed_sql'.
+- GREEN: `uv run --frozen pytest tests/units/graphdb/test_entity_search_sql.py -v` → 19 passed in 0.88s.
+- Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6864 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.53s.
