@@ -110,8 +110,11 @@ search, N-hop neighbour expansion, cross-domain bridge navigation, community
 detection (Louvain, Label Propagation, Greedy Modularity), and explainable
 **cohort discovery**. Lakehouse domains can optionally read from a **Lakehouse//RT**
 query warehouse while builds stay on a classic or serverless warehouse. Query
-everything through an auto-generated **GraphQL** API. Details in the
-[User Guide](docs/user-guide.md), [Get Started](docs/get-started.md), and
+everything through an auto-generated **GraphQL** API or open **Knowledge Graph
+→ Query → SPARQL** for read-only SELECT queries, sample queries, CSV export,
+generated SQL inspection, and triple-shaped results that open in Explorer.
+See the [SPARQL Playground guide](docs/user-guide.md#sparql-playground),
+[Get Started](docs/get-started.md), and
 [Cohort Discovery](docs/cohort_discovery.md).
 
 ### Publish to AI agents (MCP)

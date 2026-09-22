@@ -49,8 +49,8 @@ Changes:
     Retarget existing Grid.js styling to the SPARQL results pane.
 11. tests/
     Cover the safety boundary, Query markup, controller behavior, and deep link.
-12. docs/user-guide.md, docs/data-access.md, and docs/sphinx/api/app.core.w3c.rst
-    Document the playground and execution path.
+12. README.md, docs/user-guide.md, docs/data-access.md, and docs/sphinx/api/app.core.w3c.rst
+    Document the playground, execution path, and an executable triple-query example.
 
 Modified files:
 - src/back/core/w3c/sparql/QuerySafety.py
@@ -73,6 +73,7 @@ Modified files:
 - tests/units/front/test_sparql_playground_contract.py
 - tests/units/front/test_sidebar_content_stretch_contract.py
 - tests/e2e/dtwin/test_dtwin_flows.py
+- README.md
 - docs/user-guide.md
 - docs/data-access.md
 - docs/sphinx/api/app.core.w3c.rst

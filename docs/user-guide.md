@@ -842,6 +842,27 @@ The playground rejects SPARQL update verbs. The Spark translator currently
 executes SELECT queries only; ASK, DESCRIBE, and CONSTRUCT are read-only but
 return a validation error until that translator supports them.
 
+For example, the default **All triples** sample uses the current ontology base
+URI for `ont:` (shown here with the default base):
+
+```sparql
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX ont: <https://databricks-ontology.com/>
+
+SELECT ?subject ?predicate ?object
+WHERE {
+  ?subject ?predicate ?object .
+}
+LIMIT 100
+```
+
+**Run** returns up to 100 rows with `subject`, `predicate`, and `object`
+columns. For a non-empty result, **CSV** downloads those rows and **Show in
+Explorer** is enabled because the projection is a complete triple. The
+playground replaces the example `ont:` URI with the loaded domain's configured
+base URI.
+
 **Spark SPARQL support boundary (fail-closed):**
 
 - The Spark translator accepts this subset only: `SELECT`/`SELECT *`, `DISTINCT`, `LIMIT`, basic graph patterns, `OPTIONAL` on supported patterns, string filters (`CONTAINS`, string equality, `STRSTARTS`, `STRENDS`), predicate `IN`, literal `BIND`, and the specialized relationship `UNION` pattern used by the Explorer relationship filter.
