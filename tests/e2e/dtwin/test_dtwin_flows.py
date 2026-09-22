@@ -131,9 +131,11 @@ class TestQueryPlayground:
         page.locator("#sparqlPlaygroundQuery").wait_for(state="visible")
 
         explore_btn = page.locator("#sparqlExploreBtn")
-        sql_disclosure = page.locator(".sparql-sql-disclosure")
+        sql_pane = page.locator(".sparql-sql-pane")
         assert explore_btn.is_disabled()
-        assert not sql_disclosure.evaluate("(element) => element.open")
+        assert sql_pane.is_visible()
+        assert page.locator(".sparql-results-pane .sparql-sql-pane").count() == 0
+        assert page.locator(".sparql-editor-pane .sparql-sql-pane").count() == 1
 
         triple_result = {
             "success": True,
@@ -182,7 +184,6 @@ class TestQueryPlayground:
         page.locator("#sparqlRunBtn").click()
         page.locator("#sparqlExploreBtn:not([disabled])").wait_for(state="visible")
         assert not explore_btn.is_disabled()
-        assert sql_disclosure.evaluate("(element) => element.open")
         assert page.locator("#sparqlGeneratedSql").text_content() == "SELECT * FROM t"
 
         explore_btn.click()

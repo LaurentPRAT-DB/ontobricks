@@ -113,6 +113,24 @@ def test_sparql_workspace_has_editor_results_and_actions():
     assert "onclick=" not in html
 
 
+def test_generated_sql_pane_is_persistent_below_editor_and_outside_results():
+    html = read(SPARQL)
+    editor_start = html.index('<section class="sparql-editor-pane"')
+    results_start = html.index('<section class="sparql-results-pane"')
+    editor_html = html[editor_start:results_start]
+    results_html = html[results_start:]
+
+    assert editor_html.index('id="sparqlPlaygroundQuery"') < editor_html.index(
+        '<section class="sparql-sql-pane"'
+    )
+    assert 'aria-labelledby="sparqlSqlHeading"' in editor_html
+    assert 'id="sparqlGeneratedSql">No SQL generated.</code>' in editor_html
+    assert "sparql-sql-pane" not in results_html
+    assert "sparqlGeneratedSql" not in results_html
+    assert "<details" not in html
+    assert "<summary" not in html
+
+
 def test_query_shell_actions_stay_declarative_without_inline_handlers():
     shell = read(SHELL)
     for action in ("switch-domain", "ontology", "discussion"):
@@ -287,18 +305,34 @@ def test_sparql_keyboard_targets_have_explicit_visible_focus_styles():
         )
 
 
-def test_generated_sql_has_scoped_readable_token_colors():
+def test_generated_sql_pane_has_fixed_basis_and_owns_internal_scroll():
     css = read(CSS)
     assert (
-        _winning_declaration(css, ".sparql-sql-disclosure pre", "background")
-        == "var(--db-canvas-warm)"
+        _winning_declaration(css, ".sparql-sql-pane", "flex")
+        == "0 0 12rem"
     )
     assert (
-        _winning_declaration(css, ".sparql-sql-disclosure pre", "color")
+        _winning_declaration(css, ".sparql-sql-pane", "background")
+        == "var(--db-surface-warm)"
+    )
+    assert (
+        _winning_declaration(css, ".sparql-sql-pane", "color")
         == "var(--db-text)"
     )
     assert (
-        _winning_declaration(css, ".sparql-sql-disclosure pre code", "color")
+        _winning_declaration(css, ".sparql-sql-pane pre", "overflow")
+        == "auto"
+    )
+    assert (
+        _winning_declaration(css, ".sparql-sql-pane pre", "background")
+        == "var(--db-canvas-warm)"
+    )
+    assert (
+        _winning_declaration(css, ".sparql-sql-pane pre", "color")
+        == "var(--db-text)"
+    )
+    assert (
+        _winning_declaration(css, ".sparql-sql-pane pre code", "color")
         == "var(--db-text)"
     )
 
@@ -391,12 +425,13 @@ def test_execute_failure_does_not_clear_generated_sql():
     assert "displayGeneratedSql('')" not in catch_body
 
 
-def test_generated_sql_disclosure_opens_when_sql_is_displayed():
+def test_generated_sql_display_only_updates_text():
     js = read(JS)
     start = js.index("function displayGeneratedSql(sql)")
     body = js[start : js.index("\n    function displayError(", start)]
-    assert 'target.closest("details")' in body
-    assert "disclosure.open = true;" in body
+    assert 'target.textContent = sql || "No SQL generated.";' in body
+    assert 'target.closest("details")' not in body
+    assert "disclosure.open" not in body
 
 
 def test_explorer_switch_uses_local_double_quote_style():

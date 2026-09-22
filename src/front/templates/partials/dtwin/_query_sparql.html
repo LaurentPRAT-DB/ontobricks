@@ -33,6 +33,10 @@
                   id="sparqlPlaygroundQuery"
                   aria-label="SPARQL query"
                   spellcheck="false"></textarea>
+        <section class="sparql-sql-pane" aria-labelledby="sparqlSqlHeading">
+            <strong class="small" id="sparqlSqlHeading">Generated SQL</strong>
+            <pre><code id="sparqlGeneratedSql">No SQL generated.</code></pre>
+        </section>
     </section>
 
     <section class="sparql-results-pane" aria-labelledby="sparqlResultsHeading">
@@ -63,9 +67,5 @@
                 <p class="mb-0">Run a query to see results.</p>
             </div>
         </div>
-        <details class="sparql-sql-disclosure">
-            <summary>Generated SQL</summary>
-            <pre><code id="sparqlGeneratedSql">No SQL generated.</code></pre>
-        </details>
     </section>
 </div>

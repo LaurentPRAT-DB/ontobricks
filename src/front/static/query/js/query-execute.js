@@ -290,8 +290,6 @@ LIMIT ${limit}`,
         const target = el("sparqlGeneratedSql");
         if (!target) return;
         target.textContent = sql || "No SQL generated.";
-        const disclosure = target.closest("details");
-        if (disclosure) disclosure.open = true;
     }
 
     function displayError(message) {

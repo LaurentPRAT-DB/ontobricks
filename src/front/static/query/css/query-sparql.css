@@ -64,14 +64,21 @@
     flex-direction: column;
 }
 
-.sparql-sql-disclosure {
-    flex: 0 0 auto;
+.sparql-sql-pane {
+    display: flex;
+    flex: 0 0 12rem;
+    min-height: 0;
+    flex-direction: column;
     border-top: 1px solid var(--db-border);
+    background: var(--db-surface-warm);
+    color: var(--db-text);
+    margin-top: 0.75rem;
     padding-top: 0.5rem;
 }
 
-.sparql-sql-disclosure pre {
-    max-height: 12rem;
+.sparql-sql-pane pre {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: auto;
     margin: 0.5rem 0 0;
     border: 1px solid var(--db-border);
@@ -81,7 +88,7 @@
     padding: 0.75rem;
 }
 
-.sparql-sql-disclosure pre code {
+.sparql-sql-pane pre code {
     background: transparent;
     color: var(--db-text);
 }

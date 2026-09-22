@@ -444,3 +444,38 @@ Modified files:
 - tests/e2e/dtwin/test_dtwin_flows.py
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6882 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.57s.
+
+## Keep generated SQL below the SPARQL editor
+
+Context: The Generated SQL output occupied a collapsible disclosure beneath
+Results. Keep the desktop workspace at two columns while making SQL persistent
+under the editor, leaving the right column exclusively for full-height results,
+and preserving editor → SQL → results order on mobile.
+
+Changes:
+
+1. src/front/templates/partials/dtwin/_query_sparql.html
+   Move Generated SQL into an always-visible section after the editor and remove the obsolete details disclosure.
+2. src/front/static/query/css/query-sparql.css
+   Give the SQL pane a fixed non-shrinking height, token-based surfaces, and an internally scrolling preformatted region.
+3. src/front/static/query/js/query-execute.js
+   Limit generated-SQL display behavior to updating text without mutating disclosure state.
+4. tests/units/front/test_sparql_playground_contract.py
+   Add structural, layout, overflow, token, and controller regression contracts.
+5. tests/e2e/dtwin/test_dtwin_flows.py
+   Verify successful execution keeps SQL visible under the editor and outside Results.
+
+Modified files:
+- src/front/templates/partials/dtwin/_query_sparql.html
+- src/front/static/query/css/query-sparql.css
+- src/front/static/query/js/query-execute.js
+- tests/units/front/test_sparql_playground_contract.py
+- tests/e2e/dtwin/test_dtwin_flows.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-22.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py` → 3 failed, 23 passed, 1 warning in 0.28s.
+- GREEN: `uv run --frozen pytest -q tests/units/front/test_sparql_playground_contract.py` → 26 passed, 1 warning in 0.20s.
+- Focused browser flow: `ONTOBRICKS_E2E_FAKE_CREDS=1 uv run --frozen pytest -q tests/e2e/dtwin/test_dtwin_flows.py::TestQueryPlayground` → 4 passed, 1 warning in 14.25s.
+- Browser layout: deterministic mocked execution at 1440×900 and 390×844 → 1 passed, 1 warning in 10.23s; no console or first-party response errors.
+- Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6883 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 53.58s.
