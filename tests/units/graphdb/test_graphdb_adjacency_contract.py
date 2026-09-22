@@ -9,6 +9,11 @@ import pytest
 
 from back.core.graphdb.GraphDBBackend import GraphDBBackend
 from back.core.graphdb.constants import RDF_TYPE
+from back.core.graphdb.props import reset_missing_props_cache
+
+
+def setup_function() -> None:
+    reset_missing_props_cache()
 
 
 class FakeStore(GraphDBBackend):
@@ -265,3 +270,42 @@ def test_find_subjects_by_type_falls_back_on_missing_table_error():
     assert execute.call_count == 2
     assert "g_entity_search" in execute.call_args_list[0].args[0]
     assert "g_entity_search" not in execute.call_args_list[1].args[0]
+
+
+def test_get_triples_for_subjects_uses_props_when_supported():
+    store = FakeStore()
+    store.supports_props = True
+    store.get_triples_for_subjects("g", ["http://ex/1"])
+    assert len(store.queries) == 1
+    assert "g_props" in store.queries[0]
+    assert "subject IN ('http://ex/1')" in store.queries[0]
+
+
+def test_get_triples_for_subjects_skips_props_when_unsupported():
+    store = FakeStore()
+    store.supports_props = False
+    store.get_triples_for_subjects("g", ["http://ex/1"])
+    assert len(store.queries) == 1
+    assert "g_props" not in store.queries[0]
+    assert "FROM g " in store.queries[0] or "FROM g\n" in store.queries[0]
+
+
+def test_get_triples_for_subjects_falls_back_when_props_table_missing():
+    store = FakeStore()
+    store.supports_props = True
+    with patch.object(
+        store,
+        "execute_query",
+        side_effect=[RuntimeError("TABLE_OR_VIEW_NOT_FOUND: g_props"), [{"subject": "s"}]],
+    ) as execute:
+        rows = store.get_triples_for_subjects("g", ["http://ex/1"])
+    assert rows == [{"subject": "s"}]
+    assert execute.call_count == 2
+    assert "g_props" in execute.call_args_list[0].args[0]
+    assert "g_props" not in execute.call_args_list[1].args[0]
+
+
+def test_get_triples_for_subjects_returns_empty_list_for_no_subjects():
+    store = FakeStore()
+    assert store.get_triples_for_subjects("g", []) == []
+    assert store.queries == []

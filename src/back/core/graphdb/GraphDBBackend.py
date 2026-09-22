@@ -23,6 +23,7 @@ from back.core.logging import get_logger
 from back.core.helpers import sql_escape as _shared_sql_escape
 from back.core.graphdb.adjacency import expand_entity_neighbors_sql
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
+from back.core.graphdb.props import execute_expand_with_props_fallback
 from back.core.graphdb.entity_search import (
     entity_search_uri_search_sql,
     is_asserted_only_relation,
@@ -706,15 +707,33 @@ class GraphDBBackend(ABC):
     def get_triples_for_subjects(
         self, table_name: str, subjects: List[str]
     ) -> List[Dict[str, str]]:
-        """Return all triples whose subject is in *subjects*."""
+        """Return all triples whose subject is in *subjects*.
+
+        Reads the property companion (``_props``) when this backend
+        supports it — every outgoing triple of a **typed** subject — falling
+        back to the SPO relation for a companion-missing graph or a
+        missing-table error mid-query (see ``back.core.graphdb.props``).
+        """
         if not subjects:
             return []
         in_clause = ", ".join(f"'{self._sql_escape(u)}'" for u in subjects)
-        sql = (
+        fallback_sql = (
             f"SELECT subject, predicate, object FROM {self._sql_relation(table_name)} "
             f"WHERE subject IN ({in_clause})"
         )
-        return self.execute_query(sql)
+        props = self.props_table_id(table_name) if self.supports_props else ""
+        if not props:
+            return self.execute_query(fallback_sql)
+        sql = (
+            f"SELECT subject, predicate, object FROM {self._sql_relation(props)} "
+            f"WHERE subject IN ({in_clause})"
+        )
+        return execute_expand_with_props_fallback(
+            execute_query=self.execute_query,
+            sql=sql,
+            props_table=props,
+            fallback_sql=fallback_sql,
+        )
 
     def get_predicates_for_type(self, table_name: str, type_uri: str) -> List[str]:
         """Return distinct predicates used by instances of *type_uri*."""
