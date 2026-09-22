@@ -57,6 +57,32 @@ def _media_block(css_text, condition):
     return css_text[opening_brace + 1 : cursor - 1]
 
 
+def _effective_declaration(stylesheets, matching_selectors, prop):
+    import re
+
+    winner = None
+    source_order = 0
+    for css_text in stylesheets:
+        css_text = re.sub(r"/\*.*?\*/", "", css_text, flags=re.DOTALL)
+        for selectors, declarations in re.findall(r"([^{}]+)\{([^{}]*)\}", css_text):
+            for selector in (chunk.strip() for chunk in selectors.split(",")):
+                source_order += 1
+                if selector not in matching_selectors:
+                    continue
+                specificity = (
+                    len(re.findall(r"#[\w-]+", selector)),
+                    len(re.findall(r"\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+", selector)),
+                    len(re.findall(r"(?:^|[\s>+~])([a-zA-Z][\w-]*)", selector)),
+                )
+                for match in re.finditer(
+                    rf"(?:^|;)\s*{re.escape(prop)}\s*:\s*([^;]+)", declarations
+                ):
+                    candidate = (specificity, source_order, match.group(1).strip())
+                    if winner is None or candidate[:2] >= winner[:2]:
+                        winner = candidate
+    return winner[2] if winner else None
+
+
 def test_query_shell_hosts_graphql_and_sparql_tabs():
     shell = read(SHELL)
     assert "GraphQL" in shell
@@ -141,30 +167,58 @@ def test_sparql_css_uses_shared_tokens_and_responsive_stack():
 
 def test_mobile_sparql_stack_restores_natural_flow_and_result_scroll_owner():
     mobile_css = _media_block(read(CSS), "(max-width: 991.98px)")
-    assert _winning_declaration(mobile_css, ".query-language-content", "flex") == "none"
     assert (
-        _winning_declaration(mobile_css, ".query-language-content", "overflow")
+        _winning_declaration(
+            mobile_css,
+            ".query-language-content:has(> #querySparqlPane.active)",
+            "flex",
+        )
+        == "none"
+    )
+    assert (
+        _winning_declaration(
+            mobile_css,
+            ".query-language-content:has(> #querySparqlPane.active)",
+            "overflow",
+        )
         == "visible"
     )
+    assert (
+        _winning_declaration(mobile_css, "#querySparqlPane.active", "flex")
+        == "none"
+    )
+    assert _winning_declaration(mobile_css, ".query-language-content", "flex") is None
     assert (
         _winning_declaration(
             mobile_css, ".query-language-content > .tab-pane.active", "flex"
         )
-        == "none"
+        is None
     )
     assert _winning_declaration(mobile_css, ".sparql-playground", "overflow") == "visible"
-    assert (
-        _winning_declaration(
-            mobile_css, ".sparql-playground #sparqlResultsContainer", "min-height"
-        )
-        == "15rem"
-    )
     assert (
         _winning_declaration(
             mobile_css, ".sparql-playground #sparqlResultsContainer", "overflow"
         )
         == "auto"
     )
+
+
+def test_mobile_result_minimum_wins_actual_stylesheet_cascade():
+    template = read(DTWIN)
+    assert template.index("query/css/query-sparql.css") < template.index(
+        "global/css/query.css"
+    )
+
+    local_mobile_css = _media_block(read(CSS), "(max-width: 991.98px)")
+    effective_minimum = _effective_declaration(
+        (local_mobile_css, read(GLOBAL_QUERY_CSS)),
+        (
+            ".sparql-playground #sparqlResultsContainer",
+            "#sparqlResultsContainer",
+        ),
+        "min-height",
+    )
+    assert effective_minimum == "15rem"
 
 
 def test_sparql_keyboard_targets_have_explicit_visible_focus_styles():

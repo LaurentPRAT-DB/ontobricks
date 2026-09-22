@@ -110,12 +110,12 @@
 }
 
 @media (max-width: 991.98px) {
-    .query-language-content {
+    .query-language-content:has(> #querySparqlPane.active) {
         flex: none;
         overflow: visible;
     }
 
-    .query-language-content > .tab-pane.active {
+    #querySparqlPane.active {
         flex: none;
     }
 
