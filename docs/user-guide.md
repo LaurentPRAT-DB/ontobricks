@@ -826,6 +826,22 @@ Right-click any entity node and pick **Expand neighbours (N hops)** to enrich th
 - Newly added entities are merged with the existing graph, briefly ringed with a highlight, and the camera zooms to frame them.
 - The same context menu still exposes the existing **View Dashboard**, **Dataset preview**, **Actions**, **Bridges** and **Compute virtual attributes** entries when configured for the entity's class.
 
+### SPARQL Playground
+
+Open **Knowledge Graph → Query → SPARQL** to run read-only SPARQL against the
+current domain mapping. The editor starts with the ontology prefix and an
+all-triples SELECT; the **Samples** menu also provides by-class, by-label, and
+entity-type queries.
+
+**Run** keeps you on the SPARQL tab and shows the result table. Use **CSV** to
+download rows. Expand **Generated SQL** to inspect the warehouse query. When
+the result projects `subject/predicate/object` (or `s/p/o`), **Show in
+Explorer** loads those rows into the graph viewer.
+
+The playground rejects SPARQL update verbs. The Spark translator currently
+executes SELECT queries only; ASK, DESCRIBE, and CONSTRUCT are read-only but
+return a validation error until that translator supports them.
+
 **Spark SPARQL support boundary (fail-closed):**
 
 - The Spark translator accepts this subset only: `SELECT`/`SELECT *`, `DISTINCT`, `LIMIT`, basic graph patterns, `OPTIONAL` on supported patterns, string filters (`CONTAINS`, string equality, `STRSTARTS`, `STRENDS`), predicate `IN`, literal `BIND`, and the specialized relationship `UNION` pattern used by the Explorer relationship filter.

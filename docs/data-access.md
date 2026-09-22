@@ -132,16 +132,16 @@ and the engine that ultimately runs (column **Engine**).
 
 ### 4.4 Knowledge Graph (the core read surface)
 
-This is where users actually query the graph viewer. **Graph Viewer**,
-**GraphQL**, and **Graph Chat** all sit under the *Knowledge Graph* menu; they
-hit different wrappers but eventually share the same Delta / GraphDB
+This is where users actually query the graph. **Explorer**, **Query (GraphQL
+and SPARQL)**, and **Graph Chat** all sit under the *Knowledge Graph* menu;
+they hit different wrappers but eventually share the same Delta / GraphDB
 storage.
 
 | UI Feature | JS file | Endpoint(s) | Wrapper | Engine |
 |---|---|---|---|---|
 | **Insight / Overview** | `query-sync.js` (stats panel), `query.js` | `GET /dtwin/sync/stats`, `GET /dtwin/sync/status` | REST | Spark SQL aggregates on the Delta view, or Postgres SQL aggregates on the Lakebase Graph DB |
 | **Graph Viewer** (Sigma.js viz) | `query-sigmagraph.js`, `query-d3graph.js` | `GET /dtwin/groups`, `POST /dtwin/sync/filter`, `GET /dtwin/sync/stats?refresh=true`, `POST /dtwin/clusters/detect`, `GET /dtwin/reasoning/inferred` | REST | Each `/sync/filter` call is a **SPARQL** under the hood, translated to **Spark SQL** (Delta) or **Postgres SQL** (Lakebase Graph DB) |
-| **Graph Viewer → SPARQL panel** | `query-execute.js` | `POST /dtwin/execute` | **SPARQL** | `SparqlQueryRunner` → **Spark SQL** on the SQL Warehouse (Delta view) |
+| **Query → SPARQL playground** | `query-execute.js` | `POST /dtwin/execute` | **SPARQL** | `SparqlTranslator` → **Spark SQL** on the SQL Warehouse (Delta view); read-only safety gate blocks update verbs |
 | **GraphQL** | `query-graphql.js` | `GET /graphql/{domain}/schema`, `POST /graphql/{domain}`, `GET /graphql/settings/depth` | **GraphQL** | Schema generated from OWL; resolvers call `DomainQueryService` → SPARQL → **Spark SQL** |
 | **Graph Chat** | `query-chat.js`, agent `agent_dtwin_chat` | `POST /dtwin/assistant/chat`, `GET/DELETE /dtwin/assistant/history` | REST → LLM tool-calling | LLM calls REST + GraphQL + SPARQL tools (see §6) |
 | **Build** (materialize triple store) | `query-sync.js` | `POST /dtwin/sync/start`, `POST /dtwin/sync/load` | REST | `_BuildPipeline` runs the R2RML SQL on the Warehouse (Delta `CREATE OR REPLACE VIEW`) and streams the rows into the active Graph DB engine via `bulk_insert_iter` (`COPY FROM STDIN` on Lakebase) |

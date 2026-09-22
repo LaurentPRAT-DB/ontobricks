@@ -53,6 +53,11 @@ SPARQL
    :undoc-members:
    :show-inheritance:
 
+.. automodule:: back.core.w3c.sparql.QuerySafety
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 SHACL (Shapes Constraint Language)
 -----------------------------------
 
