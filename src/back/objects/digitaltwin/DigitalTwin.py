@@ -3186,17 +3186,16 @@ class DigitalTwin:
         the job reads *source_table*, which is always the mapped snapshot.
         """
         from back.core.graph_analysis import JobMetrics, LakeflowRunner
-        from back.core.databricks import DatabricksClient
-        from back.core.helpers import (
-            get_databricks_host_and_token,
-            resolve_analytics_job_name,
-            resolve_delta_warehouse_id,
-        )
+        from back.core.graphdb.delta.DeltaBase import create_databricks_client
+        from back.core.helpers import resolve_analytics_job_name
         from back.objects.registry import RegistryCfg
 
-        host, token = get_databricks_host_and_token(domain, settings)
-        warehouse_id = resolve_delta_warehouse_id(domain, settings)
-        client = DatabricksClient(host=host, token=token, warehouse_id=warehouse_id)
+        client = create_databricks_client(domain, settings, for_write=True)
+        if client is None:
+            raise InfrastructureError(
+                "The graph analytics job output cannot be read",
+                detail="No Build SQL Warehouse client could be created",
+            )
 
         job_name = resolve_analytics_job_name(settings)
 
@@ -3234,23 +3233,22 @@ class DigitalTwin:
         settings: Any = None,
     ) -> Dict[str, Any]:
         """Return one exhaustive node-series, sampled server-side if needed."""
-        from back.core.databricks import DatabricksClient
         from back.core.graph_analysis import (
             metric_series_query,
             sample_metric_series,
             validate_metric_series_column,
         )
-        from back.core.helpers import (
-            get_databricks_host_and_token,
-            resolve_delta_warehouse_id,
-        )
+        from back.core.graphdb.delta.DeltaBase import create_databricks_client
         from back.objects.registry import RegistryCfg
 
         metric_name = validate_metric_series_column(metric)
 
-        host, token = get_databricks_host_and_token(self._domain, settings)
-        warehouse_id = resolve_delta_warehouse_id(self._domain, settings)
-        client = DatabricksClient(host=host, token=token, warehouse_id=warehouse_id)
+        client = create_databricks_client(self._domain, settings, for_write=True)
+        if client is None:
+            raise InfrastructureError(
+                "The graph analytics metric series cannot be read",
+                detail="No Build SQL Warehouse client could be created",
+            )
 
         output_schema = (
             getattr(settings, "analytics_job_output_schema", "") or ""

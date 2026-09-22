@@ -523,3 +523,71 @@ Modified files:
 - tests/units/front/test_sparql_playground_contract.py
 
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 6888 passed, 308 skipped, 6 deselected, 1 xfailed in 49.64s.
+
+## Route all Analytics job SQL through the Build warehouse
+
+Context: Knowledge Graph Analytics mixed the Lakehouse query warehouse into
+the job path. The preflight probe and, after a successful Databricks job, its
+result readback could therefore send Thrift SQL to Lakehouse/RT. Every SQL
+operation belonging to Analytics jobs now uses the shared Build warehouse
+client contract; the Lakehouse query warehouse is never resolved.
+
+Changes:
+
+1. src/back/core/graph_analysis/preflight.py
+   Probe the mapped-triples source through the Build warehouse client.
+2. src/back/core/graph_analysis/JobMetrics.py
+   Materialize and drop disposable Analytics snapshots through the Build warehouse.
+3. src/back/objects/digitaltwin/DigitalTwin.py
+   Read job output and exhaustive metric series through the Build warehouse builder instead of constructing query-warehouse clients.
+4. tests/units/api/test_dtwin_analytics.py
+   Require the Analytics preflight to request the Build warehouse.
+5. tests/units/api/test_dtwin_metric_series.py
+   Require metric-series SQL to use the Build warehouse client.
+6. tests/units/core/test_job_metrics.py
+   Require temporary snapshot DDL to use the Build warehouse client.
+7. tests/units/dtwin/test_analytics_job_status.py
+   Route probe outcome fixtures through the shared builder contract.
+8. tests/units/dtwin/test_dtwin_analytics.py
+   Add a regression test that rejects query-warehouse construction during job result readback.
+
+Modified files:
+- src/back/core/graph_analysis/preflight.py
+- src/back/core/graph_analysis/JobMetrics.py
+- src/back/objects/digitaltwin/DigitalTwin.py
+- tests/units/api/test_dtwin_analytics.py
+- tests/units/api/test_dtwin_metric_series.py
+- tests/units/core/test_job_metrics.py
+- tests/units/dtwin/test_analytics_job_status.py
+- tests/units/dtwin/test_dtwin_analytics.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-22.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/api/test_dtwin_analytics.py::test_data_table_probe_uses_delta_sql_client_builder tests/units/dtwin/test_dtwin_analytics.py::test_job_metrics_readback_uses_build_warehouse_client` → 2 failed, 1 warning in 1.41s.
+- Focused: `uv run --frozen pytest -q tests/units/api/test_dtwin_analytics.py tests/units/api/test_dtwin_metric_series.py tests/units/core/test_job_metrics.py tests/units/dtwin/test_dtwin_analytics.py tests/units/dtwin/test_analytics_job_status.py tests/units/graphdb/delta/test_delta_base.py` → 119 passed, 1 warning in 1.72s.
+- Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6890 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 54.90s.
+
+## Translate SWRL built-ins during inference
+
+Context: The "Customer with active contract owns meter" rule returned no
+inferences even though Anna Martin has two active contracts linked to five
+meters. The inference translator treated `swrlb:contains` as a graph property
+instead of applying its SQL string predicate.
+
+Changes:
+
+1. src/back/core/reasoning/SWRLSQLTranslator.py
+   Exclude built-ins from graph joins and apply them as filters after antecedent variables are bound.
+2. tests/units/ontology/test_swrl_engine.py
+   Add a regression test requiring `swrlb:contains` to produce a SQL filter rather than a nonexistent property join.
+
+Modified files:
+- src/back/core/reasoning/SWRLSQLTranslator.py
+- tests/units/ontology/test_swrl_engine.py
+- changelogs/v0.9.0/benoitcayladbx_2026-09-22.log
+
+Tests:
+- RED: `uv run --frozen pytest -q tests/units/ontology/test_swrl_engine.py::TestSWRLSQLTranslator::test_inference_translates_string_builtin_to_filter` → 1 failed, 1 warning in 1.14s.
+- Focused: `uv run --frozen pytest -q tests/units/ontology/test_swrl_engine.py` → 24 passed, 1 warning in 0.85s.
+- Live: the target rule inferred 87 triples, including all five expected `owns` triples for Anna Martin.
+- Mandatory: `uv run --frozen pytest -q -m "not scenario"` → 6891 passed, 308 skipped, 6 deselected, 1 xfailed, 32 warnings in 49.85s.

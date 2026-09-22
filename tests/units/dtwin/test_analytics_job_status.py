@@ -145,12 +145,7 @@ class TestTheProbeClassifiesTheFailure:
 
     def _probe(self, exc):
         with patch(
-            "back.core.helpers.get_databricks_host_and_token",
-            return_value=("https://h", "t"),
-        ), patch(
-            "back.core.helpers.resolve_delta_warehouse_id", return_value="w"
-        ), patch(
-            "back.core.databricks.DatabricksClient.DatabricksClient"
+            "back.core.graphdb.delta.DeltaBase.create_databricks_client"
         ) as client:
             client.return_value.execute_query.side_effect = exc
             return probe_data_table(object(), _Settings(), "cat.sch.t_data")
@@ -184,12 +179,7 @@ class TestTheProbeClassifiesTheFailure:
 
     def test_rows_answer_true(self):
         with patch(
-            "back.core.helpers.get_databricks_host_and_token",
-            return_value=("https://h", "t"),
-        ), patch(
-            "back.core.helpers.resolve_delta_warehouse_id", return_value="w"
-        ), patch(
-            "back.core.databricks.DatabricksClient.DatabricksClient"
+            "back.core.graphdb.delta.DeltaBase.create_databricks_client"
         ) as client:
             client.return_value.execute_query.return_value = [{"ok": 1}]
             assert probe_data_table(object(), _Settings(), "cat.sch.t_data") == (

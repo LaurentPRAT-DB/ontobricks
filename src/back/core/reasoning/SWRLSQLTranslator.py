@@ -600,8 +600,13 @@ class SWRLSQLTranslator:
         if not ante_atoms or not cons_atoms:
             return None
 
-        class_atoms = [a for a in ante_atoms if a["arity"] == 1]
-        prop_atoms = [a for a in ante_atoms if a["arity"] == 2]
+        class_atoms = [
+            a for a in ante_atoms if a["arity"] == 1 and not a.get("builtin")
+        ]
+        prop_atoms = [
+            a for a in ante_atoms if a["arity"] == 2 and not a.get("builtin")
+        ]
+        builtin_atoms = [a for a in ante_atoms if a.get("builtin")]
         if not class_atoms:
             return None
 
@@ -681,6 +686,10 @@ class SWRLSQLTranslator:
                     var_bindings[new_var] = (a_cls, "subject")
                 else:
                     var_bindings[new_var] = (a_prop, new_col)
+
+        builtin_filters = self._build_builtin_filters(builtin_atoms, var_bindings)
+        if builtin_filters:
+            where_parts.extend(builtin_filters)
 
         selects: List[str] = []
         for atom in cons_atoms:
