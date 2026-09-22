@@ -14,6 +14,7 @@ __all__ = [
     "SqlFlavor",
     "expand_and_fetch_sql",
     "expand_entity_neighbors_sql",
+    "seeded_bfs_sql",
     "typed_in_select",
     "typed_out_select",
 ]
@@ -68,6 +69,69 @@ def _anti_join(flavor: SqlFlavor, level: int) -> str:
     return (
         f"WHERE NOT EXISTS ("
         f"SELECT 1 FROM {visited} v WHERE v.entity = candidate.entity)"
+    )
+
+
+def seeded_bfs_sql(
+    *,
+    flavor: SqlFlavor,
+    adj_out: str,
+    adj_in: str,
+    seed_sql: str,
+    depth: int,
+) -> str:
+    """Leveled BFS over the adjacency tables, seeded from *seed_sql*.
+
+    *seed_sql* must be a ``SELECT`` returning exactly one column (typically
+    :func:`back.core.graphdb.entity_search.entity_search_seed_sql`'s output)
+    — the CTE column list below renames it to ``entity`` positionally, the
+    same trick :func:`expand_and_fetch_sql` uses for its ``VALUES`` seed.
+
+    Mirrors :func:`expand_and_fetch_sql`'s per-level CTE/anti-join shape but
+    returns every discovered ``(entity, min_lvl)`` pair instead of joining a
+    payload relation — the contract
+    :meth:`~back.core.graphdb.GraphDBBackend.GraphDBBackend.bfs_traversal`
+    callers expect. Unbounded by design: MCP find has no entity/triple caps
+    today (only output-triple pagination happens after this query), and this
+    function must not introduce a new limit that changes result sets.
+    """
+    depth = max(0, int(depth))
+    ctes = [f"level_0(entity) AS ({seed_sql})"]
+    for level in range(1, depth + 1):
+        previous = f"level_{level - 1}"
+        visited_union = " UNION ALL ".join(
+            f"SELECT entity FROM level_{prior}" for prior in range(level)
+        )
+        anti = _anti_join(flavor, level)
+        ctes.extend(
+            [
+                f"visited_{level} AS ({visited_union})",
+                (
+                    f"level_{level}_candidates AS ("
+                    f"SELECT t.dst AS entity FROM {adj_out} t "
+                    f"JOIN {previous} frontier ON t.src = frontier.entity "
+                    f"UNION ALL "
+                    f"SELECT t.src AS entity FROM {adj_in} t "
+                    f"JOIN {previous} frontier ON t.dst = frontier.entity)"
+                ),
+                (
+                    f"level_{level} AS ("
+                    f"SELECT DISTINCT candidate.entity "
+                    f"FROM level_{level}_candidates candidate "
+                    f"{anti})"
+                ),
+            ]
+        )
+    levels = " UNION ALL ".join(
+        f"SELECT entity, {level} AS lvl FROM level_{level}"
+        for level in range(depth + 1)
+    )
+    return (
+        "WITH "
+        + ", ".join(ctes)
+        + " "
+        + f"SELECT entity, MIN(lvl) AS min_lvl FROM ({levels}) all_levels "
+        + "GROUP BY entity"
     )
 
 

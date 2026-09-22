@@ -7,6 +7,7 @@ import pytest
 from back.core.graphdb.adjacency import (
     expand_and_fetch_sql,
     expand_entity_neighbors_sql,
+    seeded_bfs_sql,
     typed_in_select,
     typed_out_select,
 )
@@ -165,3 +166,56 @@ def test_postgres_payload_join_has_no_broadcast_hint():
     )
 
     assert "BROADCAST" not in sql
+
+
+def test_seeded_bfs_sql_depth_zero_is_seed_only() -> None:
+    sql = seeded_bfs_sql(
+        flavor="spark",
+        adj_out="o",
+        adj_in="i",
+        seed_sql="SELECT uri FROM g_entity_search WHERE type_uri = 'X'",
+        depth=0,
+    )
+    assert "level_1" not in sql
+    assert "level_0(entity) AS (SELECT uri FROM g_entity_search WHERE type_uri = 'X')" in sql
+    assert "SELECT entity, 0 AS lvl FROM level_0" in sql
+    assert "GROUP BY entity" in sql
+
+
+def test_seeded_bfs_sql_spark_uses_left_anti_join_per_level() -> None:
+    sql = seeded_bfs_sql(
+        flavor="spark",
+        adj_out="o",
+        adj_in="i",
+        seed_sql="SELECT uri FROM g_entity_search",
+        depth=2,
+    )
+    assert sql.count("LEFT ANTI JOIN") == 2
+    assert "level_2" in sql
+    assert "FROM o t" in sql
+    assert "FROM i t" in sql
+    assert "SELECT entity, MIN(lvl) AS min_lvl FROM (" in sql
+
+
+def test_seeded_bfs_sql_postgres_uses_not_exists() -> None:
+    sql = seeded_bfs_sql(
+        flavor="postgres",
+        adj_out="o",
+        adj_in="i",
+        seed_sql="SELECT uri FROM g_entity_search",
+        depth=1,
+    )
+    assert "LEFT ANTI JOIN" not in sql
+    assert "NOT EXISTS" in sql
+
+
+def test_seeded_bfs_sql_unions_every_level_with_its_number() -> None:
+    sql = seeded_bfs_sql(
+        flavor="spark",
+        adj_out="o",
+        adj_in="i",
+        seed_sql="SELECT uri FROM g_entity_search",
+        depth=3,
+    )
+    for level in range(4):
+        assert f"SELECT entity, {level} AS lvl FROM level_{level}" in sql
