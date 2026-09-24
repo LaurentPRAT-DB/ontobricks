@@ -172,10 +172,11 @@ class FindResponse(BaseModel):
     depth: int = Field(1, description="Traversal depth used")
     triples: List[TripleRow] = []
     count: int = Field(0, description="Triples returned in this page")
-    total: int = Field(0, description="Total triples found across all pages")
+    has_more: bool = Field(
+        False, description="Whether more triples exist beyond this page"
+    )
     limit: int = Field(1000, description="Page size used")
     offset: int = Field(0, description="Offset used")
-    entity_count: int = 0
     message: Optional[str] = None
 
 
@@ -770,24 +771,25 @@ async def dt_triples_find(
                 for r in result["triples"]
             ],
             count=result["count"],
-            total=result["total"],
+            has_more=result["has_more"],
             limit=limit,
             offset=offset,
-            entity_count=result["entity_count"],
         )
 
     try:
         t0 = time.perf_counter()
-        # BFS traversal + alias expansion + bulk triple fetch are all
-        # blocking SQL; run them off the event loop so a dense neighbourhood
-        # walk does not stall other concurrent MCP tool calls.
+        # Seed count + folded BFS/fetch/paginate are blocking SQL; run them off
+        # the event loop so a dense neighbourhood walk does not stall other
+        # concurrent MCP tool calls.
         resp = await run_blocking(_run_find)
         logger.info(
-            "dt_triples_find: search=%r type=%r depth=%d → %d triples in %.0fms",
+            "dt_triples_find: search=%r type=%r depth=%d → %d triples "
+            "(has_more=%s) in %.0fms",
             search,
             entity_type,
             depth,
-            resp.total,
+            resp.count,
+            resp.has_more,
             (time.perf_counter() - t0) * 1000,
         )
         return resp

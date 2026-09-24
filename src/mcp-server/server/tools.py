@@ -498,13 +498,23 @@ def register_tools(mcp: FastMCP, session: MCPServerSession) -> None:
         A domain must be selected first via ``select_domain``.
         At least one of ``search`` or ``entity_type`` must be provided.
 
+        PERFORMANCE — choose the query shape:
+          - For a SPECIFIC entity, pass ``search`` (an id/name) and use a
+            deeper ``depth`` (2+) freely — the walk is scoped to that entity
+            and stays fast.
+          - For a WHOLE TYPE (``entity_type`` with no ``search``), keep
+            ``depth=1``. A deep type-wide walk fans out across every entity of
+            the type and is far slower; go one hop, then drill into a specific
+            entity with ``search`` for its deeper context.
+
         Args:
             search: Text to search for in entity names / labels / URIs.
                 Example: ``"Jacob Martinez"``, ``"CUST00094"``.
             entity_type: Entity type to filter by (local name,
                 case-insensitive). Example: ``"Customer"``, ``"Order"``.
             depth: How many hops to traverse (1 = direct neighbors only,
-                default 1, max 10).
+                default 1, max 10). Prefer depth=1 for type-wide scans; use
+                deeper hops with ``search`` (entity-scoped).
 
         Returns:
             A full-text description of the matching entities, their
@@ -521,8 +531,8 @@ def register_tools(mcp: FastMCP, session: MCPServerSession) -> None:
                 "depth": min(max(depth, 1), 10),
                 # Keep the LLM payload tight: 100 triples is plenty to
                 # describe an entity + its immediate neighbours, and cuts
-                # both backend fetch size and token cost. The backend still
-                # reports ``total`` so the model can page for more.
+                # both backend fetch size and token cost. The backend sets
+                # ``has_more`` so the model knows when to page for the rest.
                 "limit": 100,
                 "offset": 0,
             }

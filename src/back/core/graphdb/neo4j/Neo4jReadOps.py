@@ -470,6 +470,62 @@ class Neo4jReadOps:
         )
         return rows or []
 
+    def count_seeds(
+        self,
+        table_name: str,
+        seed_where: str,
+        *,
+        search: str = "",
+        entity_type: str = "",
+    ) -> int:
+        """Count seed nodes via structured params (SQL *seed_where* is ignored)."""
+        if not search and not entity_type:
+            return 0
+        seeds = self.find_seed_subjects(
+            table_name,
+            entity_type=entity_type,
+            field="any",
+            match_type="contains",
+            value=search,
+        )
+        return len(seeds)
+
+    def find_triples_bfs_page(
+        self,
+        table_name: str,
+        seed_where: str,
+        depth: int,
+        *,
+        limit: int,
+        offset: int = 0,
+        search: str = "",
+        entity_type: str = "",
+    ) -> Dict[str, Any]:
+        """Cypher equivalent of the folded SQL page: traverse, fetch, de-dup, page.
+
+        Neo4j cannot consume the SQL *seed_where*, so it walks from the
+        structured *search* / *entity_type* seeds, then de-duplicates and
+        paginates in Python (secondary backend — parity, not perf-critical).
+        """
+        bfs_rows = self.bfs_traversal(
+            table_name, "", depth, search=search, entity_type=entity_type
+        )
+        entities = {r["entity"] for r in bfs_rows}
+        if not entities:
+            return {"triples": [], "has_more": False}
+        rows = self.get_triples_for_subjects(table_name, list(entities))
+        seen: Set = set()
+        dedup: List[Dict[str, str]] = []
+        for r in rows:
+            key = (r["subject"], r["predicate"], r["object"])
+            if key not in seen:
+                seen.add(key)
+                dedup.append(r)
+        dedup.sort(key=lambda r: (r["subject"], r["predicate"], r["object"]))
+        window = dedup[offset : offset + limit + 1]
+        has_more = len(window) > limit
+        return {"triples": window[:limit], "has_more": has_more}
+
     def find_seed_subjects(
         self,
         table_name: str,

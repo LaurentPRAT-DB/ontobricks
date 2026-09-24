@@ -718,30 +718,118 @@ class GraphDBBackend(ABC):
         non-SQL backends (Cypher, Gremlin) that cannot use raw SQL fragments.
 
         Returns rows with ``entity`` and ``min_lvl`` columns.
+
+        The traversal uses a pre-filtered *bidirectional edge* CTE so the
+        recursive step joins on a single equality (``e.src = b.entity``) instead
+        of the non-sargable ``t.subject = b.entity OR t.object = b.entity``. The
+        OR form forces a full table scan at every level; the edge form lets the
+        planner hash-join, which roughly halves traversal time on large graphs.
         """
-        edge_filters = (
-            f"t.predicate != '{RDF_TYPE}' "
-            f"AND t.predicate NOT LIKE '%#label' "
-            f"AND t.predicate NOT LIKE '%/label' "
-            f"AND t.predicate != '{RDFS_LABEL}' "
-            f"AND (t.object LIKE 'http://%' OR t.object LIKE 'https://%')"
-        )
+        rel = self._sql_relation(table_name)
         sql = (
-            f"WITH RECURSIVE seeds AS (\n"
-            f"  SELECT DISTINCT subject AS entity FROM {self._sql_relation(table_name)}{seed_where}\n"
-            f"), bfs(entity, lvl) AS (\n"
-            f"  SELECT entity, 0 FROM seeds\n"
-            f"  UNION ALL\n"
-            f"  SELECT\n"
-            f"    CASE WHEN t.subject = b.entity THEN t.object ELSE t.subject END,\n"
-            f"    b.lvl + 1\n"
-            f"  FROM bfs b\n"
-            f"  JOIN {self._sql_relation(table_name)} t ON (t.subject = b.entity OR t.object = b.entity)\n"
-            f"  WHERE b.lvl < {depth} AND {edge_filters}\n"
-            f")\n"
+            f"{self._bfs_walk_cte(rel, seed_where, depth)}\n"
             f"SELECT entity, MIN(lvl) AS min_lvl FROM bfs GROUP BY entity"
         )
         return self.execute_query(sql) or []
+
+    @staticmethod
+    def _bfs_edge_filter(prefix: str = "") -> str:
+        """Predicate/object filter keeping only URI-valued relationship edges.
+
+        *prefix* is the table alias (e.g. ``"t"``) or empty for an unqualified
+        base scan. Excludes ``rdf:type`` / label predicates and literal objects.
+        """
+        p = f"{prefix}." if prefix else ""
+        return (
+            f"{p}predicate != '{RDF_TYPE}' "
+            f"AND {p}predicate NOT LIKE '%#label' "
+            f"AND {p}predicate NOT LIKE '%/label' "
+            f"AND {p}predicate != '{RDFS_LABEL}' "
+            f"AND ({p}object LIKE 'http://%' OR {p}object LIKE 'https://%')"
+        )
+
+    def _bfs_walk_cte(self, rel: str, seed_where: str, depth: int) -> str:
+        """Build the ``WITH RECURSIVE`` prefix that walks the graph to *depth*.
+
+        Emits three CTEs — ``edges`` (bidirectional, pre-filtered), ``seeds``
+        (from *seed_where*) and the recursive ``bfs(entity, lvl)`` — leaving the
+        caller to append its own final ``SELECT`` over ``bfs``.
+        """
+        edge = self._bfs_edge_filter()
+        return (
+            f"WITH RECURSIVE edges AS (\n"
+            f"  SELECT subject AS src, object AS dst FROM {rel} WHERE {edge}\n"
+            f"  UNION ALL\n"
+            f"  SELECT object AS src, subject AS dst FROM {rel} WHERE {edge}\n"
+            f"), seeds AS (\n"
+            f"  SELECT DISTINCT subject AS entity FROM {rel}{seed_where}\n"
+            f"), bfs(entity, lvl) AS (\n"
+            f"  SELECT entity, 0 FROM seeds\n"
+            f"  UNION ALL\n"
+            f"  SELECT e.dst, b.lvl + 1\n"
+            f"  FROM bfs b\n"
+            f"  JOIN edges e ON e.src = b.entity\n"
+            f"  WHERE b.lvl < {depth}\n"
+            f")"
+        )
+
+    def find_triples_bfs_page(
+        self,
+        table_name: str,
+        seed_where: str,
+        depth: int,
+        *,
+        limit: int,
+        offset: int = 0,
+        search: str = "",
+        entity_type: str = "",
+    ) -> Dict[str, Any]:
+        """Walk the graph and return one de-duplicated, ordered page of triples.
+
+        Folds seed selection, BFS traversal, triple fetch, de-duplication and
+        pagination into a single server-side query so the caller never
+        materialises the full neighbourhood in memory. Fetches ``limit + 1`` rows
+        to derive ``has_more`` without a separate ``COUNT``.
+
+        *seed_where* drives SQL backends; *search* / *entity_type* are the
+        structured equivalents for non-SQL backends (Cypher, Gremlin) that
+        cannot consume a raw SQL fragment. Returns ``{"triples": [...],
+        "has_more": bool}``.
+        """
+        rel = self._sql_relation(table_name)
+        sql = (
+            f"{self._bfs_walk_cte(rel, seed_where, depth)}, ents AS (\n"
+            f"  SELECT DISTINCT entity FROM bfs\n"
+            f")\n"
+            f"SELECT DISTINCT t.subject, t.predicate, t.object\n"
+            f"FROM {rel} t JOIN ents e ON t.subject = e.entity\n"
+            f"ORDER BY t.subject, t.predicate, t.object\n"
+            f"LIMIT {int(limit) + 1} OFFSET {int(offset)}"
+        )
+        rows = self.execute_query(sql) or []
+        has_more = len(rows) > limit
+        return {"triples": rows[:limit], "has_more": has_more}
+
+    def count_seeds(
+        self,
+        table_name: str,
+        seed_where: str,
+        *,
+        search: str = "",
+        entity_type: str = "",
+    ) -> int:
+        """Count distinct seed subjects matching *seed_where* (cheap filtered scan).
+
+        *search* / *entity_type* are the structured equivalents for non-SQL
+        backends that cannot consume the raw SQL *seed_where* fragment.
+        """
+        rel = self._sql_relation(table_name)
+        sql = (
+            f"SELECT COUNT(*) AS n FROM "
+            f"(SELECT DISTINCT subject FROM {rel}{seed_where}) s"
+        )
+        rows = self.execute_query(sql)
+        return int(rows[0]["n"]) if rows else 0
 
     def find_seed_subjects(
         self,

@@ -223,3 +223,61 @@ class TestExpandUriAliases:
             # If the function requires a real store, that's fine — this test
             # documents the contract gap for future integration tests.
             pytest.skip("expand_uri_aliases requires a real store")
+
+
+# --- find_triples_bfs (orchestration) --------------------------------------
+
+
+class _FakeStore:
+    """Records calls and returns canned page/seed data for find_triples_bfs."""
+
+    def __init__(self, seed_count, page):
+        self._seed_count = seed_count
+        self._page = page
+        self.calls = []
+
+    def count_seeds(self, table, seed_where, *, search="", entity_type=""):
+        self.calls.append(("count_seeds", seed_where, search, entity_type))
+        return self._seed_count
+
+    def find_triples_bfs_page(
+        self, table, seed_where, depth, *, limit, offset=0, search="", entity_type=""
+    ):
+        self.calls.append(("page", depth, limit, offset, search, entity_type))
+        return self._page
+
+
+@pytest.mark.unit
+class TestFindTriplesBfs:
+    """find_triples_bfs delegates to the store's folded page query."""
+
+    def test_returns_has_more_and_no_total(self):
+        store = _FakeStore(
+            seed_count=3,
+            page={"triples": [{"subject": "s", "predicate": "p", "object": "o"}],
+                  "has_more": True},
+        )
+        out = DigitalTwin.find_triples_bfs(
+            store, "tbl", entity_type="Counterparty", depth=2, limit=100
+        )
+        assert out["seed_count"] == 3
+        assert out["count"] == 1
+        assert out["has_more"] is True
+        # the expensive legacy fields are gone
+        assert "total" not in out
+        assert "entity_count" not in out
+        # structured params are threaded through for non-SQL backends
+        assert any(c[0] == "page" and c[4] == "" and c[5] == "Counterparty"
+                   for c in store.calls)
+
+    def test_empty_when_no_seeds_skips_page_query(self):
+        store = _FakeStore(seed_count=0, page={"triples": [], "has_more": False})
+        out = DigitalTwin.find_triples_bfs(
+            store, "tbl", search="nomatch", depth=2, limit=100
+        )
+        assert out["seed_count"] == 0
+        assert out["triples"] == []
+        assert out["has_more"] is False
+        assert out["message"]
+        # no page query issued when there are no seeds
+        assert not any(c[0] == "page" for c in store.calls)
