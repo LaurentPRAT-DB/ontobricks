@@ -115,6 +115,25 @@ class TestSWRLSQLTranslator:
         assert sql is not None
         assert "INSERT INTO triples" in sql
 
+    def test_inference_translates_string_builtin_to_filter(self):
+        params = {
+            "antecedent": (
+                'Customer(?x) \u2227 Contract(?z) \u2227 Meter(?w) '
+                '\u2227 hasContract(?x, ?z) \u2227 hasMeter(?z, ?w) '
+                '\u2227 status(?z, ?status) \u2227 swrlb:contains(?status, "active")'
+            ),
+            "consequent": "owns(?x, ?w)",
+            "base_uri": "http://ex.org",
+            "uri_map": {},
+        }
+
+        sql = self.translator.build_inference_sql("triples", params)
+
+        assert sql is not None
+        assert "object LIKE CONCAT(" in sql
+        assert "'active'" in sql
+        assert "predicate = 'http://ex.org#contains'" not in sql
+
 
 # -- Built-in registry tests -----------------------------------------------
 

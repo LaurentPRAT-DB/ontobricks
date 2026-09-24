@@ -6,8 +6,13 @@ operator needs no value hides its value input. The rows are rendered by the
 shared ``ConditionRowsModule`` rather than a third bespoke builder.
 """
 
+import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONDITIONS_JS = REPO_ROOT / "src/front/static/ontology/js/ontology-conditions.js"
@@ -79,6 +84,44 @@ def test_collected_rows_keep_dom_alignment():
     assert ".filter(" not in body, (
         "collect must keep incomplete rows so remove indexes stay aligned"
     )
+
+
+@pytest.mark.skipif(
+    shutil.which("node") is None, reason="node is required to run the frontend module"
+)
+def test_condition_change_uses_properties_from_the_latest_render():
+    """The first empty render must not poison later property selections."""
+    script = f"""
+const fs = require('fs');
+global.window = {{}};
+eval(fs.readFileSync({json.dumps(str(CONDITIONS_JS))}, 'utf8'));
+const module = window.ConditionRowsModule;
+const handlers = {{}};
+const container = {{
+    dataset: {{}},
+    addEventListener: (event, handler) => {{ handlers[event] = handler; }},
+}};
+let renderedProperties = null;
+module.collect = () => [{{ property_uri: 'urn:email', op: 'eq', value: '' }}];
+module.render = (_container, _rows, options) => {{
+    renderedProperties = options.properties;
+}};
+module._bindOnce(container, {{ properties: [] }});
+module._bindOnce(container, {{
+    properties: [{{ uri: 'urn:email', name: 'email', isRelationship: false }}],
+}});
+handlers.change({{
+    target: {{ getAttribute: () => 'property' }},
+}});
+process.stdout.write(JSON.stringify(renderedProperties));
+"""
+    completed = subprocess.run(
+        ["node", "-e", script], capture_output=True, text=True, timeout=30
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == [
+        {"uri": "urn:email", "name": "email", "isRelationship": False}
+    ]
 
 
 def test_conditions_are_limited_to_conformance_and_consistency():
