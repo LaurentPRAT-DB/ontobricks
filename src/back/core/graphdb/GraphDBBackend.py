@@ -755,6 +755,7 @@ class GraphDBBackend(ABC):
         (from *seed_where*) and the recursive ``bfs(entity, lvl)`` — leaving the
         caller to append its own final ``SELECT`` over ``bfs``.
         """
+        safe_depth = max(0, int(depth))
         edge = self._bfs_edge_filter()
         return (
             f"WITH RECURSIVE edges AS (\n"
@@ -769,7 +770,7 @@ class GraphDBBackend(ABC):
             f"  SELECT e.dst, b.lvl + 1\n"
             f"  FROM bfs b\n"
             f"  JOIN edges e ON e.src = b.entity\n"
-            f"  WHERE b.lvl < {depth}\n"
+            f"  WHERE b.lvl < {safe_depth}\n"
             f")"
         )
 
@@ -793,43 +794,77 @@ class GraphDBBackend(ABC):
 
         *seed_where* drives SQL backends; *search* / *entity_type* are the
         structured equivalents for non-SQL backends (Cypher, Gremlin) that
-        cannot consume a raw SQL fragment. Returns ``{"triples": [...],
-        "has_more": bool}``.
+        cannot consume a raw SQL fragment.
         """
         rel = self._sql_relation(table_name)
+        page_limit = int(limit)
+        page_offset = int(offset)
         sql = (
             f"{self._bfs_walk_cte(rel, seed_where, depth)}, ents AS (\n"
             f"  SELECT DISTINCT entity FROM bfs\n"
+            f"), alias_ids AS (\n"
+            f"  SELECT DISTINCT regexp_replace(entity, '^.*[#/]', '') AS local_id\n"
+            f"  FROM ents\n"
+            f"  WHERE regexp_replace(entity, '^.*[#/]', '') != ''\n"
+            f"), alias_ents AS (\n"
+            f"  SELECT DISTINCT candidate.subject AS entity\n"
+            f"  FROM {rel} candidate\n"
+            f"  JOIN alias_ids alias\n"
+            f"    ON candidate.subject LIKE CONCAT('%/', alias.local_id)\n"
+            f"), all_ents AS (\n"
+            f"  SELECT entity FROM ents UNION SELECT entity FROM alias_ents\n"
+            f"), distinct_triples AS (\n"
+            f"  SELECT DISTINCT t.subject, t.predicate, t.object\n"
+            f"  FROM {rel} t JOIN all_ents e ON t.subject = e.entity\n"
+            f"), stats AS (\n"
+            f"  SELECT\n"
+            f"    (SELECT COUNT(*) FROM seeds) AS seed_count,\n"
+            f"    (SELECT COUNT(*) FROM distinct_triples) AS total,\n"
+            f"    (SELECT COUNT(*) FROM all_ents) AS entity_count\n"
+            f"), page AS (\n"
+            f"  SELECT subject, predicate, object FROM distinct_triples\n"
+            f"  ORDER BY subject, predicate, object\n"
+            f"  LIMIT {page_limit} OFFSET {page_offset}\n"
             f")\n"
-            f"SELECT DISTINCT t.subject, t.predicate, t.object\n"
-            f"FROM {rel} t JOIN ents e ON t.subject = e.entity\n"
-            f"ORDER BY t.subject, t.predicate, t.object\n"
-            f"LIMIT {int(limit) + 1} OFFSET {int(offset)}"
+            f"SELECT page.subject, page.predicate, page.object,\n"
+            f"       stats.seed_count, stats.total, stats.entity_count\n"
+            f"FROM stats LEFT JOIN page ON TRUE\n"
+            f"ORDER BY page.subject, page.predicate, page.object"
         )
         rows = self.execute_query(sql) or []
-        has_more = len(rows) > limit
-        return {"triples": rows[:limit], "has_more": has_more}
+        if not rows:
+            return {
+                "seed_count": 0,
+                "triples": [],
+                "total": 0,
+                "entity_count": 0,
+                "has_more": False,
+            }
 
-    def count_seeds(
-        self,
-        table_name: str,
-        seed_where: str,
-        *,
-        search: str = "",
-        entity_type: str = "",
-    ) -> int:
-        """Count distinct seed subjects matching *seed_where* (cheap filtered scan).
+        stats_row = rows[0]
+        seed_count = int(stats_row.get("seed_count", 0) or 0)
+        total = int(stats_row.get("total", 0) or 0)
+        entity_count = int(stats_row.get("entity_count", 0) or 0)
 
-        *search* / *entity_type* are the structured equivalents for non-SQL
-        backends that cannot consume the raw SQL *seed_where* fragment.
-        """
-        rel = self._sql_relation(table_name)
-        sql = (
-            f"SELECT COUNT(*) AS n FROM "
-            f"(SELECT DISTINCT subject FROM {rel}{seed_where}) s"
-        )
-        rows = self.execute_query(sql)
-        return int(rows[0]["n"]) if rows else 0
+        triples: List[Dict[str, Any]] = []
+        for row in rows:
+            subject = row.get("subject")
+            predicate = row.get("predicate")
+            object_ = row.get("object")
+            if subject is None and predicate is None and object_ is None:
+                continue
+            triples.append(
+                {"subject": subject, "predicate": predicate, "object": object_}
+            )
+
+        has_more = page_offset + len(triples) < total
+        return {
+            "seed_count": seed_count,
+            "triples": triples,
+            "total": total,
+            "entity_count": entity_count,
+            "has_more": has_more,
+        }
 
     def find_seed_subjects(
         self,

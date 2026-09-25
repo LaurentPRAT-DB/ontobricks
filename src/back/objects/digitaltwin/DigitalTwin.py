@@ -2951,21 +2951,6 @@ class DigitalTwin:
         seed_where = DigitalTwin.build_find_seed_where(
             table, entity_type=entity_type, search=search
         )
-        seed_count = store.count_seeds(
-            table, seed_where, search=search or "", entity_type=entity_type or ""
-        )
-        if seed_count == 0:
-            return {
-                "seed_count": 0,
-                "depth": depth,
-                "message": "No matching entities found",
-                "triples": [],
-                "count": 0,
-                "has_more": False,
-                "limit": limit,
-                "offset": offset,
-            }
-
         result = store.find_triples_bfs_page(
             table,
             seed_where,
@@ -2975,13 +2960,33 @@ class DigitalTwin:
             search=search or "",
             entity_type=entity_type or "",
         )
-        triples = result["triples"]
+        seed_count = int(result.get("seed_count", 0) or 0)
+        total = int(result.get("total", 0) or 0)
+        entity_count = int(result.get("entity_count", 0) or 0)
+        triples = result.get("triples", [])
+        has_more = bool(result.get("has_more", False))
+
+        if seed_count == 0:
+            return {
+                "seed_count": 0,
+                "depth": depth,
+                "message": "No matching entities found",
+                "triples": [],
+                "count": 0,
+                "total": total,
+                "entity_count": entity_count,
+                "has_more": False,
+                "limit": limit,
+                "offset": offset,
+            }
         return {
             "seed_count": seed_count,
             "depth": depth,
             "triples": triples,
             "count": len(triples),
-            "has_more": result["has_more"],
+            "total": total,
+            "entity_count": entity_count,
+            "has_more": has_more,
             "limit": limit,
             "offset": offset,
         }
