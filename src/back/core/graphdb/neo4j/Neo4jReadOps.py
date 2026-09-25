@@ -487,8 +487,11 @@ class Neo4jReadOps:
         structured *search* / *entity_type* seeds, then de-duplicates and
         paginates in Python (secondary backend — parity, not perf-critical).
         """
-        bfs_rows = self.bfs_traversal(
+        bfs_rows = list(
+            self.bfs_traversal(
             table_name, "", depth, search=search, entity_type=entity_type
+            )
+            or []
         )
         seed_count = sum(int(r.get("min_lvl", 0)) == 0 for r in bfs_rows)
         entities = {r["entity"] for r in bfs_rows}
@@ -497,6 +500,7 @@ class Neo4jReadOps:
             for entity in entities
         }
         patterns = [f"%/{local_id}" for local_id in local_ids if local_id]
+        # Alias matches expand entity coverage but never count as additional seeds.
         entities.update(self.find_subjects_by_patterns(table_name, patterns))
         entity_count = len(entities)
         if not entities:
@@ -517,10 +521,10 @@ class Neo4jReadOps:
                 dedup.append(r)
         dedup.sort(key=lambda r: (r["subject"], r["predicate"], r["object"]))
         total = len(dedup)
-        window = dedup[offset : offset + limit + 1]
-        has_more = len(window) > limit
+        triples = dedup[offset : offset + limit]
+        has_more = offset + len(triples) < total
         return {
-            "triples": window,
+            "triples": triples,
             "has_more": has_more,
             "seed_count": seed_count,
             "total": total,
