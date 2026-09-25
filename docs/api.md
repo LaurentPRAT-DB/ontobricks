@@ -795,12 +795,22 @@ Trigger a triple store build (sync). Returns a task_id for progress polling.
 #### `GET /api/v1/digitaltwin/triples/find`
 
 BFS-based entity search with depth control.
+Use `depth=1` for type-wide scans, then add `search` for deeper
+entity-scoped scans.
 
 **Parameters:**
 - `project_name` (query, optional): Domain name in the registry
 - `search` (query): Search text
 - `entity_type` (query, optional): Filter by type
 - `depth` (query, optional): BFS depth (default: 2)
+- `limit` (query, optional): Page size (default: 1000)
+- `offset` (query, optional): Page offset (default: 0)
+
+The response includes exact pagination metadata:
+- `count`: triples in the current page
+- `total`: exact total distinct triples for the folded BFS result
+- `entity_count`: entities included after alias expansion
+- `has_more`: whether more triples exist beyond the current page
 
 #### `GET /api/v1/digitaltwin/nodes/context`
 
@@ -2646,8 +2656,18 @@ GET /api/v1/digitaltwin/triples/find
 - `search` (required): Search text
 - `entity_type` (optional): Filter by type
 - `depth` (optional): BFS depth (default: 2)
+- `limit` (optional): Page size (default: 1000)
+- `offset` (optional): Page offset (default: 0)
 
 BFS-based entity search with depth control.
+Use `depth=1` for type-wide scans, then add `search` for deeper
+entity-scoped scans.
+
+The response includes exact pagination metadata:
+- `count`: triples in the current page
+- `total`: exact total distinct triples for the folded BFS result
+- `entity_count`: entities included after alias expansion
+- `has_more`: whether more triples exist beyond the current page
 
 ---
 

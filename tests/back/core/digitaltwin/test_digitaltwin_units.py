@@ -223,3 +223,67 @@ class TestExpandUriAliases:
             # If the function requires a real store, that's fine — this test
             # documents the contract gap for future integration tests.
             pytest.skip("expand_uri_aliases requires a real store")
+
+
+# --- find_triples_bfs (orchestration) --------------------------------------
+
+
+class _FakeStore:
+    """Records calls and returns canned page/seed data for find_triples_bfs."""
+
+    def __init__(self, page):
+        self._page = page
+        self.calls = []
+
+    def find_triples_bfs_page(
+        self, table, seed_where, depth, *, limit, offset=0, search="", entity_type=""
+    ):
+        self.calls.append(("page", depth, limit, offset, search, entity_type))
+        return self._page
+
+
+@pytest.mark.unit
+class TestFindTriplesBfs:
+    """find_triples_bfs delegates to the store's folded page query."""
+
+    def test_returns_compatible_metadata_from_one_store_call(self):
+        store = _FakeStore(
+            page={
+                "seed_count": 3,
+                "triples": [{"subject": "s", "predicate": "p", "object": "o"}],
+                "total": 7,
+                "entity_count": 5,
+                "has_more": True,
+            },
+        )
+        out = DigitalTwin.find_triples_bfs(
+            store, "tbl", entity_type="Counterparty", depth=2, limit=1
+        )
+        assert out["seed_count"] == 3
+        assert out["total"] == 7
+        assert out["entity_count"] == 5
+        assert out["has_more"] is True
+        assert out["count"] == 1
+        assert [call[0] for call in store.calls] == ["page"]
+
+    def test_empty_page_preserves_compatibility_fields(self):
+        store = _FakeStore(
+            page={
+                "seed_count": 0,
+                "triples": [],
+                "total": 0,
+                "entity_count": 0,
+                "has_more": False,
+            }
+        )
+        out = DigitalTwin.find_triples_bfs(
+            store, "tbl", search="nomatch", depth=2, limit=100
+        )
+        assert out["seed_count"] == 0
+        assert out["triples"] == []
+        assert out["count"] == 0
+        assert out["total"] == 0
+        assert out["entity_count"] == 0
+        assert out["has_more"] is False
+        assert out["message"]
+        assert [call[0] for call in store.calls] == ["page"]
