@@ -789,8 +789,13 @@ class GraphDBBackend(ABC):
 
         Folds seed selection, BFS traversal, triple fetch, de-duplication and
         pagination into a single server-side query so the caller never
-        materialises the full neighbourhood in memory. Fetches ``limit + 1`` rows
-        to derive ``has_more`` without a separate ``COUNT``.
+        materialises the full neighbourhood in memory.
+
+        The query computes exact metadata in a ``stats`` CTE
+        (``seed_count``, ``total``, ``entity_count``) and returns it alongside
+        the paged triples. ``has_more`` is derived from exact totals using
+        ``offset + len(triples) < total`` after dropping the null placeholder row
+        produced by ``LEFT JOIN page`` when a page is empty.
 
         *seed_where* drives SQL backends; *search* / *entity_type* are the
         structured equivalents for non-SQL backends (Cypher, Gremlin) that

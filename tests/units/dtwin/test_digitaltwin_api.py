@@ -424,6 +424,34 @@ class TestBfsTraversalSql:
         out = store.find_triples_bfs_page("tbl", " WHERE 1=1", 1, limit=1, offset=2)
         assert out["has_more"] is False
 
+    def test_find_triples_bfs_page_empty_page_at_nonzero_offset(self):
+        def fake_execute(sql):
+            return [
+                {
+                    "subject": None,
+                    "predicate": None,
+                    "object": None,
+                    "seed_count": 3,
+                    "total": 3,
+                    "entity_count": 2,
+                }
+            ]
+
+        store = self._bfs_store(fake_execute)
+        store.find_triples_bfs_page = (
+            lambda *a, **kw: GraphDBBackend.find_triples_bfs_page(store, *a, **kw)
+        )
+        out = store.find_triples_bfs_page(
+            "tbl", " WHERE 1=1", 1, limit=10, offset=10
+        )
+        assert out == {
+            "seed_count": 3,
+            "triples": [],
+            "total": 3,
+            "entity_count": 2,
+            "has_more": False,
+        }
+
     def test_find_triples_bfs_page_keeps_empty_metadata(self):
         def fake_execute(sql):
             return [
