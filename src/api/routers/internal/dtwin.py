@@ -2899,10 +2899,11 @@ async def dtwin_triples_find(
                 for r in result["triples"]
             ],
             "count": result["count"],
-            "total": result["total"],
+            "total": result.get("total", result["count"]),
+            "entity_count": result.get("entity_count", 0),
+            "has_more": result.get("has_more", False),
             "limit": limit,
             "offset": offset,
-            "entity_count": result["entity_count"],
         }
         if result.get("message"):
             payload["message"] = result["message"]

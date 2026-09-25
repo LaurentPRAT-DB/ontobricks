@@ -718,30 +718,158 @@ class GraphDBBackend(ABC):
         non-SQL backends (Cypher, Gremlin) that cannot use raw SQL fragments.
 
         Returns rows with ``entity`` and ``min_lvl`` columns.
+
+        The traversal uses a pre-filtered *bidirectional edge* CTE so the
+        recursive step joins on a single equality (``e.src = b.entity``) instead
+        of the non-sargable ``t.subject = b.entity OR t.object = b.entity``. The
+        OR form forces a full table scan at every level; the edge form lets the
+        planner hash-join, which roughly halves traversal time on large graphs.
         """
-        edge_filters = (
-            f"t.predicate != '{RDF_TYPE}' "
-            f"AND t.predicate NOT LIKE '%#label' "
-            f"AND t.predicate NOT LIKE '%/label' "
-            f"AND t.predicate != '{RDFS_LABEL}' "
-            f"AND (t.object LIKE 'http://%' OR t.object LIKE 'https://%')"
-        )
+        rel = self._sql_relation(table_name)
         sql = (
-            f"WITH RECURSIVE seeds AS (\n"
-            f"  SELECT DISTINCT subject AS entity FROM {self._sql_relation(table_name)}{seed_where}\n"
-            f"), bfs(entity, lvl) AS (\n"
-            f"  SELECT entity, 0 FROM seeds\n"
-            f"  UNION ALL\n"
-            f"  SELECT\n"
-            f"    CASE WHEN t.subject = b.entity THEN t.object ELSE t.subject END,\n"
-            f"    b.lvl + 1\n"
-            f"  FROM bfs b\n"
-            f"  JOIN {self._sql_relation(table_name)} t ON (t.subject = b.entity OR t.object = b.entity)\n"
-            f"  WHERE b.lvl < {depth} AND {edge_filters}\n"
-            f")\n"
+            f"{self._bfs_walk_cte(rel, seed_where, depth)}\n"
             f"SELECT entity, MIN(lvl) AS min_lvl FROM bfs GROUP BY entity"
         )
         return self.execute_query(sql) or []
+
+    @staticmethod
+    def _bfs_edge_filter(prefix: str = "") -> str:
+        """Predicate/object filter keeping only URI-valued relationship edges.
+
+        *prefix* is the table alias (e.g. ``"t"``) or empty for an unqualified
+        base scan. Excludes ``rdf:type`` / label predicates and literal objects.
+        """
+        p = f"{prefix}." if prefix else ""
+        return (
+            f"{p}predicate != '{RDF_TYPE}' "
+            f"AND {p}predicate NOT LIKE '%#label' "
+            f"AND {p}predicate NOT LIKE '%/label' "
+            f"AND {p}predicate != '{RDFS_LABEL}' "
+            f"AND ({p}object LIKE 'http://%' OR {p}object LIKE 'https://%')"
+        )
+
+    def _bfs_walk_cte(self, rel: str, seed_where: str, depth: int) -> str:
+        """Build the ``WITH RECURSIVE`` prefix that walks the graph to *depth*.
+
+        Emits three CTEs — ``edges`` (bidirectional, pre-filtered), ``seeds``
+        (from *seed_where*) and the recursive ``bfs(entity, lvl)`` — leaving the
+        caller to append its own final ``SELECT`` over ``bfs``.
+        """
+        safe_depth = max(0, int(depth))
+        edge = self._bfs_edge_filter()
+        return (
+            f"WITH RECURSIVE edges AS (\n"
+            f"  SELECT subject AS src, object AS dst FROM {rel} WHERE {edge}\n"
+            f"  UNION ALL\n"
+            f"  SELECT object AS src, subject AS dst FROM {rel} WHERE {edge}\n"
+            f"), seeds AS (\n"
+            f"  SELECT DISTINCT subject AS entity FROM {rel}{seed_where}\n"
+            f"), bfs(entity, lvl) AS (\n"
+            f"  SELECT entity, 0 FROM seeds\n"
+            f"  UNION ALL\n"
+            f"  SELECT e.dst, b.lvl + 1\n"
+            f"  FROM bfs b\n"
+            f"  JOIN edges e ON e.src = b.entity\n"
+            f"  WHERE b.lvl < {safe_depth}\n"
+            f")"
+        )
+
+    def find_triples_bfs_page(
+        self,
+        table_name: str,
+        seed_where: str,
+        depth: int,
+        *,
+        limit: int,
+        offset: int = 0,
+        search: str = "",
+        entity_type: str = "",
+    ) -> Dict[str, Any]:
+        """Walk the graph and return one de-duplicated, ordered page of triples.
+
+        Folds seed selection, BFS traversal, triple fetch, de-duplication and
+        pagination into a single server-side query so the caller never
+        materialises the full neighbourhood in memory.
+
+        The query computes exact metadata in a ``stats`` CTE
+        (``seed_count``, ``total``, ``entity_count``) and returns it alongside
+        the paged triples. ``has_more`` is derived from exact totals using
+        ``offset + len(triples) < total`` after dropping the null placeholder row
+        produced by ``LEFT JOIN page`` when a page is empty.
+
+        *seed_where* drives SQL backends; *search* / *entity_type* are the
+        structured equivalents for non-SQL backends (Cypher, Gremlin) that
+        cannot consume a raw SQL fragment.
+        """
+        rel = self._sql_relation(table_name)
+        page_limit = int(limit)
+        page_offset = int(offset)
+        sql = (
+            f"{self._bfs_walk_cte(rel, seed_where, depth)}, ents AS (\n"
+            f"  SELECT DISTINCT entity FROM bfs\n"
+            f"), alias_ids AS (\n"
+            f"  SELECT DISTINCT regexp_replace(entity, '^.*[#/]', '') AS local_id\n"
+            f"  FROM ents\n"
+            f"  WHERE regexp_replace(entity, '^.*[#/]', '') != ''\n"
+            f"), alias_ents AS (\n"
+            f"  SELECT DISTINCT candidate.subject AS entity\n"
+            f"  FROM {rel} candidate\n"
+            f"  JOIN alias_ids alias\n"
+            f"    ON candidate.subject LIKE CONCAT('%/', alias.local_id)\n"
+            f"), all_ents AS (\n"
+            f"  SELECT entity FROM ents UNION SELECT entity FROM alias_ents\n"
+            f"), distinct_triples AS (\n"
+            f"  SELECT DISTINCT t.subject, t.predicate, t.object\n"
+            f"  FROM {rel} t JOIN all_ents e ON t.subject = e.entity\n"
+            f"), stats AS (\n"
+            f"  SELECT\n"
+            f"    (SELECT COUNT(*) FROM seeds) AS seed_count,\n"
+            f"    (SELECT COUNT(*) FROM distinct_triples) AS total,\n"
+            f"    (SELECT COUNT(*) FROM all_ents) AS entity_count\n"
+            f"), page AS (\n"
+            f"  SELECT subject, predicate, object FROM distinct_triples\n"
+            f"  ORDER BY subject, predicate, object\n"
+            f"  LIMIT {page_limit} OFFSET {page_offset}\n"
+            f")\n"
+            f"SELECT page.subject, page.predicate, page.object,\n"
+            f"       stats.seed_count, stats.total, stats.entity_count\n"
+            f"FROM stats LEFT JOIN page ON TRUE\n"
+            f"ORDER BY page.subject, page.predicate, page.object"
+        )
+        rows = self.execute_query(sql) or []
+        if not rows:
+            return {
+                "seed_count": 0,
+                "triples": [],
+                "total": 0,
+                "entity_count": 0,
+                "has_more": False,
+            }
+
+        stats_row = rows[0]
+        seed_count = int(stats_row.get("seed_count", 0) or 0)
+        total = int(stats_row.get("total", 0) or 0)
+        entity_count = int(stats_row.get("entity_count", 0) or 0)
+
+        triples: List[Dict[str, Any]] = []
+        for row in rows:
+            subject = row.get("subject")
+            predicate = row.get("predicate")
+            object_ = row.get("object")
+            if subject is None and predicate is None and object_ is None:
+                continue
+            triples.append(
+                {"subject": subject, "predicate": predicate, "object": object_}
+            )
+
+        has_more = page_offset + len(triples) < total
+        return {
+            "seed_count": seed_count,
+            "triples": triples,
+            "total": total,
+            "entity_count": entity_count,
+            "has_more": has_more,
+        }
 
     def find_seed_subjects(
         self,

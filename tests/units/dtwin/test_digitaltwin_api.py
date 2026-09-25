@@ -278,6 +278,25 @@ class TestBfsTraversalSql:
     RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
     RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label"
 
+    class _Depth:
+        def __int__(self):
+            return 2
+
+        def __str__(self):
+            return "unsafe-depth"
+
+    @staticmethod
+    def _bfs_store(fake_execute):
+        """A MagicMock store wired to the real SQL-building helpers."""
+        store = MagicMock(spec=GraphDBBackend)
+        store.execute_query = fake_execute
+        store._sql_relation = lambda t: t
+        store._bfs_edge_filter = GraphDBBackend._bfs_edge_filter
+        store._bfs_walk_cte = lambda *a, **kw: GraphDBBackend._bfs_walk_cte(
+            store, *a, **kw
+        )
+        return store
+
     def _capture_sql(self, table, seed_where, depth):
         captured = {}
 
@@ -285,8 +304,7 @@ class TestBfsTraversalSql:
             captured["sql"] = sql
             return []
 
-        store = MagicMock(spec=GraphDBBackend)
-        store.execute_query = fake_execute
+        store = self._bfs_store(fake_execute)
         store.bfs_traversal = lambda *a, **kw: GraphDBBackend.bfs_traversal(
             store, *a, **kw
         )
@@ -307,12 +325,158 @@ class TestBfsTraversalSql:
         sql = self._capture_sql("tbl", " WHERE 1=1", 3)
         assert "b.lvl < 3" in sql
 
+    def test_depth_is_cast_before_sql_interpolation(self):
+        sql = self._capture_sql("tbl", " WHERE 1=1", self._Depth())
+        assert "b.lvl < 2" in sql
+        assert "unsafe-depth" not in sql
+
     def test_excludes_type_and_label_predicates(self):
         sql = self._capture_sql("tbl", " WHERE 1=1", 1)
         assert self.RDF_TYPE in sql
         assert self.RDFS_LABEL in sql
         assert "NOT LIKE '%#label'" in sql
         assert "NOT LIKE '%/label'" in sql
+
+    def test_uses_bidirectional_edge_join_not_or(self):
+        """The recursive step joins on a single equality, not the slow OR-join."""
+        sql = self._capture_sql("tbl", " WHERE 1=1", 2)
+        assert "edges AS (" in sql
+        assert "e.src = b.entity" in sql
+        # the non-sargable OR form must be gone
+        assert "OR t.object = b.entity" not in sql
+
+    def test_find_triples_bfs_page_folds_aliases_and_exact_metadata(self):
+        captured = {}
+
+        def fake_execute(sql):
+            captured["sql"] = sql
+            return [
+                {
+                    "subject": "s",
+                    "predicate": "p",
+                    "object": "o",
+                    "seed_count": 3,
+                    "total": 7,
+                    "entity_count": 5,
+                }
+            ]
+
+        store = self._bfs_store(fake_execute)
+        store.find_triples_bfs_page = (
+            lambda *a, **kw: GraphDBBackend.find_triples_bfs_page(store, *a, **kw)
+        )
+        out = store.find_triples_bfs_page(
+            "tbl", " WHERE 1=1", 2, limit=1, offset=0
+        )
+        sql = captured["sql"]
+        assert "alias_ids AS" in sql
+        assert "regexp_replace(" in sql
+        assert "all_ents AS" in sql
+        assert "distinct_triples AS" in sql
+        assert "stats AS" in sql
+        assert "SELECT DISTINCT t.subject, t.predicate, t.object" in sql
+        assert "ORDER BY subject, predicate, object" in sql
+        assert "LIMIT 1 OFFSET 0" in sql
+        assert out == {
+            "seed_count": 3,
+            "triples": [{"subject": "s", "predicate": "p", "object": "o"}],
+            "total": 7,
+            "entity_count": 5,
+            "has_more": True,
+        }
+
+    def test_find_triples_bfs_page_flags_has_more(self):
+        """has_more is derived from exact total and page size."""
+
+        def fake_execute(sql):
+            return [{
+                "subject": "s0",
+                "predicate": "p",
+                "object": "o",
+                "seed_count": 3,
+                "total": 3,
+                "entity_count": 2,
+            }]
+
+        store = self._bfs_store(fake_execute)
+        store.find_triples_bfs_page = (
+            lambda *a, **kw: GraphDBBackend.find_triples_bfs_page(store, *a, **kw)
+        )
+        out = store.find_triples_bfs_page("tbl", " WHERE 1=1", 1, limit=1, offset=0)
+        assert out["has_more"] is True
+        assert out["total"] == 3
+
+    def test_find_triples_bfs_page_reports_no_more_at_end(self):
+        def fake_execute(sql):
+            return [{
+                "subject": "s2",
+                "predicate": "p",
+                "object": "o",
+                "seed_count": 3,
+                "total": 3,
+                "entity_count": 2,
+            }]
+
+        store = self._bfs_store(fake_execute)
+        store.find_triples_bfs_page = (
+            lambda *a, **kw: GraphDBBackend.find_triples_bfs_page(store, *a, **kw)
+        )
+        out = store.find_triples_bfs_page("tbl", " WHERE 1=1", 1, limit=1, offset=2)
+        assert out["has_more"] is False
+
+    def test_find_triples_bfs_page_empty_page_at_nonzero_offset(self):
+        def fake_execute(sql):
+            return [
+                {
+                    "subject": None,
+                    "predicate": None,
+                    "object": None,
+                    "seed_count": 3,
+                    "total": 3,
+                    "entity_count": 2,
+                }
+            ]
+
+        store = self._bfs_store(fake_execute)
+        store.find_triples_bfs_page = (
+            lambda *a, **kw: GraphDBBackend.find_triples_bfs_page(store, *a, **kw)
+        )
+        out = store.find_triples_bfs_page(
+            "tbl", " WHERE 1=1", 1, limit=10, offset=10
+        )
+        assert out == {
+            "seed_count": 3,
+            "triples": [],
+            "total": 3,
+            "entity_count": 2,
+            "has_more": False,
+        }
+
+    def test_find_triples_bfs_page_keeps_empty_metadata(self):
+        def fake_execute(sql):
+            return [
+                {
+                    "subject": None,
+                    "predicate": None,
+                    "object": None,
+                    "seed_count": 0,
+                    "total": 0,
+                    "entity_count": 0,
+                }
+            ]
+
+        store = self._bfs_store(fake_execute)
+        store.find_triples_bfs_page = (
+            lambda *a, **kw: GraphDBBackend.find_triples_bfs_page(store, *a, **kw)
+        )
+        out = store.find_triples_bfs_page("tbl", " WHERE 1=1", 1, limit=10, offset=0)
+        assert out == {
+            "seed_count": 0,
+            "triples": [],
+            "total": 0,
+            "entity_count": 0,
+            "has_more": False,
+        }
 
     def test_returns_entity_and_min_lvl(self):
         sql = self._capture_sql("tbl", " WHERE 1=1", 1)
@@ -359,6 +523,9 @@ class TestPydanticModels:
         r = FindResponse(success=True)
         assert r.seed_count == 0
         assert r.triples == []
+        assert r.total == 0
+        assert r.entity_count == 0
+        assert r.has_more is False
 
     def test_triples_response(self):
         from api.routers.digitaltwin import TriplesResponse, TripleRow
@@ -551,3 +718,36 @@ class TestDtTriplesBackendSelection:
         await dt_triples(backend="view", session_mgr=MagicMock(), settings=MagicMock())
 
         assert store.paginated_count.call_args[0][0] == "c.s.view_V1"
+
+
+class TestDtTriplesFindBackwardCompatibility:
+    @patch("api.routers.digitaltwin.effective_graph_query_table", return_value="c.s.graph_V1")
+    @patch("api.routers.digitaltwin.get_graphdb")
+    @patch("api.routers.digitaltwin.DigitalTwin.find_triples_bfs")
+    @patch("api.routers.digitaltwin.DigitalTwin.resolve_domain")
+    async def test_missing_has_more_defaults_to_false(
+        self,
+        mock_resolve,
+        mock_find,
+        mock_store,
+        _query_table,
+    ):
+        from api.routers.digitaltwin import dt_triples_find
+
+        mock_resolve.return_value = MagicMock()
+        mock_store.return_value = MagicMock()
+        mock_find.return_value = {
+            "seed_count": 1,
+            "triples": [{"subject": "s", "predicate": "p", "object": "o"}],
+            "count": 1,
+            "total": 1,
+            "entity_count": 1,
+        }
+
+        resp = await dt_triples_find(
+            search="cust",
+            session_mgr=MagicMock(),
+            settings=MagicMock(),
+        )
+
+        assert resp.has_more is False

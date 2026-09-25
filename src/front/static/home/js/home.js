@@ -35,7 +35,7 @@ async function loadDomainGateway() {
             container.innerHTML =
                 '<div class="ob-domain-grid-empty text-muted">' +
                 '<div><i class="bi bi-box fs-3 d-block mb-2"></i>No domains yet.</div>' +
-                '<button type="button" class="ob-domain-empty-cta" data-action="newDomain">' +
+                '<button type="button" class="ob-domain-empty-cta" data-requires-app="admin" data-action="newDomain">' +
                 '<i class="bi bi-file-earmark-plus"></i> Create your first domain</button>' +
                 '</div>';
             return;
@@ -157,48 +157,6 @@ async function openDomain(name, version) {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
-   Domain management actions
-   ────────────────────────────────────────────────────────────────────────── */
-async function newDomain() {
-    const confirmed = await showConfirmDialog({
-        title: 'New Domain',
-        message: 'Create a new domain? This will clear all current ontology and mapping data.',
-        confirmText: 'Create New',
-        confirmClass: 'btn-warning',
-        icon: 'file-earmark-plus'
-    });
-    if (!confirmed) return;
-
-    try {
-        showDomainStatus('Creating new domain...', 'info');
-        const response = await fetch('/reset-session', { method: 'POST', credentials: 'same-origin' });
-        const result = await response.json();
-
-        if (result.success) {
-            showDomainStatus('New domain created', 'success');
-            if (typeof invalidateDomainCaches === 'function') invalidateDomainCaches();
-            setTimeout(() => window.location.reload(), 1000);
-        } else {
-            showDomainStatus('Error: ' + result.message, 'error');
-        }
-    } catch (error) {
-        showDomainStatus('Error: ' + error.message, 'error');
-    }
-}
-
-function showDomainStatus(message, type) {
-    const statusEl = document.getElementById('domainStatus');
-    if (!statusEl) return;
-    statusEl.className = 'domain-status ' + type;
-    statusEl.innerHTML = `<i class="bi bi-${type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : type === 'warning' ? 'exclamation-triangle' : 'hourglass-split'}"></i> ${message}`;
-    statusEl.classList.remove('hidden-initial');
-
-    if (type === 'success') {
-        setTimeout(() => statusEl.classList.add('hidden-initial'), 5000);
-    }
-}
-
-/* ──────────────────────────────────────────────────────────────────────────
    Init + event wiring
    ────────────────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', function () {
@@ -219,7 +177,9 @@ function onHomePanelClick(e) {
     if (!el) return;
     if (el.getAttribute('data-action') === 'newDomain') {
         e.preventDefault();
-        newDomain();
+        if (typeof window.domainNew === 'function') {
+            window.domainNew();
+        }
     }
 }
 

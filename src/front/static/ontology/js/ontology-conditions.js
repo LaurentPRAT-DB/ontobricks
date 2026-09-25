@@ -146,18 +146,24 @@ window.ConditionRowsModule = {
     },
 
     _bindOnce(container, options) {
+        container._conditionRowsOptions = options || {};
         if (container.dataset.condBound === '1') return;
         container.dataset.condBound = '1';
 
         const notify = () => {
-            if (options.onChange) options.onChange(this.collect(container));
+            const currentOptions = container._conditionRowsOptions;
+            if (currentOptions.onChange) currentOptions.onChange(this.collect(container));
         };
 
         container.addEventListener('change', (e) => {
             const field = e.target.getAttribute('data-cond-field');
             if (!field) return;
             if (field === 'property' || field === 'op') {
-                this.render(container, this.collect(container), options);
+                this.render(
+                    container,
+                    this.collect(container),
+                    container._conditionRowsOptions
+                );
             }
             notify();
         });
@@ -172,7 +178,7 @@ window.ConditionRowsModule = {
             const index = parseInt(button.getAttribute('data-cond-remove'), 10);
             const rows = this.collect(container);
             rows.splice(index, 1);
-            this.render(container, rows, options);
+            this.render(container, rows, container._conditionRowsOptions);
             notify();
         });
     },
