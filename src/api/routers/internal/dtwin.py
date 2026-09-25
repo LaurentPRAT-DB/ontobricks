@@ -2901,7 +2901,7 @@ async def dtwin_triples_find(
             "count": result["count"],
             "total": result.get("total", result["count"]),
             "entity_count": result.get("entity_count", 0),
-            "has_more": result["has_more"],
+            "has_more": result.get("has_more", False),
             "limit": limit,
             "offset": offset,
         }

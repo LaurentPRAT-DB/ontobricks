@@ -5,27 +5,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MCP_SRC = REPO_ROOT / "src" / "mcp-server"
 
 if str(MCP_SRC) not in sys.path:
     sys.path.insert(0, str(MCP_SRC))
 
-
-@pytest.fixture(scope="module")
-def format_find():
-    """Import formatter; skip when MCP extras are unavailable."""
-    try:
-        from server.app import _format_find_response  # type: ignore[import-not-found]
-    except ImportError as exc:
-        pytest.skip(f"MCP server not importable: {exc}")
-    return _format_find_response
+from server.formatting import _format_find_response  # type: ignore[import-not-found]
 
 
-def test_format_find_uses_exact_total_and_has_more_hint(format_find):
-    text = format_find(
+def test_format_find_uses_exact_total_and_has_more_hint():
+    text = _format_find_response(
         {
             "success": True,
             "seed_count": 1,

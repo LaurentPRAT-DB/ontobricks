@@ -718,3 +718,36 @@ class TestDtTriplesBackendSelection:
         await dt_triples(backend="view", session_mgr=MagicMock(), settings=MagicMock())
 
         assert store.paginated_count.call_args[0][0] == "c.s.view_V1"
+
+
+class TestDtTriplesFindBackwardCompatibility:
+    @patch("api.routers.digitaltwin.effective_graph_query_table", return_value="c.s.graph_V1")
+    @patch("api.routers.digitaltwin.get_graphdb")
+    @patch("api.routers.digitaltwin.DigitalTwin.find_triples_bfs")
+    @patch("api.routers.digitaltwin.DigitalTwin.resolve_domain")
+    async def test_missing_has_more_defaults_to_false(
+        self,
+        mock_resolve,
+        mock_find,
+        mock_store,
+        _query_table,
+    ):
+        from api.routers.digitaltwin import dt_triples_find
+
+        mock_resolve.return_value = MagicMock()
+        mock_store.return_value = MagicMock()
+        mock_find.return_value = {
+            "seed_count": 1,
+            "triples": [{"subject": "s", "predicate": "p", "object": "o"}],
+            "count": 1,
+            "total": 1,
+            "entity_count": 1,
+        }
+
+        resp = await dt_triples_find(
+            search="cust",
+            session_mgr=MagicMock(),
+            settings=MagicMock(),
+        )
+
+        assert resp.has_more is False
