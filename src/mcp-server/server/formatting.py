@@ -428,7 +428,9 @@ def _format_find_response(
 
     triples = data.get("triples", [])
     depth = data.get("depth", 1)
-    has_more = data.get("has_more", False)
+    page_count = data.get("count", len(triples))
+    total = data.get("total", len(triples))
+    has_more = data.get("has_more", total > page_count)
 
     by_subject: dict[str, list[dict]] = {}
     for t in triples:
@@ -453,11 +455,11 @@ def _format_find_response(
         related_uris = set(by_subject.keys()) - seed_uris
 
     unique_entities = len(by_subject)
-    shown = f"{len(triples)}{'+' if has_more else ''}"
+    entity_count = data.get("entity_count", unique_entities)
     parts: list[str] = []
     parts.append(
         f"Found {seed_count} matching entit{'y' if seed_count == 1 else 'ies'} "
-        f"({shown} triples across {unique_entities} entities, depth={depth})\n"
+        f"({page_count} of {total} triples across {entity_count} entities, depth={depth})\n"
     )
 
     parts.append("── Matching Entities ──")

@@ -532,7 +532,8 @@ def register_tools(mcp: FastMCP, session: MCPServerSession) -> None:
                 # Keep the LLM payload tight: 100 triples is plenty to
                 # describe an entity + its immediate neighbours, and cuts
                 # both backend fetch size and token cost. The backend sets
-                # ``has_more`` so the model knows when to page for the rest.
+                # exact ``total`` plus ``has_more`` so the model knows
+                # when to page for the rest.
                 "limit": 100,
                 "offset": 0,
             }

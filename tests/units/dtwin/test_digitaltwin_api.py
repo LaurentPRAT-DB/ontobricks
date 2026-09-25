@@ -523,6 +523,9 @@ class TestPydanticModels:
         r = FindResponse(success=True)
         assert r.seed_count == 0
         assert r.triples == []
+        assert r.total == 0
+        assert r.entity_count == 0
+        assert r.has_more is False
 
     def test_triples_response(self):
         from api.routers.digitaltwin import TriplesResponse, TripleRow

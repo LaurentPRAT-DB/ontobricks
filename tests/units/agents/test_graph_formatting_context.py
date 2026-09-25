@@ -80,3 +80,31 @@ def test_node_context_and_action_formatters():
     )
     assert "main.ops.recompute_risk" in act
     assert "result: 1" in act
+
+
+def test_format_find_uses_exact_total_and_has_more_hint():
+    text = format_find_response(
+        {
+            "success": True,
+            "seed_count": 1,
+            "depth": 1,
+            "count": 2,
+            "total": 7,
+            "entity_count": 3,
+            "has_more": True,
+            "triples": [
+                {
+                    "subject": "https://ex/Customer/CUST1",
+                    "predicate": "http://www.w3.org/2000/01/rdf-schema#label",
+                    "object": "Cust One",
+                },
+                {
+                    "subject": "https://ex/Customer/CUST1",
+                    "predicate": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+                    "object": "https://ex/Customer",
+                },
+            ],
+        }
+    )
+    assert "2 of 7 triples" in text
+    assert "more exist" in text
