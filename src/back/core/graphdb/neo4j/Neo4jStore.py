@@ -403,18 +403,6 @@ class Neo4jStore(GraphDBBackend):
             table_name, seed_where, depth, search=search, entity_type=entity_type
         )
 
-    def count_seeds(
-        self,
-        table_name: str,
-        seed_where: str,
-        *,
-        search: str = "",
-        entity_type: str = "",
-    ) -> int:
-        return self._reads.count_seeds(
-            table_name, seed_where, search=search, entity_type=entity_type
-        )
-
     def find_triples_bfs_page(
         self,
         table_name: str,

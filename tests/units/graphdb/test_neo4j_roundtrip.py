@@ -217,3 +217,47 @@ class TestRoundTripParity:
         assert RDF_TYPE in preds
         assert RDFS_LABEL in preds
         assert f"{NS}city" in preds
+
+    def test_find_triples_bfs_page_includes_folded_metadata_and_aliases(self):
+        from back.core.graphdb.neo4j.Neo4jReadOps import Neo4jReadOps
+
+        class _DummyConn:
+            def run(self, cypher: str, **params: Any) -> List[Dict[str, Any]]:
+                raise AssertionError(f"Unexpected cypher in test: {cypher} / {params}")
+
+        read_ops = Neo4jReadOps(_DummyConn())
+        read_ops.bfs_traversal = lambda *args, **kwargs: [  # type: ignore[method-assign]
+            {"entity": f"{NS}Customer/CUST-1007", "min_lvl": 0},
+            {"entity": f"{NS}Policy/POL-20008", "min_lvl": 1},
+        ]
+        read_ops.find_subjects_by_patterns = lambda table_name, patterns: {  # type: ignore[method-assign]
+            f"{NS}Policy/POL-20008",
+            f"{NS}PolicyType/POL-20008",
+        }
+        read_ops.get_triples_for_subjects = lambda table_name, subjects: [  # type: ignore[method-assign]
+            {"subject": f"{NS}Customer/CUST-1007", "predicate": f"{NS}holds", "object": f"{NS}Policy/POL-20008"},
+            {"subject": f"{NS}PolicyType/POL-20008", "predicate": RDF_TYPE, "object": f"{NS}PolicyType"},
+            {"subject": f"{NS}PolicyType/POL-20008", "predicate": RDFS_LABEL, "object": "Policy Type"},
+            {"subject": f"{NS}PolicyType/POL-20008", "predicate": f"{NS}kind", "object": "MOTOR"},
+            {"subject": f"{NS}PolicyType/POL-20008", "predicate": RDF_TYPE, "object": f"{NS}PolicyType"},
+        ]
+
+        result = read_ops.find_triples_bfs_page(
+            "InsurBricks_V1",
+            "",
+            2,
+            limit=1,
+            offset=0,
+            search="CUST-1007",
+            entity_type=f"{NS}Customer",
+        )
+
+        assert result["seed_count"] == 1
+        assert result["entity_count"] == 3
+        assert result["total"] == 4
+        assert result["has_more"] is True
+        assert len(result["triples"]) == 2
+        assert result["triples"] == sorted(
+            result["triples"], key=lambda r: (r["subject"], r["predicate"], r["object"])
+        )
+        assert any(t["subject"] == f"{NS}PolicyType/POL-20008" for t in result["triples"])

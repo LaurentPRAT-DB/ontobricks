@@ -470,26 +470,6 @@ class Neo4jReadOps:
         )
         return rows or []
 
-    def count_seeds(
-        self,
-        table_name: str,
-        seed_where: str,
-        *,
-        search: str = "",
-        entity_type: str = "",
-    ) -> int:
-        """Count seed nodes via structured params (SQL *seed_where* is ignored)."""
-        if not search and not entity_type:
-            return 0
-        seeds = self.find_seed_subjects(
-            table_name,
-            entity_type=entity_type,
-            field="any",
-            match_type="contains",
-            value=search,
-        )
-        return len(seeds)
-
     def find_triples_bfs_page(
         self,
         table_name: str,
@@ -510,9 +490,23 @@ class Neo4jReadOps:
         bfs_rows = self.bfs_traversal(
             table_name, "", depth, search=search, entity_type=entity_type
         )
+        seed_count = sum(int(r.get("min_lvl", 0)) == 0 for r in bfs_rows)
         entities = {r["entity"] for r in bfs_rows}
+        local_ids = {
+            str(entity).rsplit("#", 1)[-1].rsplit("/", 1)[-1]
+            for entity in entities
+        }
+        patterns = [f"%/{local_id}" for local_id in local_ids if local_id]
+        entities.update(self.find_subjects_by_patterns(table_name, patterns))
+        entity_count = len(entities)
         if not entities:
-            return {"triples": [], "has_more": False}
+            return {
+                "triples": [],
+                "has_more": False,
+                "seed_count": seed_count,
+                "total": 0,
+                "entity_count": entity_count,
+            }
         rows = self.get_triples_for_subjects(table_name, list(entities))
         seen: Set = set()
         dedup: List[Dict[str, str]] = []
@@ -522,9 +516,16 @@ class Neo4jReadOps:
                 seen.add(key)
                 dedup.append(r)
         dedup.sort(key=lambda r: (r["subject"], r["predicate"], r["object"]))
+        total = len(dedup)
         window = dedup[offset : offset + limit + 1]
         has_more = len(window) > limit
-        return {"triples": window[:limit], "has_more": has_more}
+        return {
+            "triples": window,
+            "has_more": has_more,
+            "seed_count": seed_count,
+            "total": total,
+            "entity_count": entity_count,
+        }
 
     def find_seed_subjects(
         self,
