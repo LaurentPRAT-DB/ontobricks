@@ -279,8 +279,10 @@ def main() -> None:
 
     token = get_token(args.profile)
     mcp = MCPClient(MCP_URL, token)
-    try: mcp.initialize()
-    except Exception: pass
+    try:
+        mcp.initialize()
+    except Exception as exc:
+        print(f"WARN: MCP initialize failed ({exc}); continuing", file=sys.stderr)
     tools = mcp.list_tools()
     print(f"MCP: {len(tools)} tools")
 

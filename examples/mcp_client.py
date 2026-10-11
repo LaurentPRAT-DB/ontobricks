@@ -77,6 +77,9 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         "Compute live (non-stored) virtual attributes for an entity via UC functions.",
     "invoke_entity_action":
         "Run a UC function action on an entity.",
+    "run_entity_business_rule":
+        "Trigger a SWRL business rule declared on an entity's class; WRITES the "
+        "inferred triples. Needs the Builder role.",
     "get_status":
         "Diagnostics: triple count, view name, graph name.",
     "get_graphql_schema":
@@ -181,8 +184,8 @@ class MCPClient:
                 json={"jsonrpc": "2.0", "method": "notifications/initialized"},
                 headers=hdrs,
             )
-        except Exception:
-            pass
+        except httpx.HTTPError as exc:
+            print(f"WARN: notifications/initialized failed: {exc}", file=sys.stderr)
 
     def list_tools(self) -> list[dict]:
         return (self._send("tools/list") or {}).get("tools", [])
@@ -475,8 +478,8 @@ def main() -> None:
     mcp = MCPClient(MCP_URL, token)
     try:
         mcp.initialize()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"WARN: MCP initialize failed ({exc}); continuing", file=sys.stderr)
     tools = mcp.list_tools()
     print(f"Connected — {len(tools)} tools, endpoint: {args.endpoint}")
 
