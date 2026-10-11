@@ -19,7 +19,11 @@ from typing import Any, Callable, Dict, List, Optional
 from back.core.errors import ValidationError
 
 from . import analytics, build, cache_refresh, cohort, reasoning
-from .context import RunOutcome, TaskContext, load_domain_headless
+from back.objects.registry.scheduler_tasks.RunOutcome import RunOutcome
+from back.objects.registry.scheduler_tasks.TaskContext import (
+    TaskContext,
+    load_domain_headless,
+)
 
 TASK_BUILD = "build"
 TASK_COHORT = "cohort"

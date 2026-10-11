@@ -447,7 +447,7 @@ def test_sigmagraph_panel_uses_the_shared_compact_tab_rail():
 
 
 def test_sigmagraph_max_entities_matches_backend_clamp():
-    from back.objects.digitaltwin.GraphFilter import (
+    from back.objects.digitaltwin.explorer.GraphFilter import (
         EXPLORER_MAX_ENTITIES_DEFAULT,
         EXPLORER_MAX_ENTITIES_UI_MAX,
     )

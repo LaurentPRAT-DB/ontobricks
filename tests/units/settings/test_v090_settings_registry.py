@@ -11,13 +11,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from back.core.errors import InfrastructureError, ValidationError
-from back.objects.domain.RegistrySettings import RegistrySettings
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.RegistrySettings import RegistrySettings
+from back.objects.domain.settings.SettingsService import SettingsService
 
 pytestmark = pytest.mark.unit
 
-_rs = importlib.import_module("back.objects.domain.RegistrySettings")
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_rs = importlib.import_module("back.objects.domain.settings.RegistrySettings")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 
 async def _inline_run_blocking(func, *args, **kwargs):

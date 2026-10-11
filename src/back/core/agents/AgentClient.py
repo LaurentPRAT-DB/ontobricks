@@ -35,7 +35,7 @@ class AgentClient:
     three-stage Generate design
     (``docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md``).
     Ontology generation now goes through the staged workflow
-    (``back.objects.ontology.GenerateWorkflow`` +
+    (``back.objects.ontology.generate.GenerateWorkflow`` +
     ``agents.agent_owl_generator.staged``) instead of this gateway.
     """
 

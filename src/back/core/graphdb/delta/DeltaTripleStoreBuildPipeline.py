@@ -11,7 +11,7 @@ from back.core.graphdb.GraphDBFactory import GraphDBFactory
 from back.core.graphdb.delta.DeltaFlatStore import DeltaFlatStore
 from back.core.graphdb.delta import _table_naming, materialize
 from back.core.logging import get_logger
-from back.objects.digitaltwin._build_pipeline import collect_domain_stats
+from back.objects.digitaltwin.build._build_pipeline import collect_domain_stats
 from back.objects.digitaltwin.models import DomainSnapshot
 
 logger = get_logger(__name__)

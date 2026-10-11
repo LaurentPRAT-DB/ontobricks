@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from back.core.errors import InfrastructureError, ValidationError
-from back.objects.digitaltwin.TwinMapping import TwinMapping
+from back.objects.digitaltwin.query.TwinMapping import TwinMapping
 
 pytestmark = pytest.mark.unit
 

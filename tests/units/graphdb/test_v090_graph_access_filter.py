@@ -12,13 +12,13 @@ from back.core.graphdb.entity_search import (
     preview_select_sql,
 )
 from back.core.helpers import sql_escape
-from back.objects.digitaltwin.GraphFilter import (
+from back.objects.digitaltwin.explorer.GraphFilter import (
     EXPLORER_MAX_ENTITIES_DEFAULT,
     EXPLORER_MAX_ENTITIES_MIN,
     EXPLORER_MAX_ENTITIES_UI_MAX,
     GraphFilter,
 )
-from back.objects.digitaltwin.GraphFind import GraphFind
+from back.objects.digitaltwin.explorer.GraphFind import GraphFind
 
 pytestmark = pytest.mark.unit
 

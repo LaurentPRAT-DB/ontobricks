@@ -119,7 +119,7 @@ longer parsing or caching mechanisms.
 
 ### `DocumentExtractor`
 
-`src/back/core/databricks/DocumentExtractor.py` remains a generic adapter for
+`src/back/core/databricks/document/DocumentExtractor.py` remains a generic adapter for
 `ai_parse_document`. It accepts a volume source path and returns extracted
 text. It does not decide whether parsing is necessary and does not persist
 state.

@@ -12,7 +12,7 @@ DigitalTwin class
 CohortService class
 -------------------
 
-.. automodule:: back.objects.digitaltwin.CohortService
+.. automodule:: back.objects.digitaltwin.cohort.CohortService
    :members:
    :undoc-members:
    :show-inheritance:
@@ -20,7 +20,7 @@ CohortService class
 CohortEngineContext class
 -------------------------
 
-.. automodule:: back.objects.digitaltwin.CohortEngineContext
+.. automodule:: back.objects.digitaltwin.cohort.CohortEngineContext
    :members:
    :undoc-members:
    :show-inheritance:
@@ -28,7 +28,7 @@ CohortEngineContext class
 TwinGraphBuild class
 --------------------
 
-.. automodule:: back.objects.digitaltwin.TwinGraphBuild
+.. automodule:: back.objects.digitaltwin.build.TwinGraphBuild
    :members:
    :undoc-members:
    :show-inheritance:
@@ -36,7 +36,7 @@ TwinGraphBuild class
 GraphFilter class
 -----------------
 
-.. automodule:: back.objects.digitaltwin.GraphFilter
+.. automodule:: back.objects.digitaltwin.explorer.GraphFilter
    :members:
    :undoc-members:
    :show-inheritance:
@@ -44,7 +44,7 @@ GraphFilter class
 GraphFind class
 ---------------
 
-.. automodule:: back.objects.digitaltwin.GraphFind
+.. automodule:: back.objects.digitaltwin.explorer.GraphFind
    :members:
    :undoc-members:
    :show-inheritance:
@@ -52,7 +52,7 @@ GraphFind class
 TwinStoreCache class
 --------------------
 
-.. automodule:: back.objects.digitaltwin.TwinStoreCache
+.. automodule:: back.objects.digitaltwin.cache.TwinStoreCache
    :members:
    :undoc-members:
    :show-inheritance:
@@ -60,7 +60,7 @@ TwinStoreCache class
 SqlQualityChecks class
 ----------------------
 
-.. automodule:: back.objects.digitaltwin.SqlQualityChecks
+.. automodule:: back.objects.digitaltwin.quality.SqlQualityChecks
    :members:
    :undoc-members:
    :show-inheritance:
@@ -68,7 +68,7 @@ SqlQualityChecks class
 QualitySqlBuilder class
 -----------------------
 
-.. automodule:: back.objects.digitaltwin.QualitySqlBuilder
+.. automodule:: back.objects.digitaltwin.quality.QualitySqlBuilder
    :members:
    :undoc-members:
    :show-inheritance:
@@ -84,7 +84,7 @@ TwinBackgroundTasks class
 TwinMapping class
 -----------------
 
-.. automodule:: back.objects.digitaltwin.TwinMapping
+.. automodule:: back.objects.digitaltwin.query.TwinMapping
    :members:
    :undoc-members:
    :show-inheritance:
@@ -108,7 +108,7 @@ TwinResolve class
 TwinAssistantCache class
 ------------------------
 
-.. automodule:: back.objects.digitaltwin.TwinAssistantCache
+.. automodule:: back.objects.digitaltwin.cache.TwinAssistantCache
    :members:
    :undoc-members:
    :show-inheritance:
@@ -116,7 +116,7 @@ TwinAssistantCache class
 TwinNeighborTriples class
 -------------------------
 
-.. automodule:: back.objects.digitaltwin.TwinNeighborTriples
+.. automodule:: back.objects.digitaltwin.explorer.TwinNeighborTriples
    :members:
    :undoc-members:
    :show-inheritance:
@@ -132,7 +132,7 @@ TwinGraphAccess class
 TwinDataQualityRun class
 ------------------------
 
-.. automodule:: back.objects.digitaltwin.TwinDataQualityRun
+.. automodule:: back.objects.digitaltwin.quality.TwinDataQualityRun
    :members:
    :undoc-members:
    :show-inheritance:
@@ -140,7 +140,7 @@ TwinDataQualityRun class
 TwinOntologyGroups class
 ------------------------
 
-.. automodule:: back.objects.digitaltwin.TwinOntologyGroups
+.. automodule:: back.objects.digitaltwin.explorer.TwinOntologyGroups
    :members:
    :undoc-members:
    :show-inheritance:
@@ -148,7 +148,7 @@ TwinOntologyGroups class
 TwinSparqlTranslate class
 -------------------------
 
-.. automodule:: back.objects.digitaltwin.TwinSparqlTranslate
+.. automodule:: back.objects.digitaltwin.query.TwinSparqlTranslate
    :members:
    :undoc-members:
    :show-inheritance:
@@ -156,7 +156,7 @@ TwinSparqlTranslate class
 TwinLakehouseBuild class
 ------------------------
 
-.. automodule:: back.objects.digitaltwin.TwinLakehouseBuild
+.. automodule:: back.objects.digitaltwin.build.TwinLakehouseBuild
    :members:
    :undoc-members:
    :show-inheritance:
@@ -164,7 +164,7 @@ TwinLakehouseBuild class
 TwinInferredMaterialize class
 -----------------------------
 
-.. automodule:: back.objects.digitaltwin.TwinInferredMaterialize
+.. automodule:: back.objects.digitaltwin.build.TwinInferredMaterialize
    :members:
    :undoc-members:
    :show-inheritance:
@@ -180,7 +180,7 @@ TwinGraphStats class
 NodeContextService class
 ------------------------
 
-.. automodule:: back.objects.digitaltwin.NodeContextService
+.. automodule:: back.objects.digitaltwin.node.NodeContextService
    :members:
    :undoc-members:
    :show-inheritance:
@@ -188,7 +188,7 @@ NodeContextService class
 VirtualAttributeService class
 -----------------------------
 
-.. automodule:: back.objects.digitaltwin.VirtualAttributeService
+.. automodule:: back.objects.digitaltwin.node.VirtualAttributeService
    :members:
    :undoc-members:
    :show-inheritance:

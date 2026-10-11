@@ -11,15 +11,15 @@ import pytest
 
 import back.objects.registry as registry_pkg
 from agents.agent_owl_generator.staged import CompletionResult, DetectionResult
-from back.objects.ontology import GenerateWorkflow as wf
-from back.objects.ontology.GenerateDraft import (
+from back.objects.ontology.generate import GenerateWorkflow as wf
+from back.objects.ontology.generate.DraftValidationError import DraftValidationError
+from back.objects.ontology.generate.GenerateDraft import (
     CHECKPOINT_DONE,
     CHECKPOINT_FAILED,
     DETECTING,
-    REVIEWING,
-    DraftValidationError,
     GenerateDraft,
     GenerateEntity,
+    REVIEWING,
     build_locked_anchors_from_classes,
 )
 

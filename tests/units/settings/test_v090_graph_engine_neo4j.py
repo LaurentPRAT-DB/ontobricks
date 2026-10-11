@@ -13,12 +13,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from back.core.errors import InfrastructureError, ValidationError
-from back.objects.domain.GraphEngineNeo4jSettings import GraphEngineNeo4jSettings
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.graphengine.GraphEngineNeo4jSettings import GraphEngineNeo4jSettings
+from back.objects.domain.settings.SettingsService import SettingsService
 
 pytestmark = pytest.mark.unit
 
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 _neo_conn_mod = importlib.import_module("back.core.graphdb.neo4j.Neo4jConnection")
 _read_ops_mod = importlib.import_module("back.core.graphdb.neo4j.Neo4jReadOps")
 _write_ops_mod = importlib.import_module("back.core.graphdb.neo4j.Neo4jWriteOps")

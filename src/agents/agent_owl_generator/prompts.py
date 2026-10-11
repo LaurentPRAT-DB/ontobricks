@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from back.objects.ontology.GenerateDraft import GenerateDraft, GenerateEntity
+from back.objects.ontology.generate.GenerateDraft import GenerateDraft, GenerateEntity
 
 # Explicit zero-new-candidate contract (live-bug fix): stated unconditionally
 # and prominently in Stage 1's system prompt, right after the anchors listing.

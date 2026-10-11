@@ -41,10 +41,18 @@ Home service
    :undoc-members:
    :show-inheritance:
 
+Workspace presence
+------------------
+
+.. automodule:: back.objects.domain.WorkspacePresence
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Settings service
 ----------------
 
-.. automodule:: back.objects.domain.SettingsService
+.. automodule:: back.objects.domain.settings.SettingsService
    :members:
    :undoc-members:
    :show-inheritance:

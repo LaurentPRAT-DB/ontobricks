@@ -54,10 +54,10 @@ from unittest.mock import patch
 
 import yaml
 
-from back.objects.ontology.GenerateDraft import (
+from back.objects.ontology.generate.DraftStaleError import DraftStaleError
+from back.objects.ontology.generate.DraftValidationError import DraftValidationError
+from back.objects.ontology.generate.GenerateDraft import (
     CHECKPOINT_DONE,
-    DraftStaleError,
-    DraftValidationError,
     GenerateDraft,
     GenerateEntity,
     REVIEWING,

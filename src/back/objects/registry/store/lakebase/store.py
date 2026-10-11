@@ -273,7 +273,7 @@ class LakebaseRegistryStore(
     Parameters
     ----------
     registry_cfg:
-        :class:`back.objects.registry.RegistryService.RegistryCfg` —
+        :class:`back.objects.registry.RegistryCfg.RegistryCfg` —
         used as the registry identity (the catalog/schema/volume
         triplet still matters because binaries live on the Volume).
     schema:

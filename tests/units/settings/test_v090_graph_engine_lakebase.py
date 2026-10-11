@@ -17,19 +17,19 @@ from back.core.errors import (
     InfrastructureError,
     ValidationError,
 )
-from back.objects.domain.GraphEngineLakebaseSettings import (
+from back.objects.domain.settings.graphengine.GraphEngineLakebaseSettings import (
     GraphEngineLakebaseSettings,
 )
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 
 pytestmark = pytest.mark.unit
 
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 _pool_mod = importlib.import_module("back.core.graphdb.lakebase.pool")
 _dbx_pkg = importlib.import_module("back.core.databricks")
 _lb_pkg = importlib.import_module("back.core.databricks.lakebase")
 _synced_mod = importlib.import_module("back.core.graphdb.lakebase.SyncedTableManager")
-_prov_mod = importlib.import_module("back.core.graphdb.lakebase.provisioner")
+_prov_mod = importlib.import_module("back.core.graphdb.lakebase.LakebaseGraphProvisioner")
 _tm_pkg = importlib.import_module("back.core.task_manager")
 
 REG = {"catalog": "cat", "schema": "sch", "volume": "vol"}

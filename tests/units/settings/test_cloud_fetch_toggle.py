@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from back.core.errors import AuthorizationError, InfrastructureError
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SETTINGS_HTML = REPO_ROOT / "src/front/templates/settings.html"
@@ -25,12 +25,12 @@ class TestCurrentConfigIncludesCloudFetch:
         settings.databricks_token = "tok"
 
         with patch(
-            "back.objects.domain.SettingsService.get_domain", return_value=domain
+            "back.objects.domain.settings.SettingsService.get_domain", return_value=domain
         ), patch(
-            "back.objects.domain.SettingsService.resolve_warehouse_id",
+            "back.objects.domain.settings.SettingsService.resolve_warehouse_id",
             return_value="wh-build",
         ), patch(
-            "back.objects.domain.SettingsService.resolve_use_cloud_fetch",
+            "back.objects.domain.settings.SettingsService.resolve_use_cloud_fetch",
             return_value=False,
         ), patch.object(SettingsService, "is_warehouse_locked", return_value=False):
             payload = SettingsService.build_current_config(MagicMock(), settings)
@@ -45,7 +45,7 @@ class TestServiceWrite:
             "require_admin_error",
             side_effect=AuthorizationError("nope"),
         ), patch(
-            "back.objects.domain.SettingsService.global_config_service"
+            "back.objects.domain.settings.SettingsService.global_config_service"
             ".set_use_cloud_fetch"
         ) as setter:
             with pytest.raises(AuthorizationError):
@@ -60,7 +60,7 @@ class TestServiceWrite:
             "_resolve_context",
             return_value=(MagicMock(), "https://h", "tok", RCFG),
         ), patch(
-            "back.objects.domain.SettingsService.global_config_service"
+            "back.objects.domain.settings.SettingsService.global_config_service"
             ".set_use_cloud_fetch",
             return_value=(True, "saved"),
         ) as setter:
@@ -76,7 +76,7 @@ class TestServiceWrite:
             "_resolve_context",
             return_value=(MagicMock(), "https://h", "tok", RCFG),
         ), patch(
-            "back.objects.domain.SettingsService.global_config_service"
+            "back.objects.domain.settings.SettingsService.global_config_service"
             ".set_use_cloud_fetch",
             return_value=(False, "disk full"),
         ):

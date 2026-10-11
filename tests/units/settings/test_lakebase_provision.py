@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from back.core.task_manager import get_task_manager
-from back.core.graphdb.lakebase.provisioner import (
+from back.core.graphdb.lakebase.LakebaseGraphProvisioner import (
     LakebaseGraphProvisioner,
     provision_steps,
 )
@@ -321,7 +321,7 @@ class TestProvisioner:
         prov, _, _ = _make_provisioner(api, [])
 
         with patch(
-            "back.core.graphdb.lakebase.provisioner.time.sleep",
+            "back.core.graphdb.lakebase.LakebaseGraphProvisioner.time.sleep",
             return_value=None,
         ):
             prov._resolve_project_path(api)
@@ -466,9 +466,9 @@ class TestProvisionService:
 
         from back.core.errors import AuthorizationError
 
-        # ``back.objects.domain.SettingsService`` resolves to the *class*
+        # ``back.objects.domain.settings.SettingsService`` resolves to the *class*
         # (re-exported in the package __init__), so patch the module object.
-        ss = importlib.import_module("back.objects.domain.SettingsService")
+        ss = importlib.import_module("back.objects.domain.settings.SettingsService")
         SettingsService = ss.SettingsService
 
         monkeypatch.setenv("PGUSER", "app-sp")
@@ -487,7 +487,7 @@ class TestProvisionService:
     def test_admin_starts_task_and_returns_id(self, monkeypatch):
         import importlib
 
-        ss = importlib.import_module("back.objects.domain.SettingsService")
+        ss = importlib.import_module("back.objects.domain.settings.SettingsService")
         SettingsService = ss.SettingsService
 
         monkeypatch.setenv("PGUSER", "app-sp")
@@ -507,7 +507,7 @@ class TestProvisionService:
              ), \
              patch.object(ss, "global_config_service", gcs), \
              patch(
-                 "back.core.graphdb.lakebase.provisioner.LakebaseGraphProvisioner"
+                 "back.core.graphdb.lakebase.LakebaseGraphProvisioner.LakebaseGraphProvisioner"
              ) as prov_cls:
             prov_cls.return_value.run.return_value = None
             out = SettingsService.graph_engine_lakebase_provision_result(

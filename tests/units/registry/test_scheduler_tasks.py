@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from back.core.errors import InfrastructureError, ValidationError
-from back.core.task_manager.models import TaskStatus
+from back.core.task_manager.TaskStatus import TaskStatus
 from back.objects.digitaltwin import DigitalTwin
 from back.objects.registry.scheduler_tasks import (
     TASK_TYPES,

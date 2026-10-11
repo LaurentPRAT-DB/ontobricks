@@ -1,11 +1,7 @@
 """Async Task Manager — in-memory task tracking for long-running operations."""
 
-from back.core.task_manager.models import (  # noqa: F401
-    TaskStatus,
-    TaskStep,
-    TaskLogEntry,
-    Task,
-)
+from back.core.task_manager.TaskStatus import TaskStatus  # noqa: F401
+from back.core.task_manager.Task import Task, TaskLogEntry, TaskStep  # noqa: F401
 from back.core.task_manager.TaskManager import TaskManager  # noqa: F401
 
 # Global singleton instance

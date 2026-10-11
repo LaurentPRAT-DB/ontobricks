@@ -4,11 +4,11 @@ import importlib
 from unittest.mock import MagicMock, patch
 
 from back.objects.domain.Domain import Domain
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 from back.objects.registry.PermissionService import ROLE_ADMIN, ROLE_BUILDER
 from back.objects.registry.version_lifecycle import version_deletion_capability
 
-settings_module = importlib.import_module("back.objects.domain.SettingsService")
+settings_module = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 
 def _domain_service(*, status="DRAFT", current="3"):

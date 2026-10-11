@@ -6,11 +6,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from back.core.errors import NotFoundError, ValidationError
-from back.objects.digitaltwin.NodeContextService import NodeContextService
+from back.objects.digitaltwin.node.NodeContextService import NodeContextService
 
 pytestmark = pytest.mark.unit
 
-va_module = import_module("back.objects.digitaltwin.VirtualAttributeService")
+va_module = import_module("back.objects.digitaltwin.node.VirtualAttributeService")
 
 _ENTITY_URI = "https://example.com/Customer/CUST001"
 

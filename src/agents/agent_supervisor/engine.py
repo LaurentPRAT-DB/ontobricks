@@ -23,7 +23,7 @@ post-generation pitfall-rewrite loop the three-stage Generate design
 replaces; it was never wired to a production Model Serving endpoint (only
 ``task="mapping"`` is exposed via ``responses_agent.py``) and has been removed
 outright rather than left dormant. Ontology generation now goes exclusively
-through the staged workflow (``back.objects.ontology.GenerateWorkflow`` +
+through the staged workflow (``back.objects.ontology.generate.GenerateWorkflow`` +
 ``agents.agent_owl_generator.staged``), which this supervisor does not front.
 """
 

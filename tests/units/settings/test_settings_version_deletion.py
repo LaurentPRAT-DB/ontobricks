@@ -9,10 +9,10 @@ from back.core.errors import (
     InfrastructureError,
     NotFoundError,
 )
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 from back.objects.registry.PermissionService import ROLE_ADMIN, ROLE_BUILDER
 
-module = importlib.import_module("back.objects.domain.SettingsService")
+module = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 
 def _run(

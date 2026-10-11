@@ -30,18 +30,34 @@ removed in v0.4.0. Operators with on-Volume registry data must run
 from __future__ import annotations
 
 from .base import (
+    BuildRunEntry,
+    ChangeEvent,
+    DocumentRow,
+    DomainComment,
     DomainSummary,
+    DomainTask,
+    GraphAnalyticsResult,
+    GraphAnalyticsRun,
     RegistryStore,
+    ReviewEvent,
     ScheduleHistoryEntry,
     StoreError,
 )
 from .factory import RegistryFactory
 
 __all__ = [
+    "BuildRunEntry",
+    "ChangeEvent",
+    "DocumentRow",
+    "DomainComment",
     "DomainSummary",
+    "DomainTask",
+    "GraphAnalyticsResult",
+    "GraphAnalyticsRun",
     "LakebaseRegistryStore",
     "RegistryFactory",
     "RegistryStore",
+    "ReviewEvent",
     "ScheduleHistoryEntry",
     "StoreError",
 ]

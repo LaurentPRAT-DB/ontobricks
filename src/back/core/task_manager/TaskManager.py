@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from back.core.logging import get_logger
-from back.core.task_manager.models import Task, TaskLogEntry, TaskStatus, TaskStep
+from back.core.task_manager.Task import Task, TaskLogEntry, TaskStep
+from back.core.task_manager.TaskStatus import TaskStatus
 
 logger = get_logger(__name__)
 

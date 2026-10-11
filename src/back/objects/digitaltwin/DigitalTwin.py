@@ -6,13 +6,13 @@ from typing import Any, Dict, List, Optional, Set
 
 from back.objects.digitaltwin.constants import RDF_TYPE, RDFS_LABEL
 from back.objects.digitaltwin.models import DomainSnapshot
-from back.objects.digitaltwin.TwinStoreCache import (
+from back.objects.digitaltwin.cache.TwinStoreCache import (
     _TS_STATS_CACHE_TTL_SECONDS as _TS_STATS_CACHE_TTL_SECONDS,
 )
-from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
-from back.objects.digitaltwin.QualitySqlBuilder import QualitySqlBuilder
+from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
+from back.objects.digitaltwin.quality.QualitySqlBuilder import QualitySqlBuilder
 from back.objects.digitaltwin.TwinBackgroundTasks import TwinBackgroundTasks
-from back.objects.digitaltwin.TwinMapping import TwinMapping
+from back.objects.digitaltwin.query.TwinMapping import TwinMapping
 from back.objects.digitaltwin.TwinAnalytics import TwinAnalytics
 from back.objects.digitaltwin.TwinResolve import TwinResolve
 from back.objects.session import get_domain  # tests patch DigitalTwin.get_domain
@@ -92,19 +92,19 @@ class DigitalTwin:
     # ------------------------------------------------------------------
 
     def get_ts_cache(self, section: str) -> Optional[dict]:
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return TwinStoreCache(self._domain).get_ts_cache(section)
 
 
     def set_ts_cache(self, section: str, data: dict):
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return TwinStoreCache(self._domain).set_ts_cache(section, data)
 
 
     def clear_ts_cache(self, section: str) -> None:
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return TwinStoreCache(self._domain).clear_ts_cache(section)
 
@@ -112,7 +112,7 @@ class DigitalTwin:
     async def get_or_fetch_graph_status(
         self, settings, force_refresh: bool = False
     ) -> Dict[str, Any]:
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return await TwinStoreCache(self._domain).get_or_fetch_graph_status(settings, force_refresh)
 
@@ -120,13 +120,13 @@ class DigitalTwin:
     async def get_or_fetch_dt_existence(
         self, settings, force_refresh: bool = False
     ) -> Dict[str, Any]:
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return await TwinStoreCache(self._domain).get_or_fetch_dt_existence(settings, force_refresh)
 
 
     def pending_dt_existence(self, settings) -> Dict[str, Any]:
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return TwinStoreCache(self._domain).pending_dt_existence(settings)
 
@@ -136,7 +136,7 @@ class DigitalTwin:
     # ------------------------------------------------------------------
 
     def sync_last_build_from_schedule(self, settings) -> None:
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return TwinStoreCache(self._domain).sync_last_build_from_schedule(settings)
 
@@ -146,7 +146,7 @@ class DigitalTwin:
     # ------------------------------------------------------------------
 
     async def fetch_graph_triplestore_status(self, settings) -> Dict[str, Any]:
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return await TwinStoreCache(self._domain).fetch_graph_triplestore_status(settings)
 
@@ -165,7 +165,7 @@ class DigitalTwin:
         return GraphDBFactory._resolve_graph_engine(domain, settings) or "lakebase"
 
     async def fetch_digital_twin_existence(self, settings) -> Dict[str, Any]:
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return await TwinStoreCache(self._domain).fetch_digital_twin_existence(settings)
 
@@ -173,7 +173,7 @@ class DigitalTwin:
     async def _fetch_neo4j_existence(
         self, settings, result: Dict[str, Any], graph_name: str, run_blocking
     ) -> Dict[str, Any]:
-        from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+        from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
         return await TwinStoreCache(self._domain)._fetch_neo4j_existence(settings, result, graph_name, run_blocking)
 
@@ -198,7 +198,7 @@ class DigitalTwin:
     # ------------------------------------------------------------------
 
     def classify_predicates(self, top_predicates: list) -> list:
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks(self._domain).classify_predicates(top_predicates)
 
@@ -218,49 +218,49 @@ class DigitalTwin:
     def _count_class_population_sql(
         store, table: str, class_uri: str, cache: dict = None
     ) -> Optional[int]:
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._count_class_population_sql(store, table, class_uri, cache)
 
 
     @staticmethod
     def _enrich_with_population(result: dict, total_population: Optional[int]) -> dict:
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._enrich_with_population(result, total_population)
 
 
     @staticmethod
     def _count_violations_sql(store, sql: str) -> Optional[int]:
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._count_violations_sql(store, sql)
 
 
     @staticmethod
     def _apply_sql_violation_limit(store, sql: str, violation_limit, row_mapper=None):
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._apply_sql_violation_limit(store, sql, violation_limit, row_mapper)
 
 
     @staticmethod
     def _load_predicates_from_table(store, table: str) -> set:
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._load_predicates_from_table(store, table)
 
 
     @staticmethod
     def _resolve_shape_uri_for_sql(shape: dict, available_predicates: set) -> dict:
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._resolve_shape_uri_for_sql(shape, available_predicates)
 
 
     @staticmethod
     def _sql_error_detail(exc: Exception) -> str:
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._sql_error_detail(exc)
 
@@ -269,28 +269,28 @@ class DigitalTwin:
     def _failed_check_result(
         name: str, category: str, check_id, sql: str, exc: Exception
     ) -> dict:
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._failed_check_result(name, category, check_id, sql, exc)
 
 
     @staticmethod
     def _rule_check_id(prefix: str, rule: dict, index: int) -> str:
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._rule_check_id(prefix, rule, index)
 
 
     @staticmethod
     def _swrl_target_class_uri(rule, base_uri, uri_map):
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._swrl_target_class_uri(rule, base_uri, uri_map)
 
 
     @staticmethod
     def _swrl_antecedent_population_sql(translator, store, table, params):
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._swrl_antecedent_population_sql(translator, store, table, params)
 
@@ -314,7 +314,7 @@ class DigitalTwin:
         aggregate_rules=None,
         violation_limit=None,
     ):
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks.run_sql_checks(tm, task, shapes, triplestore_table, store, t0, total, swrl_rules, ontology, decision_tables, aggregate_rules, violation_limit)
 
@@ -331,7 +331,7 @@ class DigitalTwin:
         total,
         violation_limit=None,
     ):
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._run_swrl_sql_checks(tm, task, results, swrl_rules, ontology, triplestore_table, store, total, violation_limit)
 
@@ -349,7 +349,7 @@ class DigitalTwin:
         shape_count,
         violation_limit=None,
     ):
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._run_dt_sql_checks(tm, task, results, decision_tables, ontology, triplestore_table, store, total, shape_count, violation_limit)
 
@@ -367,7 +367,7 @@ class DigitalTwin:
         shape_count,
         violation_limit=None,
     ):
-        from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+        from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 
         return SqlQualityChecks._run_agg_sql_checks(tm, task, results, aggregate_rules, ontology, triplestore_table, store, total, shape_count, violation_limit)
 
@@ -631,7 +631,7 @@ class DigitalTwin:
     @staticmethod
     def expand_uri_aliases(store, table_name: str, uris: Set[str]) -> Set[str]:
         """Find alternate URI forms for a set of entity URIs."""
-        from back.objects.digitaltwin.GraphFind import GraphFind
+        from back.objects.digitaltwin.explorer.GraphFind import GraphFind
 
         return GraphFind.expand_uri_aliases(store, table_name, uris)
 
@@ -648,7 +648,7 @@ class DigitalTwin:
         session-aware ``/dtwin/triples/find`` Graph Chat route so the two
         surfaces cannot drift on seed semantics.
         """
-        from back.objects.digitaltwin.GraphFind import GraphFind
+        from back.objects.digitaltwin.explorer.GraphFind import GraphFind
 
         return GraphFind.build_find_seed_where(
             table, entity_type=entity_type, search=search
@@ -670,7 +670,7 @@ class DigitalTwin:
         Returns a normalized payload dict (``seed_count``, ``triples``,
         pagination fields). An empty match yields ``message`` and empty lists.
         """
-        from back.objects.digitaltwin.GraphFind import GraphFind
+        from back.objects.digitaltwin.explorer.GraphFind import GraphFind
 
         return GraphFind.find_triples_bfs(
             store,
@@ -792,12 +792,12 @@ class DigitalTwin:
     # ------------------------------------------------------------------
     #
     # The actual logic lives in
-    # :class:`back.objects.digitaltwin.CohortService.CohortService`
+    # :class:`back.objects.digitaltwin.cohort.CohortService.CohortService`
     # (Extract Class refactor).  These wrappers preserve the public
     # surface that routes and tests have been calling so far.
 
     def _cohort_service(self) -> Any:
-        from back.objects.digitaltwin.CohortService import CohortService
+        from back.objects.digitaltwin.cohort.CohortService import CohortService
 
         return CohortService(self._domain)
 
@@ -914,7 +914,7 @@ class DigitalTwin:
         target_dict: Dict[str, Any], client: Any
     ) -> Dict[str, Any]:
         """Run a 3-step read-only permission probe for a UC Delta target."""
-        from back.objects.digitaltwin.CohortService import CohortService
+        from back.objects.digitaltwin.cohort.CohortService import CohortService
 
         return CohortService.probe_uc_write(target_dict, client)
 
@@ -933,7 +933,7 @@ class DigitalTwin:
         max_preview: int = 500,
     ) -> Dict[str, Any]:
         """Seed-search phase: return a flat entity list for the filter modal."""
-        from back.objects.digitaltwin.GraphFilter import GraphFilter
+        from back.objects.digitaltwin.explorer.GraphFilter import GraphFilter
 
         return GraphFilter.preview(
             store,
@@ -958,7 +958,7 @@ class DigitalTwin:
         max_fetch_seconds: float = 120.0,
     ) -> Dict[str, Any]:
         """BFS-expand selected URIs and return the induced subgraph triples."""
-        from back.objects.digitaltwin.GraphFilter import GraphFilter
+        from back.objects.digitaltwin.explorer.GraphFilter import GraphFilter
 
         return GraphFilter.expand(
             store,

@@ -11,12 +11,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from back.core.errors import InfrastructureError, ValidationError
-from back.objects.domain.PermissionSettings import PermissionSettings
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.PermissionSettings import PermissionSettings
+from back.objects.domain.settings.SettingsService import SettingsService
 
 pytestmark = pytest.mark.unit
 
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 CFG = {"catalog": "cat", "schema": "sch"}
 SETTINGS = SimpleNamespace(ontobricks_app_name="ontobricks-app")

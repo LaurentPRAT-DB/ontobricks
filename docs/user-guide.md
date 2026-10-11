@@ -131,6 +131,9 @@ mutually exclusive behavior:
 - On non-Settings pages with a loaded domain, it shows the normal domain
   context + four-workspace rail.
 - On non-Settings pages with no loaded domain, it remains hidden.
+- Hitting a workspace URL (`/domain/`, `/ontology/`, `/mapping/`, `/dtwin/`)
+  with no domain in session immediately redirects to Home. Settings, About,
+  and Home stay reachable without a domain.
 
 Clicking **Back to domain** opens the same Workspace Map modal used by the
 domain context target. If JavaScript is unavailable, it safely falls back to

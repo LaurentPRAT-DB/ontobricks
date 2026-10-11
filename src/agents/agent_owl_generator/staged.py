@@ -18,7 +18,7 @@ SPEC: ``.planning/agents/agent_owl_generator/SPEC.md`` §2/§3/§3a/§6a):
   in-request rewrite.
 
 Checkpoint *persistence*, the async workflow, and the API routes are Task 4
-(:mod:`back.objects.ontology.GenerateWorkflow` +
+(:mod:`back.objects.ontology.generate.GenerateWorkflow` +
 :mod:`api.routers.internal.ontology`'s ``/wizard/generate/*`` routes) — these
 functions validate ordering by inspecting the passed draft's checkpoints but
 do not write them themselves. The deprecated one-shot bridge lives in
@@ -37,9 +37,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 import requests
 
 from back.core.logging import get_logger
-from back.objects.ontology.GenerateDraft import (
+from back.objects.ontology.generate.DraftValidationError import DraftValidationError
+from back.objects.ontology.generate.GenerateDraft import (
     CHECKPOINT_DONE,
-    DraftValidationError,
     GenerateDraft,
     GenerateEntity,
     SUBSTAGE_ATTRIBUTES,

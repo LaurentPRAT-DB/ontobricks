@@ -12,7 +12,22 @@ Constants
 Models
 ------
 
-.. automodule:: back.core.reasoning.models
+.. automodule:: back.core.reasoning.results.InferredTriple
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: back.core.reasoning.results.RuleViolation
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: back.core.reasoning.results.ReasoningResult
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: back.core.reasoning.swrl.SWRLAtomPartition
    :members:
    :undoc-members:
    :show-inheritance:
@@ -36,7 +51,7 @@ OWL RL Reasoner
 SWRL Engine
 -----------
 
-.. automodule:: back.core.reasoning.SWRLEngine
+.. automodule:: back.core.reasoning.swrl.SWRLEngine
    :members:
    :undoc-members:
    :show-inheritance:
@@ -44,7 +59,12 @@ SWRL Engine
 SWRL Built-in Registry
 ----------------------
 
-.. automodule:: back.core.reasoning.SWRLBuiltinRegistry
+.. automodule:: back.core.reasoning.swrl.SWRLBuiltin
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: back.core.reasoning.swrl.SWRLBuiltinRegistry
    :members:
    :undoc-members:
    :show-inheritance:
@@ -52,7 +72,7 @@ SWRL Built-in Registry
 SWRL Parser
 -----------
 
-.. automodule:: back.core.reasoning.SWRLParser
+.. automodule:: back.core.reasoning.swrl.SWRLParser
    :members:
    :undoc-members:
    :show-inheritance:
@@ -60,7 +80,7 @@ SWRL Parser
 SWRL SQL Translator
 -------------------
 
-.. automodule:: back.core.reasoning.SWRLSQLTranslator
+.. automodule:: back.core.reasoning.swrl.SWRLSQLTranslator
    :members:
    :undoc-members:
    :show-inheritance:
@@ -68,7 +88,7 @@ SWRL SQL Translator
 Decision Table Engine
 ---------------------
 
-.. automodule:: back.core.reasoning.DecisionTableEngine
+.. automodule:: back.core.reasoning.rules.DecisionTableEngine
    :members:
    :undoc-members:
    :show-inheritance:
@@ -76,7 +96,7 @@ Decision Table Engine
 SPARQL Rule Engine
 ------------------
 
-.. automodule:: back.core.reasoning.SPARQLRuleEngine
+.. automodule:: back.core.reasoning.rules.SPARQLRuleEngine
    :members:
    :undoc-members:
    :show-inheritance:
@@ -84,7 +104,7 @@ SPARQL Rule Engine
 Aggregate Rule Engine
 ---------------------
 
-.. automodule:: back.core.reasoning.AggregateRuleEngine
+.. automodule:: back.core.reasoning.rules.AggregateRuleEngine
    :members:
    :undoc-members:
    :show-inheritance:

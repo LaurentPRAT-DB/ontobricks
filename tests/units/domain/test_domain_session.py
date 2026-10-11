@@ -307,7 +307,7 @@ class TestSaveAndReset:
 
 class TestGenerateDraftIntegration:
     """DomainSession is the durable persistence boundary for the Generate
-    draft (see ``back.objects.ontology.GenerateDraft``); see
+    draft (see ``back.objects.ontology.generate.GenerateDraft``); see
     ``tests/units/ontology/test_generate_draft.py`` for the model's own
     behavior tests. These only cover the DomainSession wiring itself.
     """
@@ -317,7 +317,7 @@ class TestGenerateDraftIntegration:
         assert data.get("generate_draft") is None
 
     def test_generate_draft_store_property_returns_store(self, domain_session):
-        from back.objects.ontology.GenerateDraft import GenerateDraftStore
+        from back.objects.ontology.generate.GenerateDraftStore import GenerateDraftStore
 
         assert isinstance(domain_session.generate_draft_store, GenerateDraftStore)
 
@@ -325,7 +325,7 @@ class TestGenerateDraftIntegration:
         assert domain_session.generate_draft_store.load() is None
 
     def test_save_persists_under_generate_draft_key(self, mock_session_mgr, domain_session):
-        from back.objects.ontology.GenerateDraft import GenerateDraft
+        from back.objects.ontology.generate.GenerateDraft import GenerateDraft
 
         draft = GenerateDraft.new(source_fingerprint="sha256:abc")
         domain_session.generate_draft_store.save(draft)
@@ -334,7 +334,7 @@ class TestGenerateDraftIntegration:
         assert raw["generate_draft"]["draft_revision"] == 1
 
     def test_reset_clears_persisted_draft(self, domain_session):
-        from back.objects.ontology.GenerateDraft import GenerateDraft
+        from back.objects.ontology.generate.GenerateDraft import GenerateDraft
 
         domain_session.generate_draft_store.save(
             GenerateDraft.new(source_fingerprint="sha256:abc")
@@ -348,7 +348,7 @@ class TestGenerateDraftIntegration:
         separate, narrower reset than the whole-session ``reset()``) must
         not leave a draft around that references entities that no longer
         exist — cross-ontology-reset leakage."""
-        from back.objects.ontology.GenerateDraft import GenerateDraft
+        from back.objects.ontology.generate.GenerateDraft import GenerateDraft
 
         domain_session.generate_draft_store.save(
             GenerateDraft.new(source_fingerprint="sha256:abc")
@@ -375,7 +375,7 @@ class TestGenerateDraftIntegration:
         """Loading a different domain/version into the current session must
         not resurrect a draft detected against the *previous* domain's
         ontology/metadata — cross-domain/version leakage."""
-        from back.objects.ontology.GenerateDraft import GenerateDraft
+        from back.objects.ontology.generate.GenerateDraft import GenerateDraft
 
         domain_session.generate_draft_store.save(
             GenerateDraft.new(source_fingerprint="sha256:abc")

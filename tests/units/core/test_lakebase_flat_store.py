@@ -613,7 +613,7 @@ class TestResolveLakebaseGraphSchema:
         domain = SimpleNamespace(settings={"registry": {}})
         settings = SimpleNamespace()
         with patch(
-            "back.objects.registry.RegistryCfg.from_domain",
+            "back.objects.registry.RegistryCfg.RegistryCfg.from_domain",
             return_value=MagicMock(catalog="c", schema="volume_sch", volume="v"),
         ):
             out = resolve_lakebase_graph_schema(
@@ -634,7 +634,7 @@ class TestResolveLakebaseGraphSchema:
         domain = SimpleNamespace(settings={"registry": {}})
         settings = SimpleNamespace()
         with patch(
-            "back.objects.registry.RegistryCfg.from_domain",
+            "back.objects.registry.RegistryCfg.RegistryCfg.from_domain",
             return_value=MagicMock(catalog="c", schema="volume_sch", volume="v"),
         ):
             out = resolve_lakebase_graph_schema(domain, settings, "")
@@ -650,7 +650,7 @@ class TestResolveLakebaseGraphSchema:
         domain = SimpleNamespace()
         settings = SimpleNamespace()
         with patch(
-            "back.objects.registry.RegistryCfg.from_domain",
+            "back.objects.registry.RegistryCfg.RegistryCfg.from_domain",
             return_value=MagicMock(catalog="c", schema="", volume="v"),
         ):
             out = resolve_lakebase_graph_schema(domain, settings, "custom_g")
@@ -668,7 +668,7 @@ class TestResolveSyncUcFallbackCatalog:
         domain = SimpleNamespace(settings={"registry": {}})
         settings = SimpleNamespace()
         with patch(
-            "back.objects.registry.RegistryCfg.from_domain",
+            "back.objects.registry.RegistryCfg.RegistryCfg.from_domain",
             return_value=MagicMock(catalog="team_catalog", schema="s", volume="v"),
         ):
             out = resolve_sync_uc_fallback_catalog(
@@ -688,7 +688,7 @@ class TestResolveSyncUcFallbackCatalog:
         domain = SimpleNamespace()
         settings = SimpleNamespace()
         with patch(
-            "back.objects.registry.RegistryCfg.from_domain",
+            "back.objects.registry.RegistryCfg.RegistryCfg.from_domain",
             return_value=MagicMock(catalog="", schema="", volume=""),
         ):
             out = resolve_sync_uc_fallback_catalog(
@@ -711,7 +711,7 @@ class TestResolveSyncUcFallbackCatalog:
         domain = SimpleNamespace(settings={"registry": {}})
         settings = SimpleNamespace()
         with patch(
-            "back.objects.registry.RegistryCfg.from_domain",
+            "back.objects.registry.RegistryCfg.RegistryCfg.from_domain",
             return_value=MagicMock(catalog="team_catalog", schema="s", volume="v"),
         ):
             out = resolve_sync_uc_fallback_catalog(
@@ -735,7 +735,7 @@ class TestResolveSyncUcFallbackCatalog:
         domain = SimpleNamespace(settings={"registry": {}})
         settings = SimpleNamespace()
         with patch(
-            "back.objects.registry.RegistryCfg.from_domain",
+            "back.objects.registry.RegistryCfg.RegistryCfg.from_domain",
             return_value=MagicMock(catalog="team_catalog", schema="s", volume="v"),
         ):
             out = resolve_sync_uc_fallback_catalog(

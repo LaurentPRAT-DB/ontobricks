@@ -10,11 +10,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from back.core.errors import InfrastructureError, NotFoundError, ValidationError
-from back.objects.domain.RegistryDomainSettings import RegistryDomainSettings
+from back.objects.domain.settings.RegistryDomainSettings import RegistryDomainSettings
 
 pytestmark = pytest.mark.unit
 
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 
 @pytest.fixture

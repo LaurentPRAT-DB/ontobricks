@@ -18,12 +18,12 @@ from back.core.errors import (
 )
 from back.core.logging import get_logger
 from back.objects.digitaltwin import DigitalTwin
-from back.objects.digitaltwin.NodeContextService import NodeContextService
-from back.objects.digitaltwin.NodeBusinessRuleService import (
+from back.objects.digitaltwin.node.NodeContextService import NodeContextService
+from back.objects.digitaltwin.node.NodeBusinessRuleService import (
     BUSINESS_RULES_FEATURE,
     NodeBusinessRuleService,
 )
-from back.objects.digitaltwin.VirtualAttributeService import VirtualAttributeService
+from back.objects.digitaltwin.node.VirtualAttributeService import VirtualAttributeService
 from back.objects.registry import RegistryCfg, RegistryService
 from back.objects.session import SessionManager, get_domain, get_session_manager
 

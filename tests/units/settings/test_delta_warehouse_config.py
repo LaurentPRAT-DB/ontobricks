@@ -11,7 +11,7 @@ from back.core.helpers import (
     get_triplestore_sql_credentials,
     resolve_delta_warehouse_id,
 )
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 from back.objects.session.GlobalConfigService import GlobalConfigService
 
 REGISTRY_CFG = {"catalog": "cat", "schema": "sch", "volume": "vol"}
@@ -314,18 +314,18 @@ class TestSettingsServiceDeltaWarehouse:
         with patch.object(
             SettingsService, "_resolve_context", return_value=(domain, "h", "t", REGISTRY_CFG)
         ), patch(
-            "back.objects.domain.SettingsService.global_config_service.load"
+            "back.objects.domain.settings.SettingsService.global_config_service.load"
         ), patch(
-            "back.objects.domain.SettingsService.global_config_service.get_delta_warehouse_id",
+            "back.objects.domain.settings.SettingsService.global_config_service.get_delta_warehouse_id",
             return_value="wh-delta",
         ), patch(
-            "back.objects.domain.SettingsService.global_config_service.get_delta_warehouse_use_sea",
+            "back.objects.domain.settings.SettingsService.global_config_service.get_delta_warehouse_use_sea",
             return_value=True,
         ), patch(
-            "back.objects.domain.SettingsService.get_domain",
+            "back.objects.domain.settings.SettingsService.get_domain",
             return_value=domain,
         ), patch(
-            "back.objects.domain.SettingsService.resolve_delta_warehouse_id",
+            "back.objects.domain.settings.SettingsService.resolve_delta_warehouse_id",
             return_value="wh-delta",
         ):
             result = SettingsService.get_delta_warehouse_result(
@@ -351,7 +351,7 @@ class TestSettingsServiceDeltaWarehouse:
 
     def test_select_delta_warehouse_requires_distinct_rt_warehouse(self):
         with patch(
-            "back.objects.domain.SettingsService.resolve_warehouse_id",
+            "back.objects.domain.settings.SettingsService.resolve_warehouse_id",
             return_value="wh-build",
         ):
             with pytest.raises(ValidationError, match="different"):
@@ -371,14 +371,14 @@ class TestSettingsServiceDeltaWarehouse:
             "_resolve_context",
             return_value=(domain, "h", "t", REGISTRY_CFG),
         ), patch.object(SettingsService, "require_admin_error"), patch(
-            "back.objects.domain.SettingsService.global_config_service.set_delta_warehouse_id",
+            "back.objects.domain.settings.SettingsService.global_config_service.set_delta_warehouse_id",
             return_value=(True, "ok"),
         ) as mock_set, patch(
-            "back.objects.domain.SettingsService.global_config_service.load"
+            "back.objects.domain.settings.SettingsService.global_config_service.load"
         ), patch.object(
             SettingsService, "_mirror_graph_engine_to_domain_registry"
         ), patch(
-            "back.objects.domain.SettingsService.resolve_delta_warehouse_id",
+            "back.objects.domain.settings.SettingsService.resolve_delta_warehouse_id",
             return_value="wh-build",
         ):
             result = SettingsService.select_delta_warehouse(
@@ -400,14 +400,14 @@ class TestSettingsServiceDeltaWarehouse:
         with patch.object(
             SettingsService, "_resolve_context", return_value=(domain, "h", "t", REGISTRY_CFG)
         ), patch.object(SettingsService, "require_admin_error"), patch(
-            "back.objects.domain.SettingsService.global_config_service.set_delta_warehouse_id",
+            "back.objects.domain.settings.SettingsService.global_config_service.set_delta_warehouse_id",
             return_value=(True, "ok"),
         ) as mock_set, patch(
-            "back.objects.domain.SettingsService.global_config_service.load"
+            "back.objects.domain.settings.SettingsService.global_config_service.load"
         ), patch.object(
             SettingsService, "_mirror_graph_engine_to_domain_registry"
         ), patch(
-            "back.objects.domain.SettingsService.resolve_delta_warehouse_id",
+            "back.objects.domain.settings.SettingsService.resolve_delta_warehouse_id",
             return_value="wh-global",
         ):
             result = SettingsService.select_delta_warehouse(
@@ -423,12 +423,12 @@ class TestSettingsServiceDeltaWarehouse:
         with patch.object(
             SettingsService, "_resolve_context", return_value=(domain, "h", "t", REGISTRY_CFG)
         ), patch.object(SettingsService, "require_admin_error"), patch(
-            "back.objects.domain.SettingsService.global_config_service.set_delta_warehouse_id",
+            "back.objects.domain.settings.SettingsService.global_config_service.set_delta_warehouse_id",
             return_value=(True, "ok"),
         ) as mock_set, patch.object(
             SettingsService, "_mirror_graph_engine_to_domain_registry"
         ) as mock_mirror, patch(
-            "back.objects.domain.SettingsService.resolve_delta_warehouse_id",
+            "back.objects.domain.settings.SettingsService.resolve_delta_warehouse_id",
             return_value="wh-delta",
         ):
             result = SettingsService.select_delta_warehouse(
@@ -453,13 +453,13 @@ class TestSettingsServiceBuildWarehouse:
             sql_warehouse_id="wh-bound",
         )
         with patch(
-            "back.objects.domain.SettingsService.get_domain",
+            "back.objects.domain.settings.SettingsService.get_domain",
             return_value=domain,
         ), patch(
-            "back.objects.domain.SettingsService.resolve_warehouse_id",
+            "back.objects.domain.settings.SettingsService.resolve_warehouse_id",
             return_value="wh-build",
         ), patch(
-            "back.objects.domain.SettingsService.resolve_use_cloud_fetch",
+            "back.objects.domain.settings.SettingsService.resolve_use_cloud_fetch",
             return_value=True,
         ), patch.object(
             SettingsService,
@@ -494,7 +494,7 @@ class TestSettingsServiceBuildWarehouse:
         ), patch.object(
             SettingsService, "is_warehouse_locked", return_value=False
         ), patch(
-            "back.objects.domain.SettingsService.global_config_service.set_build_warehouse",
+            "back.objects.domain.settings.SettingsService.global_config_service.set_build_warehouse",
             return_value=(True, "ok"),
         ) as mock_set:
             result = SettingsService.select_build_warehouse(
@@ -527,7 +527,7 @@ class TestSettingsServiceBuildWarehouse:
         ), patch.object(
             SettingsService, "is_warehouse_locked", return_value=True
         ), patch(
-            "back.objects.domain.SettingsService.global_config_service.set_build_warehouse",
+            "back.objects.domain.settings.SettingsService.global_config_service.set_build_warehouse",
             return_value=(True, "ok"),
         ) as mock_set:
             result = SettingsService.select_build_warehouse(

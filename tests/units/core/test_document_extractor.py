@@ -1,4 +1,4 @@
-"""Unit tests for ``back.core.databricks.DocumentExtractor``.
+"""Unit tests for ``back.core.databricks.document.DocumentExtractor``.
 
 Covers the generic, reusable extractor: the swap-contract surface
 (``supports`` / ``file_extension`` / ``is_available`` / ``extract_from_bytes``),

@@ -14,12 +14,12 @@ import pytest
 from back.core.errors import InfrastructureError
 from back.core.graphdb.GraphDBFactory import GraphDBFactory
 from back.objects.digitaltwin.DigitalTwin import DigitalTwin
-from back.objects.digitaltwin.TwinStoreCache import TwinStoreCache
+from back.objects.digitaltwin.cache.TwinStoreCache import TwinStoreCache
 
 pytestmark = pytest.mark.unit
 
 TTL = importlib.import_module(
-    "back.objects.digitaltwin.TwinStoreCache"
+    "back.objects.digitaltwin.cache.TwinStoreCache"
 )._TS_STATS_CACHE_TTL_SECONDS
 
 
@@ -334,7 +334,7 @@ def _schedule(*, started=True, host="https://h", catalog="main", schedules=None)
     gcs = MagicMock()
     gcs.load.return_value = {"schedules": schedules or {}}
     with patch("back.objects.registry.get_scheduler", return_value=scheduler), patch(
-        "back.objects.registry.RegistryCfg.from_domain", return_value=rcfg
+        "back.objects.registry.RegistryCfg.RegistryCfg.from_domain", return_value=rcfg
     ), patch(
         "back.core.helpers.get_databricks_host_and_token", return_value=(host, "tok")
     ), patch("back.objects.session.global_config_service", gcs):

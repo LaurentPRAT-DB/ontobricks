@@ -17,10 +17,10 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from back.core.errors import ValidationError
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 from back.objects.registry import obx_format
 
-_svc_module = importlib.import_module("back.objects.domain.SettingsService")
+_svc_module = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 
 REGISTRY_CFG_OK = MagicMock(is_configured=True)

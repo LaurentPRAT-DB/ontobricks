@@ -12,14 +12,14 @@ import pytest
 from back.core.errors import NotFoundError, ValidationError
 from back.core.graphdb.GraphDBFactory import GraphDBFactory
 from back.objects.digitaltwin.DigitalTwin import DigitalTwin
-from back.objects.digitaltwin.TwinGraphBuild import TwinGraphBuild
+from back.objects.digitaltwin.build.TwinGraphBuild import TwinGraphBuild
 from back.objects.digitaltwin.TwinGraphStats import TwinGraphStats
-from back.objects.digitaltwin.TwinInferredMaterialize import TwinInferredMaterialize
-from back.objects.digitaltwin.TwinLakehouseBuild import TwinLakehouseBuild
+from back.objects.digitaltwin.build.TwinInferredMaterialize import TwinInferredMaterialize
+from back.objects.digitaltwin.build.TwinLakehouseBuild import TwinLakehouseBuild
 
 pytestmark = pytest.mark.unit
 
-_MAT_MODULE = importlib.import_module("back.objects.digitaltwin.TwinInferredMaterialize")
+_MAT_MODULE = importlib.import_module("back.objects.digitaltwin.build.TwinInferredMaterialize")
 
 
 def _domain(**over) -> SimpleNamespace:

@@ -269,7 +269,7 @@ class Neo4jStore(GraphDBBackend):
         reports zero violations / zero inferences instead of crashing.
         Full SWRL → Cypher translation is a follow-up PR.
         """
-        from back.core.reasoning.SWRLFlatCypherTranslator import (
+        from back.core.reasoning.swrl.SWRLFlatCypherTranslator import (
             SWRLFlatCypherTranslator,
         )
 

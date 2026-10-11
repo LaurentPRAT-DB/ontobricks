@@ -87,7 +87,7 @@ OWL Generator Agent
    :show-inheritance:
 
 Staged Generate — detect / relations / attributes / axioms (public entry
-points; see ``back.objects.ontology.GenerateDraft``/``GenerateWorkflow`` for
+points; see ``back.objects.ontology.generate.GenerateDraft``/``GenerateWorkflow`` for
 the durable draft contract and async workflow that consume them):
 
 .. automodule:: agents.agent_owl_generator.staged

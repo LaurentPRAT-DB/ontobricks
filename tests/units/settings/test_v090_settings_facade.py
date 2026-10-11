@@ -18,11 +18,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from back.core.errors import AuthorizationError
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 
 pytestmark = pytest.mark.unit
 
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 
 # ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ class TestIsRegistryLocked:
 # Delegators
 # ---------------------------------------------------------------------------
 
-_IMPORT_RE = re.compile(r"from (back\.objects\.domain\.\w+) import (\w+)")
+_IMPORT_RE = re.compile(r"from (back\.objects\.domain\.[\w.]+) import (\w+)")
 
 
 def _discover_delegators():
@@ -191,13 +191,13 @@ async def test_delegator_forwards_every_argument_and_returns_result(
 # Module alias contract
 # ---------------------------------------------------------------------------
 
-_DOMAIN_DIR = Path(_ss.__file__).parent
-_ALIAS_IMPORT = 'importlib.import_module("back.objects.domain.SettingsService")'
+_SETTINGS_DIR = Path(_ss.__file__).parent
+_ALIAS_IMPORT = 'importlib.import_module("back.objects.domain.settings.SettingsService")'
 
 
 def _alias_lookups() -> list[tuple[str, str]]:
     lookups = []
-    for path in sorted(_DOMAIN_DIR.glob("*.py")):
+    for path in sorted(_SETTINGS_DIR.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
         if _ALIAS_IMPORT not in source:
             continue

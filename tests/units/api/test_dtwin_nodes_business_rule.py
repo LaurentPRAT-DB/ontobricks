@@ -169,7 +169,7 @@ def _patch_public(monkeypatch, domain, *, role):
         "api.routers.internal._graph_access.is_databricks_app", lambda: True
     )
     monkeypatch.setattr(
-        "back.objects.domain.SettingsService.resolve_domain_role",
+        "back.objects.domain.settings.SettingsService.resolve_domain_role",
         lambda request, folder, settings, **kw: role,
     )
     monkeypatch.setattr(

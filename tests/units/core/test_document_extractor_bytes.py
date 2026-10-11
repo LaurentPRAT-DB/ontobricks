@@ -3,7 +3,7 @@
 import base64
 import json
 
-from back.core.databricks.DocumentExtractor import DocumentExtractor
+from back.core.databricks.document.DocumentExtractor import DocumentExtractor
 
 
 class _FakeClient:

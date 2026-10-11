@@ -38,7 +38,7 @@
 
 - `src/back/objects/registry/version_lifecycle.py` — pure transition and deletion capability policy.
 - `tests/units/registry/test_version_lifecycle.py` — policy matrix.
-- `src/back/objects/domain/SettingsService.py` — guarded deletion and Registry capability decoration.
+- `src/back/objects/domain/settings/SettingsService.py` — guarded deletion and Registry capability decoration.
 - `src/api/routers/internal/domain.py` — role-aware version listing and loaded-domain DELETE route.
 - `src/api/routers/internal/settings.py` — role-aware Registry listing and guarded DELETE route.
 - `src/back/objects/domain/Domain.py` — enriched card capability payload.
@@ -352,7 +352,7 @@ git commit -m "feat(domain): define guarded version deletion policy"
 **Files:**
 - Create: `tests/units/settings/test_settings_version_deletion.py`
 - Create: `tests/units/api/test_delete_version_endpoints.py`
-- Modify: `src/back/objects/domain/SettingsService.py`
+- Modify: `src/back/objects/domain/settings/SettingsService.py`
 - Modify: `src/api/routers/internal/domain.py`
 - Modify: `src/api/routers/internal/settings.py`
 
@@ -373,10 +373,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from back.core.errors import AuthorizationError, ConflictError, NotFoundError
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 from back.objects.registry.PermissionService import ROLE_ADMIN, ROLE_BUILDER
 
-module = importlib.import_module("back.objects.domain.SettingsService")
+module = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 
 def _run(
@@ -628,7 +628,7 @@ Expected: all selected tests pass.
 
 ```bash
 git add \
-  src/back/objects/domain/SettingsService.py \
+  src/back/objects/domain/settings/SettingsService.py \
   src/api/routers/internal/domain.py \
   src/api/routers/internal/settings.py \
   tests/units/settings/test_settings_version_deletion.py \
@@ -643,7 +643,7 @@ git commit -m "feat(domain): guard version deletion endpoints"
 **Files:**
 - Create: `tests/units/domain/test_version_capabilities.py`
 - Modify: `src/back/objects/domain/Domain.py`
-- Modify: `src/back/objects/domain/SettingsService.py`
+- Modify: `src/back/objects/domain/settings/SettingsService.py`
 - Modify: `src/api/routers/internal/domain.py`
 - Modify: `src/api/routers/internal/settings.py`
 
@@ -662,10 +662,10 @@ import importlib
 from unittest.mock import MagicMock, patch
 
 from back.objects.domain.Domain import Domain
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 from back.objects.registry.PermissionService import ROLE_ADMIN, ROLE_BUILDER
 
-settings_module = importlib.import_module("back.objects.domain.SettingsService")
+settings_module = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 
 def _domain_service(*, status="DRAFT", current="3"):
@@ -881,7 +881,7 @@ Expected: all selected tests pass.
 ```bash
 git add \
   src/back/objects/domain/Domain.py \
-  src/back/objects/domain/SettingsService.py \
+  src/back/objects/domain/settings/SettingsService.py \
   src/api/routers/internal/domain.py \
   src/api/routers/internal/settings.py \
   tests/units/domain/test_version_capabilities.py
@@ -1630,7 +1630,7 @@ Changes:
 
 1. src/back/objects/registry/version_lifecycle.py
    Add server-authoritative lifecycle capabilities and conservative deletion policy.
-2. src/back/objects/domain/SettingsService.py
+2. src/back/objects/domain/settings/SettingsService.py
    Route Domain and Registry version deletion through one guarded orchestration.
 3. src/api/routers/internal/domain.py
    Add loaded-domain deletion and role-aware card capabilities.
@@ -1653,7 +1653,7 @@ Changes:
 
 Modified files:
 - src/back/objects/registry/version_lifecycle.py
-- src/back/objects/domain/SettingsService.py
+- src/back/objects/domain/settings/SettingsService.py
 - src/back/objects/domain/Domain.py
 - src/api/routers/internal/domain.py
 - src/api/routers/internal/settings.py

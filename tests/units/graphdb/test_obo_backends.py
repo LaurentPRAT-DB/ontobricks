@@ -170,7 +170,7 @@ def test_lakebase_backend_never_consults_obo(monkeypatch, obo_spy):
         patch("back.core.graphdb.lakebase.LAKEBASE_AVAILABLE", True),
         patch("back.core.databricks.get_lakebase_auth", return_value=sp_auth),
         patch(
-            "back.objects.registry.RegistryCfg.from_domain",
+            "back.objects.registry.RegistryCfg.RegistryCfg.from_domain",
             return_value=MagicMock(catalog="c", schema="s", volume="v"),
         ),
         patch(

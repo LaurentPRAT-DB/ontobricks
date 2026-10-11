@@ -2,10 +2,8 @@
 
 import pytest
 
-from back.core.databricks.DocumentParseService import (
-    DocumentParseService,
-    ParseStatus,
-)
+from back.core.databricks.document.DocumentParseService import DocumentParseService
+from back.core.databricks.document.ParseStatus import ParseStatus
 from tests.fixtures.factories.registry import FakeDocumentStore
 
 F, V = "acme", "1"

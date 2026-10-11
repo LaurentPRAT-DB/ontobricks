@@ -13,13 +13,13 @@ from back.core.errors import (
     NotFoundError,
     ValidationError,
 )
-from back.objects.domain.ScheduleSettings import ScheduleSettings
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.ScheduleSettings import ScheduleSettings
+from back.objects.domain.settings.SettingsService import SettingsService
 from back.objects.registry.scheduler_tasks import TASK_BUILD, TASK_CACHE_REFRESH
 
 pytestmark = pytest.mark.unit
 
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 CFG = {"catalog": "cat", "schema": "sch"}
 

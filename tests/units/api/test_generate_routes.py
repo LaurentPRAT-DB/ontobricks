@@ -20,8 +20,8 @@ from types import SimpleNamespace
 import pytest
 
 from back.core.errors import GoneError, OntoBricksError, ValidationError
-from back.objects.ontology import GenerateWorkflow as wf
-from back.objects.ontology.GenerateDraft import GenerateDraft, GenerateEntity
+from back.objects.ontology.generate import GenerateWorkflow as wf
+from back.objects.ontology.generate.GenerateDraft import GenerateDraft, GenerateEntity
 
 pytestmark = pytest.mark.unit
 
@@ -153,7 +153,7 @@ class TestStartGenerateDetection:
     async def test_detection_failure_fails_the_task_not_the_request(
         self, route_ctx, monkeypatch
     ):
-        from back.objects.ontology.GenerateDraft import DraftValidationError
+        from back.objects.ontology.generate.DraftValidationError import DraftValidationError
 
         def _boom(domain, settings, **kw):
             raise DraftValidationError("bad output")

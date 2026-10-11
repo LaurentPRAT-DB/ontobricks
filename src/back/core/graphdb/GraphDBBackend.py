@@ -1468,6 +1468,6 @@ class GraphDBBackend(ABC):
         SQL-based backends should return an ``SWRLSQLTranslator``.
         Cypher-based backends should return the matching Cypher translator.
         """
-        from back.core.reasoning.SWRLSQLTranslator import SWRLSQLTranslator
+        from back.core.reasoning.swrl.SWRLSQLTranslator import SWRLSQLTranslator
 
         return SWRLSQLTranslator()

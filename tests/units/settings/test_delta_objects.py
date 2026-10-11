@@ -11,7 +11,7 @@ from back.core.graphdb.delta.objects import (
     object_base,
     uc_object_kind,
 )
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 
 REGISTRY_CFG = {"catalog": "reg_cat", "schema": "reg_sch", "volume": "vol"}
 
@@ -244,7 +244,7 @@ class TestTripleStoreDatabricksObjectsResult:
             "back.core.graphdb.delta.objects.fetch_uc_schema_tables",
             return_value=raw_tables,
         ), patch(
-            "back.objects.domain.SettingsService.RegistryService.from_context",
+            "back.objects.domain.settings.SettingsService.RegistryService.from_context",
             return_value=registry_service,
         ):
             out = SettingsService.triple_store_databricks_objects_result(

@@ -138,7 +138,7 @@ class TestResolveRegistry:
 
         return RegistryCfg(catalog=catalog, schema=schema, volume=volume)
 
-    @patch("back.objects.registry.RegistryCfg.from_session")
+    @patch("back.objects.registry.RegistryCfg.RegistryCfg.from_session")
     def test_explicit_params_override(self, mock_from_session):
         mock_from_session.return_value = self._make_cfg(
             "session_cat",
@@ -156,7 +156,7 @@ class TestResolveRegistry:
         assert result["schema"] == "override_sch"
         assert result["volume"] == "override_vol"
 
-    @patch("back.objects.registry.RegistryCfg.from_session")
+    @patch("back.objects.registry.RegistryCfg.RegistryCfg.from_session")
     def test_falls_back_to_session(self, mock_from_session):
         mock_from_session.return_value = self._make_cfg(
             "sess_cat",
@@ -168,19 +168,19 @@ class TestResolveRegistry:
         assert result["schema"] == "sess_sch"
         assert result["volume"] == "sess_vol"
 
-    @patch("back.objects.registry.RegistryCfg.from_session")
+    @patch("back.objects.registry.RegistryCfg.RegistryCfg.from_session")
     def test_default_volume_when_key_missing(self, mock_from_session):
         mock_from_session.return_value = self._make_cfg("c", "s", "")
         result = _resolve_registry(MagicMock(), MagicMock())
         assert result["volume"] == ""
 
-    @patch("back.objects.registry.RegistryCfg.from_session")
+    @patch("back.objects.registry.RegistryCfg.RegistryCfg.from_session")
     def test_empty_volume_stays_empty(self, mock_from_session):
         mock_from_session.return_value = self._make_cfg("c", "s", "")
         result = _resolve_registry(MagicMock(), MagicMock())
         assert result["volume"] == ""
 
-    @patch("back.objects.registry.RegistryCfg.from_session")
+    @patch("back.objects.registry.RegistryCfg.RegistryCfg.from_session")
     def test_explicit_volume_overrides(self, mock_from_session):
         mock_from_session.return_value = self._make_cfg("c", "s", "v")
         result = _resolve_registry(MagicMock(), MagicMock(), registry_volume="custom")

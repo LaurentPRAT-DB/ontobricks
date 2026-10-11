@@ -10,7 +10,9 @@ import importlib
 import pytest
 from unittest.mock import MagicMock, PropertyMock, patch
 
-from back.core.reasoning.models import InferredTriple, ReasoningResult, RuleViolation
+from back.core.reasoning.results.InferredTriple import InferredTriple
+from back.core.reasoning.results.ReasoningResult import ReasoningResult
+from back.core.reasoning.results.RuleViolation import RuleViolation
 from back.core.reasoning.ReasoningService import ReasoningService
 
 _local_name = ReasoningService._local_name

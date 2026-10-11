@@ -29,7 +29,29 @@ class _TagCollector(HTMLParser):
         self.tags.append((tag, d))
 
 
+_WORKSPACE_PAGE_PREFIXES = ("/ontology", "/mapping", "/domain", "/dtwin")
+
+
+def ensure_loaded_domain(client) -> None:
+    """Give the test session a named domain so workspace HTML pages render."""
+    if getattr(client, "_ob_workspace_domain_seeded", False):
+        return
+    resp = client.post("/domain/info", json={"name": "TestDomain"})
+    assert resp.status_code == 200, resp.text
+    client._ob_workspace_domain_seeded = True
+
+
+def _is_workspace_page(path: str) -> bool:
+    route = path.split("?", 1)[0]
+    return any(
+        route == prefix or route.startswith(prefix + "/")
+        for prefix in _WORKSPACE_PAGE_PREFIXES
+    )
+
+
 def _html(client, path: str) -> str:
+    if _is_workspace_page(path):
+        ensure_loaded_domain(client)
     resp = client.get(path, headers={"accept": "text/html"})
     assert resp.status_code == 200, f"GET {path} returned {resp.status_code}"
     return resp.text

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from back.core.graphdb.GraphDBFactory import GraphDBFactory
-from back.objects.digitaltwin._build_pipeline import (
+from back.objects.digitaltwin.build._build_pipeline import (
     _BuildPipeline,
     collect_domain_stats,
     step_times_from_task,

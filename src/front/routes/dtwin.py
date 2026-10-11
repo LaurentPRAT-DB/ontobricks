@@ -3,7 +3,11 @@
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from front.fastapi.dependencies import templates, triplestore_page_context
+from front.fastapi.dependencies import (
+    home_redirect_if_unloaded,
+    templates,
+    triplestore_page_context,
+)
 from back.objects.session import SessionManager, get_session_manager, get_domain
 from back.core.graphdb.GraphDBFactory import is_graphless_backend
 from back.core.helpers import effective_view_table
@@ -25,6 +29,9 @@ async def query_page(
     Graph page is disabled: fall back to the Domain Information page.
     """
     domain_session = get_domain(session_mgr)
+    redirect = home_redirect_if_unloaded(domain_session)
+    if redirect is not None:
+        return redirect
     if is_graphless_backend((domain_session.info or {}).get("graph_backend")):
         return RedirectResponse("/domain/?section=information", status_code=303)
 

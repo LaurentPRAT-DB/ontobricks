@@ -18,7 +18,8 @@ from back.core.errors import InfrastructureError, ValidationError
 from back.core.logging import get_logger
 from shared.config.constants import DEFAULT_GRAPH_NAME
 
-from .context import RunOutcome, TaskContext
+from back.objects.registry.scheduler_tasks.RunOutcome import RunOutcome
+from back.objects.registry.scheduler_tasks.TaskContext import TaskContext
 
 logger = get_logger(__name__)
 
@@ -281,7 +282,7 @@ def run(ctx: TaskContext) -> RunOutcome:
         _generate_sql_from_r2rml(domain, domain_name)
     )
 
-    from back.objects.digitaltwin._build_pipeline import collect_domain_stats
+    from back.objects.digitaltwin.build._build_pipeline import collect_domain_stats
 
     ctx.scratch.update(
         {
@@ -365,7 +366,7 @@ def on_finish(ctx: TaskContext, outcome: RunOutcome, duration_s: float) -> None:
     if ctx._svc is None:
         return
     try:
-        from back.objects.digitaltwin._build_pipeline import step_times_from_task
+        from back.objects.digitaltwin.build._build_pipeline import step_times_from_task
 
         task = ctx.tm.get_task(ctx.task_id) if ctx.tm else None
         scratch = ctx.scratch

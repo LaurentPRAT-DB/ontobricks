@@ -32,7 +32,7 @@ import pytest
 import requests
 
 import agents.tracing as tracing_mod
-from back.objects.ontology.GenerateDraft import (
+from back.objects.ontology.generate.GenerateDraft import (
     CHECKPOINT_DONE,
     GenerateDraft,
     GenerateEntity,

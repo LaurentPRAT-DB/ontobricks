@@ -21,7 +21,7 @@ from back.core.errors import (
 from back.objects.session import SessionManager, get_session_manager
 from shared.config.settings import get_settings, Settings
 from back.objects.ontology import Ontology, OntologyRules
-from back.objects.ontology import GenerateWorkflow
+from back.objects.ontology.generate import GenerateWorkflow
 from back.objects.session import get_domain
 from back.core.task_manager import get_task_manager
 from back.core.helpers import (
@@ -959,7 +959,7 @@ async def validate_swrl_rule(request: Request):
 @router.get("/swrl/text")
 async def get_swrl_text(session_mgr: SessionManager = Depends(get_session_manager)):
     """Serialize all SWRL rules as OntoBricks SWRL text."""
-    from back.core.reasoning.SWRLTextCodec import serialize_rules
+    from back.core.reasoning.swrl.SWRLTextCodec import serialize_rules
 
     domain = get_domain(session_mgr)
     return {"success": True, "text": serialize_rules(domain.swrl_rules)}
@@ -969,7 +969,7 @@ async def get_swrl_text(session_mgr: SessionManager = Depends(get_session_manage
 async def export_swrl(session_mgr: SessionManager = Depends(get_session_manager)):
     """Download SWRL rules as an OntoBricks SWRL text file."""
     from fastapi.responses import Response
-    from back.core.reasoning.SWRLTextCodec import serialize_rules
+    from back.core.reasoning.swrl.SWRLTextCodec import serialize_rules
 
     domain = get_domain(session_mgr)
     text = serialize_rules(domain.swrl_rules)
@@ -991,7 +991,7 @@ async def import_swrl(
     request: Request, session_mgr: SessionManager = Depends(get_session_manager)
 ):
     """Import SWRL rules from OntoBricks SWRL text (always append)."""
-    from back.core.reasoning.SWRLTextCodec import parse_rules
+    from back.core.reasoning.swrl.SWRLTextCodec import parse_rules
 
     with map_route_errors("SWRL import failed", logger):
         data = await request.json()

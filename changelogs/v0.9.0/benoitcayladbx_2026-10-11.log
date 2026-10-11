@@ -218,3 +218,229 @@ Modified files:
 Tests: `uv run --frozen pytest -q -m "not scenario"` → 8901 passed, 326 skipped,
 6 deselected, 1 xfailed (pre-existing), 40 warnings in 54.52s
 (was 8881 passed, 19 xfailed).
+
+## Code review and class-per-file refactor proposal
+
+Context: First code review of the 0.9.0 branch, followed by an analysis of
+how to move to one class per file with small, single-purpose classes.
+Proposal only: no application code was changed. Baseline: 21 classes
+> 800 LOC, 29 files with several public classes, 41 `{"success": False}`
+envelopes, 746 `except Exception`, and delegating facades in
+`SettingsService` (107/120 methods), `DigitalTwin` (76/84) and
+`GraphEngineSettings` (26/36). Found a duplicate method pair in
+`CohortBuilder` (first definitions unreachable).
+
+Changes:
+
+1. .planning/class-per-file-refactor/PLAN.md
+   New plan: review findings (rule compliance, duplication, dead code,
+   session sample, tests), target design rules, phased Fowler refactorings
+   (guardrails, quick file splits, agent Template Method base, Remove Middle
+   Man, god-class decompositions, routes/schemas, module functions to
+   classes), risks and open decisions.
+
+Modified files:
+- .planning/class-per-file-refactor/PLAN.md (new)
+- changelogs/v0.9.0/benoitcayladbx_2026-10-11.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 8913 passed, 326 skipped,
+6 deselected, 1 xfailed, 40 warnings in 57.50s.
+
+## Add architecture guardrails, start class-per-file split, update rules and skills
+
+Context: Phase 0 and the first part of phase 1 of
+`.planning/class-per-file-refactor/PLAN.md`, following the decisions
+taken today (records grouped by aggregate root, facades and shims removed
+outright, start with guardrails and quick wins). The project rules and
+skills now state the target shape and that the simplest code is always
+the best. No behaviour change: classes were moved verbatim and every
+importer (src and tests) was updated; no shim modules were left behind.
+
+Changes:
+
+1. tests/units/architecture/ (new)
+   AST guardrails: one public class per file + filename match, class/method
+   size ceilings (800/100 LOC), silent redefinitions (F811), back/objects
+   re-exports. Known offenders frozen in a shrink-only baseline.json;
+   ratchet.py tightens it and follows entries moved without growing.
+2. src/back/core/graph_analysis/CohortBuilder.py
+   Removed the unreachable first definitions of _predicate_alias_map and
+   _resolve_predicate (shadowed by later definitions).
+3. src/back/objects/session/DomainSession.py
+   Removed unused before_meta alias (dead code).
+4. src/back/core/task_manager/
+   models.py split into Task.py (Task aggregate with TaskStep, TaskLogEntry)
+   and TaskStatus.py.
+5. src/back/core/reasoning/
+   models.py split into InferredTriple.py, RuleViolation.py,
+   ReasoningResult.py, SWRLAtomPartition.py; SWRLBuiltin extracted from
+   SWRLBuiltinRegistry.py.
+6. src/back/core/w3c/owl/ConflictReport.py
+   ConflictReport aggregate (with ConflictItem) extracted from
+   OntologyConflictDetector.py.
+7. src/back/core/databricks/ParseStatus.py, ParseSubmission.py
+   Extracted from DocumentParseService.py.
+8. src/back/core/graphdb/neo4j/PlannedWrites.py
+   Write-plan records (PlannedWrites, NodeOp, EdgeOp) extracted from
+   graph_model.py.
+9. src/back/objects/ontology/
+   DraftValidationError, DraftRevisionConflict, DraftStaleError and
+   GenerateDraftStore extracted from GenerateDraft.py (which keeps the
+   GenerateDraft aggregate with GenerateEntity); errors re-exported.
+10. src/back/core/databricks/lakebase/
+    LakebaseConnectionError and BranchLakebaseAuth extracted to own files.
+11. src/back/objects/registry/
+    RegistryCfg extracted from RegistryService.py (with _DEFAULT_VOLUME);
+    RunOutcome extracted and scheduler_tasks/context.py renamed
+    TaskContext.py; CommentService and store records re-exported.
+12. src/back/core/graphdb/lakebase/
+    provisioner.py renamed LakebaseGraphProvisioner.py; ProvisionError
+    extracted.
+13. src/back/objects/domain/__init__.py
+    Re-export VersionStatusCache.
+14. tests/** (importers)
+    Imports and patch targets retargeted; 19 RegistryCfg patch targets now
+    name the class (`...RegistryCfg.RegistryCfg.from_*`) because the new
+    module shadows the package attribute.
+15. .cursor/01, 05, 07, 08, src/.coding_rules.md
+    "The simplest code is always the best" principle; one purpose per
+    class, size budget, records by aggregate root, inheritance guidance,
+    no facades/shims, guardrail tests and ratchet command.
+16. .claude/skills/code-review, refactoring, adding-subpackage
+    Run the guardrails, check simplicity and the new smells (Middle Man,
+    Refused Bequest, Speculative Generality), no shims, shrink-only baseline.
+17. docs/sphinx/api/app.core.reasoning.rst
+    automodule entries for the split reasoning records.
+18. .planning/class-per-file-refactor/PLAN.md
+    Decisions D1-D3 and progress recorded.
+
+Modified files:
+- .claude/skills/adding-subpackage/SKILL.md
+- .claude/skills/code-review/SKILL.md
+- .claude/skills/refactoring/SKILL.md
+- .cursor/01-expertise-and-principles.mdc
+- .cursor/05-code-style-and-structure.mdc
+- .cursor/07-project-conventions.mdc
+- .cursor/08-testing-and-deployment.mdc
+- .planning/class-per-file-refactor/PLAN.md
+- docs/sphinx/api/app.core.reasoning.rst
+- src/.coding_rules.md
+- src/agents/agent_owl_generator/{schemas,staged}.py
+- src/back/core/databricks/{DocumentParseService,ParseStatus,ParseSubmission,__init__}.py
+- src/back/core/databricks/lakebase/{LakebaseAuth,BranchLakebaseAuth,LakebaseConnectionPool,LakebaseConnectionError,grants,__init__}.py
+- src/back/core/graph_analysis/CohortBuilder.py
+- src/back/core/graphdb/lakebase/{LakebaseGraphProvisioner,ProvisionError}.py (provisioner.py removed)
+- src/back/core/graphdb/neo4j/{graph_model,PlannedWrites}.py
+- src/back/core/reasoning/{InferredTriple,RuleViolation,ReasoningResult,SWRLAtomPartition,SWRLBuiltin,SWRLBuiltinRegistry,__init__}.py (models.py removed)
+- src/back/core/reasoning/{AggregateRuleEngine,DecisionTableEngine,OWLRLReasoner,ReasoningService,SPARQLRuleEngine,SWRLEngine,SWRLParser}.py
+- src/back/core/task_manager/{Task,TaskStatus,TaskManager,__init__}.py (models.py removed)
+- src/back/core/w3c/owl/{ConflictReport,OntologyConflictDetector,__init__}.py
+- src/back/objects/digitaltwin/{CohortService,TwinBackgroundTasks}.py
+- src/back/objects/domain/{GraphEngineLakebaseSettings,__init__}.py
+- src/back/objects/ontology/{GenerateDraft,GenerateDraftStore,DraftValidationError,DraftRevisionConflict,DraftStaleError,GenerateWorkflow,__init__}.py
+- src/back/objects/registry/{RegistryCfg,RegistryService,CommentService,ReviewService,scheduler,__init__}.py
+- src/back/objects/registry/scheduler_tasks/{TaskContext,RunOutcome,__init__,analytics,build,cache_refresh,cohort,reasoning}.py (context.py renamed)
+- src/back/objects/registry/store/{__init__,factory}.py, store/lakebase/store.py
+- src/back/objects/session/DomainSession.py
+- tests/units/architecture/* (new)
+- tests/eval/staged_contract.py and 25 test modules under tests/units/ (imports / patch targets)
+- changelogs/v0.9.0/benoitcayladbx_2026-10-11.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 8922 passed, 326 skipped,
+6 deselected, 1 xfailed, 40 warnings in 54.80s.
+
+## Regroup crowded packages into topic sub-packages
+
+Context: several packages had grown flat (digitaltwin 29 modules, reasoning 17,
+domain 16, ontology 15, databricks 14), with many files sharing one topic
+(e.g. 8 `SWRL*` modules). Modules are moved into lowercase topic sub-packages;
+each package's entry-point class stays at the root. No shims: every import,
+patch target, Sphinx automodule, doc path and baseline key was rewritten.
+
+Changes:
+1. src/back/core/reasoning/ — new `swrl/` (SWRLEngine, SWRLParser, SWRLSQLTranslator,
+   SWRLFlatCypherTranslator, SWRLBuiltinRegistry, SWRLBuiltin, SWRLAtomPartition,
+   SWRLTextCodec), `rules/` (SPARQLRuleEngine, AggregateRuleEngine,
+   DecisionTableEngine), `results/` (InferredTriple, RuleViolation, ReasoningResult).
+2. src/back/objects/digitaltwin/ — new `build/`, `quality/`, `cohort/`, `explorer/`,
+   `node/`, `query/`, `cache/`; DigitalTwin, TwinResolve, TwinBackgroundTasks,
+   TwinAnalytics, TwinGraphAccess, TwinGraphStats, constants, models stay at root.
+3. src/back/objects/domain/settings/ (SettingsService + 7 *Settings) and
+   settings/graphengine/ (GraphEngineSettings, Neo4j, Lakebase).
+4. src/back/objects/ontology/generate/ (GenerateWorkflow, GenerateDraft,
+   GenerateDraftStore, Draft* errors); `GenerateWorkflow` is still exported as a module.
+5. src/back/core/databricks/document/ (DocumentExtractor, DocumentParseService,
+   ParseStatus, ParseSubmission); relative import replaced by an absolute one.
+6. Each new sub-package `__init__.py` re-exports its public classes with `__all__`.
+7. tests/units/settings/test_v090_settings_facade.py — delegator discovery regex and
+   alias scan now cover nested settings modules (rglob, dotted sub-paths).
+8. .cursor/07-project-conventions.mdc §Package Organisation 5, src/.coding_rules.md §2,
+   .claude/skills/refactoring + adding-subpackage — new rule: group by topic once a
+   folder holds more than ~12 modules or three or more modules share a topic.
+9. docs/architecture.md (package tree), docs/sphinx/api/*.rst (automodule paths),
+   tests/units/architecture/baseline.json (path keys).
+
+Modified files:
+- src/back/core/reasoning/** , src/back/objects/digitaltwin/** , src/back/objects/domain/** ,
+  src/back/objects/ontology/** , src/back/core/databricks/** (moves + new __init__.py)
+- importers across src/api, src/back, src/front, src/agents, src/shared and tests/ (paths only)
+- tests/units/settings/test_v090_settings_facade.py, tests/units/architecture/baseline.json
+- .cursor/07-project-conventions.mdc, src/.coding_rules.md,
+  .claude/skills/refactoring/SKILL.md, .claude/skills/adding-subpackage/SKILL.md
+- docs/architecture.md, docs/sphinx/api/*.rst
+- .planning/class-per-file-refactor/PLAN.md
+- changelogs/v0.9.0/benoitcayladbx_2026-10-11.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 8938 passed, 326 skipped,
+6 deselected, 1 xfailed, 1 failed (tests/units/front/test_unloaded_workspace_redirect.py,
+new untracked test from concurrent unrelated work; passes when re-run in isolation).
+
+================================================================================
+## Redirect unloaded workspace pages to Home
+================================================================================
+
+Context:
+Visiting Domain, Ontology, Mapping, or Knowledge Graph with no domain in
+session rendered an empty workspace (hidden L2 rail, placeholder NewDomain).
+Those HTML routes now 303 to Home immediately. Settings, About, and Home stay
+reachable without a domain. Closing a domain still navigates Home; creating a
+new domain still stays on the current page until the name is saved.
+
+Changes:
+1. src/back/objects/domain/WorkspacePresence.py (new)
+   Loaded-session check mirroring navbar.js domainIsLoaded (custom name or
+   ontology/mapping content).
+2. src/front/fastapi/dependencies.py
+   home_redirect_if_unloaded() returns a 303 to /.
+3. src/front/routes/{domain,ontology,mapping,dtwin}.py
+   Workspace page GET handlers run the guard before rendering (graphless
+   Mapping/KG fallback still applies after a domain is loaded).
+4. tests/units/front/test_unloaded_workspace_redirect.py (new)
+   Source contract plus HTTP 303/200 for unloaded vs named sessions.
+5. tests/units/domain/test_domain_service.py, tests/units/api/test_ui_rendering.py,
+   tests/units/api/test_routes.py
+   Presence unit tests; HTML render helpers seed a named domain.
+6. docs/user-guide.md, docs/architecture.md, docs/sphinx/api/app.objects.domain.rst
+   Document the redirect and autodoc the new class.
+7. src/back/objects/domain/__init__.py
+   Re-export WorkspacePresence.
+
+Modified files:
+- src/back/objects/domain/WorkspacePresence.py (new)
+- src/back/objects/domain/__init__.py
+- src/front/fastapi/dependencies.py
+- src/front/routes/domain.py
+- src/front/routes/ontology.py
+- src/front/routes/mapping.py
+- src/front/routes/dtwin.py
+- tests/units/front/test_unloaded_workspace_redirect.py (new)
+- tests/units/domain/test_domain_service.py
+- tests/units/api/test_ui_rendering.py
+- tests/units/api/test_routes.py
+- docs/user-guide.md
+- docs/architecture.md
+- docs/sphinx/api/app.objects.domain.rst
+- changelogs/v0.9.0/benoitcayladbx_2026-10-11.log
+
+Tests: `uv run --frozen pytest -q -m "not scenario"` → 8939 passed, 326 skipped,
+6 deselected, 1 xfailed, 40 warnings in 55.94s

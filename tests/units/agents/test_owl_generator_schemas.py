@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from back.objects.ontology.GenerateDraft import (
+from back.objects.ontology.generate.GenerateDraft import (
     GenerateEntity,
     ORIGIN_DETECTED,
     ORIGIN_MANUAL,

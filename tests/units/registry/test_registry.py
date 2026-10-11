@@ -12,10 +12,9 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 from back.core.errors import ConflictError, InfrastructureError
+from back.objects.registry.RegistryCfg import RegistryCfg, _DEFAULT_VOLUME
 from back.objects.registry.RegistryService import (
-    RegistryCfg,
     RegistryService,
-    _DEFAULT_VOLUME,
     _DOMAINS_FOLDER,
     _LEGACY_DOMAINS_FOLDER,
 )

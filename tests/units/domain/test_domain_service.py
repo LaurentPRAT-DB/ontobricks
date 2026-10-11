@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from back.objects.domain import Domain
+from back.objects.domain import Domain, WorkspacePresence
 from back.core.errors import ConflictError, ValidationError
 from back.core.helpers import build_auto_base_uri
 
@@ -81,6 +81,27 @@ class TestGetDomainStats:
         )
         stats = Domain(domain).get_domain_stats()
         assert stats["entities"] == 1
+
+
+class TestWorkspacePresence:
+    def test_placeholder_name_without_content_is_unloaded(self):
+        domain = _mock_domain(name="NewDomain")
+        assert WorkspacePresence.is_loaded(domain) is False
+
+    def test_legacy_new_project_placeholder_is_unloaded(self):
+        domain = _mock_domain(name="NewProject")
+        assert WorkspacePresence.is_loaded(domain) is False
+
+    def test_custom_name_is_loaded(self):
+        domain = _mock_domain(name="TestDomain")
+        assert WorkspacePresence.is_loaded(domain) is True
+
+    def test_placeholder_with_entities_is_loaded(self):
+        domain = _mock_domain(
+            name="NewDomain",
+            classes=[{"name": "A", "uri": "http://t#A"}],
+        )
+        assert WorkspacePresence.is_loaded(domain) is True
 
 
 class TestSaveDomainInfo:

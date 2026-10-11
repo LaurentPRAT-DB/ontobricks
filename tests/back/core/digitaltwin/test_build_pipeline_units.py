@@ -1,6 +1,6 @@
 """Pure-function tests for `_BuildPipeline` (private build orchestrator).
 
-`_BuildPipeline` (`src/back/objects/digitaltwin/_build_pipeline.py`) is the
+`_BuildPipeline` (`src/back/objects/digitaltwin/build/_build_pipeline.py`) is the
 Fowler "Method Object" extracted from the legacy 839-line
 `DigitalTwin.run_build_task`. Most of it is heavy I/O — Databricks SQL,
 the triple store, the task manager — which lives in the integration tier.
@@ -27,7 +27,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from back.objects.digitaltwin._build_pipeline import _BuildPipeline
+from back.objects.digitaltwin.build._build_pipeline import _BuildPipeline
 from back.objects.registry.RegistryService import RegistryService
 
 

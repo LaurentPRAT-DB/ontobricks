@@ -479,7 +479,7 @@ class BuildScheduler:
         tick.
         """
         from back.core.databricks import is_databricks_app
-        from back.objects.registry.RegistryService import RegistryCfg
+        from back.objects.registry.RegistryCfg import RegistryCfg
 
         host = settings.databricks_host
         token = settings.databricks_token
@@ -603,7 +603,7 @@ def _outcome_from_task(tm, task_id: str, spec) -> RunOutcome:
     TaskManager task, so the harness reads the finished task back rather
     than completing it a second time.
     """
-    from back.core.task_manager.models import TaskStatus
+    from back.core.task_manager import TaskStatus
 
     task = tm.get_task(task_id) if tm else None
     if task is None:
@@ -682,7 +682,7 @@ def _run_scheduled_task(
         if not host or not token:
             raise InfrastructureError("Databricks host/token not available")
 
-        from back.objects.registry.RegistryService import RegistryCfg
+        from back.objects.registry.RegistryCfg import RegistryCfg
 
         cfg = RegistryCfg.from_dict(reg)
         if not cfg.catalog or not cfg.schema:

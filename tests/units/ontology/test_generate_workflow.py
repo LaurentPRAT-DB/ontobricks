@@ -15,14 +15,14 @@ from types import SimpleNamespace
 import pytest
 
 from back.core.errors import NotFoundError, ValidationError
-from back.objects.ontology import GenerateWorkflow as wf
-from back.objects.ontology.GenerateDraft import (
+from back.objects.ontology.generate import GenerateWorkflow as wf
+from back.objects.ontology.generate.DraftRevisionConflict import DraftRevisionConflict
+from back.objects.ontology.generate.DraftStaleError import DraftStaleError
+from back.objects.ontology.generate.DraftValidationError import DraftValidationError
+from back.objects.ontology.generate.GenerateDraft import (
     CHECKPOINT_DONE,
     CHECKPOINT_FAILED,
     DONE,
-    DraftRevisionConflict,
-    DraftStaleError,
-    DraftValidationError,
     GenerateDraft,
     GenerateEntity,
     REVIEWING,
@@ -1189,7 +1189,7 @@ class TestIdempotentMerge:
         # Fast-forward the draft past the three substage checkpoints exactly
         # like `run_completion` would, without calling it yet.
         from dataclasses import replace as _replace
-        from back.objects.ontology.GenerateDraft import COMPLETING
+        from back.objects.ontology.generate.GenerateDraft import COMPLETING
 
         draft = store.save(_replace(draft, stage=COMPLETING))
         for substage in ("relations", "attributes", "axioms"):
@@ -1240,7 +1240,7 @@ class TestIdempotentMerge:
         store = domain_session.generate_draft_store
 
         from dataclasses import replace as _replace
-        from back.objects.ontology.GenerateDraft import COMPLETING
+        from back.objects.ontology.generate.GenerateDraft import COMPLETING
 
         draft = store.save(_replace(draft, stage=COMPLETING))
         for substage in ("relations", "attributes", "axioms"):

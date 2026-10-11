@@ -9,18 +9,17 @@ from dataclasses import replace
 import pytest
 
 from back.core.errors import ConflictError, ValidationError
-from back.objects.ontology.GenerateDraft import (
+from back.objects.ontology.generate.DraftRevisionConflict import DraftRevisionConflict
+from back.objects.ontology.generate.DraftStaleError import DraftStaleError
+from back.objects.ontology.generate.DraftValidationError import DraftValidationError
+from back.objects.ontology.generate.GenerateDraft import (
     CHECKPOINT_DONE,
     CHECKPOINT_FAILED,
     CHECKPOINT_PENDING,
     CHECKPOINT_RUNNING,
     COMPLETING,
     DETECTING,
-    DraftRevisionConflict,
-    DraftStaleError,
-    DraftValidationError,
     GenerateDraft,
-    GenerateDraftStore,
     GenerateEntity,
     ORIGIN_MANUAL,
     REVIEWING,
@@ -28,6 +27,7 @@ from back.objects.ontology.GenerateDraft import (
     compute_source_fingerprint,
     new_candidate_id,
 )
+from back.objects.ontology.generate.GenerateDraftStore import GenerateDraftStore
 
 
 # ---------------------------------------------------------------------------

@@ -12,9 +12,9 @@ from unittest.mock import patch, MagicMock
 from back.core.errors import ValidationError
 from back.objects.session.GlobalConfigService import GlobalConfigService
 from back.objects.registry import RegistryCfg, RegistryService
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 
-_svc_module = importlib.import_module("back.objects.domain.SettingsService")
+_svc_module = importlib.import_module("back.objects.domain.settings.SettingsService")
 _db_auth_mod = importlib.import_module("back.core.databricks.DatabricksAuth")
 _uc_pkg = importlib.import_module("back.core.databricks.uc")
 

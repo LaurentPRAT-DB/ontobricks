@@ -464,14 +464,10 @@ src/
 │   │   ├── reasoning/                  # Reasoning engine (OWL 2 RL + SWRL + SPARQL rules + Decision tables)
 │   │   │   ├── ReasoningService.py     # Multi-phase orchestrator
 │   │   │   ├── OWLRLReasoner.py        # OWL 2 RL deductive closure via owlrl
-│   │   │   ├── SWRLEngine.py           # SWRL rule execution, backend dispatch
-│   │   │   ├── SWRLParser.py           # SWRL rule parsing
-│   │   │   ├── SWRLSQLTranslator.py    # SWRL → Spark/Postgres SQL
-│   │   │   ├── SWRLBuiltinRegistry.py  # SWRL built-in function registry
-│   │   │   ├── SPARQLRuleEngine.py     # SPARQL-based rule execution
-│   │   │   ├── AggregateRuleEngine.py  # Aggregate rule support
-│   │   │   ├── DecisionTableEngine.py  # Decision table evaluation
-│   │   │   └── models.py               # InferredTriple, RuleViolation, ReasoningResult
+│   │   │   ├── swrl/                   # SWRLEngine, SWRLParser, SWRLSQLTranslator, SWRLFlatCypherTranslator,
+│   │   │   │                           # SWRLBuiltinRegistry, SWRLBuiltin, SWRLAtomPartition, SWRLTextCodec
+│   │   │   ├── rules/                  # SPARQLRuleEngine, AggregateRuleEngine, DecisionTableEngine
+│   │   │   └── results/                # InferredTriple, RuleViolation, ReasoningResult
 │   │   │
 │   │   ├── industry/                   # Industry-standard ontology importers
 │   │   │   ├── fibo/                   # FiboImportService
@@ -486,10 +482,20 @@ src/
 │   │       └── SQLWizardService.py
 │   │
 │   └── objects/                        # Domain objects (business logic layer)
-│       ├── ontology/                   # Ontology domain (ontology.py, json_views.py)
+│       ├── ontology/                   # Ontology domain (Ontology*.py, json_views.py)
+│       │   └── generate/               # GenerateWorkflow, GenerateDraft(+Store), draft errors
 │       ├── mapping/                    # Mapping domain (mapping.py, json_views.py)
-│       ├── domain/                     # Saved domain / UC I/O (domain.py, payload.py, version_status.py)
-│       ├── digitaltwin/                # Knowledge Graph domain (DigitalTwin.py, models.py)
+│       ├── domain/                     # Saved domain / UC I/O (Domain.py, payload.py, version_status.py)
+│       │   └── settings/               # SettingsService + *Settings value objects
+│       │       └── graphengine/        # GraphEngineSettings (+ Neo4j / Lakebase)
+│       ├── digitaltwin/                # Knowledge Graph domain (DigitalTwin.py, Twin*.py, models.py)
+│       │   ├── build/                  # Graph build pipeline, lakehouse build, inferred materialisation
+│       │   ├── quality/                # SQL quality checks and data-quality runs
+│       │   ├── cohort/                 # CohortService, CohortEngineContext
+│       │   ├── explorer/               # GraphFilter, GraphFind, neighbours, ontology groups
+│       │   ├── node/                   # Node context, business rules, virtual attributes
+│       │   ├── query/                  # TwinMapping, TwinSparqlTranslate
+│       │   └── cache/                  # TwinStoreCache, TwinAssistantCache
 │       ├── session/                    # Session management
 │       │   ├── middleware.py           # File-based session middleware (cookie + ASGI)
 │       │   ├── SessionManager.py       # Request-scoped session get/set/delete wrapper
@@ -634,6 +640,10 @@ The UI uses a consistent **sidebar layout** across all main pages:
   `#workspaceMapModal` (menu-driven four-column map). The same handler is
   bound to `#settingsDomainReturnLink`; its fallback `href` is `/domain/` when
   JavaScript is unavailable.
+- **Unloaded session:** Domain, Ontology, Mapping, and Knowledge Graph HTML
+  routes (`front/routes/{domain,ontology,mapping,dtwin}.py`) 303-redirect to
+  `/` when `WorkspacePresence.is_loaded()` is false, matching `domainIsLoaded`
+  in `navbar.js`. Home, Settings, and About do not require a domain.
 - **Active workspace:** `navbar.js` marks the current workspace as a static
   `aria-current="page"` segment and removes its dropdown wiring; inactive
   segments keep their Bootstrap dropdown menus.
@@ -1184,7 +1194,7 @@ Antecedent → Consequent
 ```
 Where atoms are class assertions (`Person(?x)`) or property assertions (`worksIn(?x, ?y)`).
 
-**Implementation** (`src/back/core/reasoning/SWRLEngine.py`, `SWRLSQLTranslator.py`):
+**Implementation** (`src/back/core/reasoning/swrl/SWRLEngine.py`, `SWRLSQLTranslator.py`):
 
 | Component | File | Role |
 |-----------|------|------|
@@ -1257,8 +1267,8 @@ Inferred triples from any phase can be **materialized** (written back) to the tr
 |------|---------|
 | `src/back/core/reasoning/ReasoningService.py` | `ReasoningService` — orchestrates all phases |
 | `src/back/core/reasoning/OWLRLReasoner.py` | `OWLRLReasoner` — OWL 2 RL deductive closure |
-| `src/back/core/reasoning/SWRLEngine.py` | `SWRLEngine` — SWRL rule orchestration |
-| `src/back/core/reasoning/SWRLSQLTranslator.py` | `SWRLSQLTranslator` — SWRL → Spark / Postgres SQL compilation |
+| `src/back/core/reasoning/swrl/SWRLEngine.py` | `SWRLEngine` — SWRL rule orchestration |
+| `src/back/core/reasoning/swrl/SWRLSQLTranslator.py` | `SWRLSQLTranslator` — SWRL → Spark / Postgres SQL compilation |
 | `src/back/core/reasoning/models.py` | `InferredTriple`, `RuleViolation`, `ReasoningResult` dataclasses |
 | `src/back/core/graphdb/GraphDBBackend.py` | Graph DB primitives: `transitive_closure()`, `symmetric_expand()`, `shortest_path()` |
 
@@ -1774,7 +1784,7 @@ See [API Documentation](api.md) for complete endpoint reference.
 7. **OntoViz Extensions**: Add new entity/relationship types, custom rendering
 8. **Graph DB Engines**: Implement `GraphDBBackend` in `src/back/core/graphdb/` (Lakebase Postgres, Unity Catalog Delta, and Neo4j ship today; the `_starter_kit/ExampleStore.py` template plus `GraphDBFactory` make it straightforward to add Memgraph, Gremlin, or other engines).
 9. **Theming**: Modify OntoViz CSS variables for custom themes
-10. **SWRL Built-ins**: Extend the SWRL engine (`src/back/core/reasoning/SWRLEngine.py`) with additional built-in atoms beyond class and property assertions (e.g., math, string, comparison built-ins)
+10. **SWRL Built-ins**: Extend the SWRL engine (`src/back/core/reasoning/swrl/SWRLEngine.py`) with additional built-in atoms beyond class and property assertions (e.g., math, string, comparison built-ins)
 11. **Reasoning Profiles**: Add new reasoning profiles beyond OWL 2 RL (e.g., OWL 2 EL) by implementing alternative reasoner classes in `src/back/core/reasoning/`
 12. **Custom Constraint Types**: Add domain-specific constraint validators to the constraint checking phase in `ReasoningService`
 13. **New LLM Agents**: Add agents under `src/agents/` using the shared tool framework (see [Agentic Architecture](architecture.md#agentic-architecture))
@@ -3034,7 +3044,7 @@ re-read from a Volume:
   `description`); `document.pages[]` only carries `id`/`image_uri`. The extractor
   prefers elements and keeps page-content / markdown-blob fallbacks for other
   schema versions. The extraction engine is a generic, reusable class —
-  `back.core.databricks.DocumentExtractor` (`src/back/core/databricks/DocumentExtractor.py`,
+  `back.core.databricks.document.DocumentExtractor` (`src/back/core/databricks/document/DocumentExtractor.py`,
   exposing `supports()` / `is_available()` / `extract()` /
   `extract_text_from_parsed()`) — so it can be used outside the agents and
   swapped for a different parser without changing callers.

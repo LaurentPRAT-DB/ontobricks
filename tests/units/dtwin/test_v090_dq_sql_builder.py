@@ -3,7 +3,7 @@
 import pytest
 
 from back.objects.digitaltwin import DigitalTwin
-from back.objects.digitaltwin.QualitySqlBuilder import QualitySqlBuilder
+from back.objects.digitaltwin.quality.QualitySqlBuilder import QualitySqlBuilder
 from back.objects.digitaltwin.constants import RDF_TYPE, RDFS_LABEL
 
 pytestmark = pytest.mark.unit

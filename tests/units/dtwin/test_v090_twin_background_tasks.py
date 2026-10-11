@@ -54,7 +54,7 @@ class TestCompleteDqTask:
 class TestRunBuildTask:
     def test_delegates_every_input_to_the_build_pipeline(self):
         with patch(
-            "back.objects.digitaltwin._build_pipeline._BuildPipeline"
+            "back.objects.digitaltwin.build._build_pipeline._BuildPipeline"
         ) as pipeline:
             TwinBackgroundTasks.run_build_task(
                 "tm", "t1", "dom", "settings", "snap", "h", "tok", "wh",

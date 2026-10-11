@@ -1,6 +1,6 @@
 """DecisionTableEngine semantics: optional columns, Unique hit policy, Assign entity."""
 
-from back.core.reasoning.DecisionTableEngine import DecisionTableEngine
+from back.core.reasoning.rules.DecisionTableEngine import DecisionTableEngine
 from back.core.reasoning.constants import RDF_TYPE
 from back.objects.ontology.OntologyRules import OntologyRules
 

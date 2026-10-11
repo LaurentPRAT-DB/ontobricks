@@ -12,12 +12,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from back.core.errors import AuthorizationError, InfrastructureError, ValidationError
-from back.objects.domain.SettingsService import SettingsService
-from back.objects.domain.WorkspaceUiSettings import WorkspaceUiSettings
+from back.objects.domain.settings.SettingsService import SettingsService
+from back.objects.domain.settings.WorkspaceUiSettings import WorkspaceUiSettings
 
 pytestmark = pytest.mark.unit
 
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 CFG = {"catalog": "cat", "schema": "sch"}
 PNG = b"\x89PNG\r\n\x1a\nfake"

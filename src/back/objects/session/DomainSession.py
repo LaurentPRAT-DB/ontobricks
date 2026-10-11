@@ -135,7 +135,7 @@ def get_empty_domain() -> Dict[str, Any]:
         "design_layout": {"current_view": "default", "views": {}, "map": {}},
         # Durable three-stage ontology Generate draft (detect → review →
         # complete), or None when no draft exists. See
-        # ``back.objects.ontology.GenerateDraft`` for the typed model and
+        # ``back.objects.ontology.generate.GenerateDraft`` for the typed model and
         # ``docs/superpowers/specs/2026-09-20-three-stage-ontology-generate-design.md``
         # for the full contract. Persisted as a plain dict here (like every
         # other DomainSession section); GenerateDraftStore is the typed
@@ -675,14 +675,6 @@ class DomainSession:
         after = {key: new_map.get(key) for key in before}
         return {"before": before, "after": after}
 
-    @staticmethod
-    def before_meta(
-        old: Optional[Dict[str, Any]],
-        new: Optional[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-        """Alias of :meth:`diff_meta` (kept for existing call sites)."""
-        return DomainSession.diff_meta(old, new)
-
     def record_change(
         self,
         action: str,
@@ -985,7 +977,8 @@ class DomainSession:
         resolution happens inside :class:`RegistryService` at I/O time.
         """
         from shared.config.settings import get_settings
-        from back.objects.registry.RegistryService import RegistryCfg, _DOMAINS_FOLDER
+        from back.objects.registry.RegistryCfg import RegistryCfg
+        from back.objects.registry.RegistryService import _DOMAINS_FOLDER
 
         cfg = RegistryCfg.from_domain(self, get_settings())
         if not cfg.is_configured:
@@ -1243,7 +1236,7 @@ class DomainSession:
         while ``uc_version_path`` looked at the right one.
         """
         from shared.config.settings import get_settings
-        from back.objects.registry.RegistryService import RegistryCfg
+        from back.objects.registry.RegistryCfg import RegistryCfg
 
         try:
             cfg = RegistryCfg.from_domain(self, get_settings())
@@ -1295,13 +1288,13 @@ class DomainSession:
     def generate_draft_store(self) -> "GenerateDraftStore":
         """Typed read/write boundary for the durable Generate draft.
 
-        See ``back.objects.ontology.GenerateDraft`` for
+        See ``back.objects.ontology.generate.GenerateDraft`` for
         :class:`GenerateDraftStore`, :class:`GenerateDraft`, and the
         optimistic-concurrency revision-check contract. Lazily imported to
         avoid a module-load cycle (``Ontology`` sub-package already lazily
         imports from ``DomainSession`` for the same reason).
         """
-        from back.objects.ontology.GenerateDraft import GenerateDraftStore
+        from back.objects.ontology.generate.GenerateDraftStore import GenerateDraftStore
 
         return GenerateDraftStore(self)
 

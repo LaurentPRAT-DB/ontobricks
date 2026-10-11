@@ -9,11 +9,11 @@ import pytest
 
 from back.core.errors import InfrastructureError, ValidationError
 from back.core.helpers.UIBranding import normalize_ui_branding
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.SettingsService import SettingsService
 from back.objects.session.GlobalConfigService import GlobalConfigService
 from shared.fastapi.ui_branding import resolve_request_ui_branding
 
-_svc_module = importlib.import_module("back.objects.domain.SettingsService")
+_svc_module = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 REGISTRY_CFG = {"catalog": "cat", "schema": "sch", "volume": "vol"}
 

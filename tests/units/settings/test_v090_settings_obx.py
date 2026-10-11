@@ -11,11 +11,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from back.core.errors import InfrastructureError, ValidationError
-from back.objects.domain.ObxSettings import ObxSettings
+from back.objects.domain.settings.ObxSettings import ObxSettings
 
 pytestmark = pytest.mark.unit
 
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 
 
 @pytest.fixture
@@ -151,7 +151,7 @@ class TestDecodeObxPayload:
             ObxSettings._decode_obx_payload(b"\xff\xfe\x00")
 
     def test_facade_alias_matches_cap(self):
-        from back.objects.domain.SettingsService import SettingsService
+        from back.objects.domain.settings.SettingsService import SettingsService
 
         assert SettingsService.OBX_MAX_BYTES == ObxSettings.OBX_MAX_BYTES == 50 * 1024 * 1024
 

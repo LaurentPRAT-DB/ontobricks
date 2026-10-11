@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Set
 
-from back.core.reasoning.DecisionTableEngine import ASSIGN_CLASS
+from back.core.reasoning.rules.DecisionTableEngine import ASSIGN_CLASS
 from back.core.w3c.shacl.constants import QUALITY_CATEGORIES
 
 class OntologyRules:

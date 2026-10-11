@@ -1223,7 +1223,7 @@ async def start_databricks_triplestore_build(
     from back.core.graphdb.delta.DeltaTripleStoreBuildPipeline import (
         lakehouse_build_steps,
     )
-    from back.objects.digitaltwin._databricks_triplestore_build import (
+    from back.objects.digitaltwin.build._databricks_triplestore_build import (
         run_databricks_triplestore_build,
     )
 

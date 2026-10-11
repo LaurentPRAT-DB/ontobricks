@@ -193,7 +193,7 @@ class LakebaseBase(GraphDBBackend):
         return "sql"
 
     def get_query_translator(self, table_name: str = "") -> Any:
-        from back.core.reasoning.SWRLSQLTranslator import SWRLSQLTranslator
+        from back.core.reasoning.swrl.SWRLSQLTranslator import SWRLSQLTranslator
 
         return SWRLSQLTranslator()
 

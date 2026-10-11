@@ -86,7 +86,7 @@ The Lakeflow side is driven through a thin
 * ``delete(name, purge_data=True)`` — used during graph-version teardown.
 
 The build pipeline orchestrates the full sequence in
-:py:meth:`back.objects.digitaltwin._build_pipeline._BuildPipeline._apply_via_synced_pipeline`
+:py:meth:`back.objects.digitaltwin.build._build_pipeline._BuildPipeline._apply_via_synced_pipeline`
 and the scheduler mirrors it in
 ``back.objects.registry.scheduler._apply_synced_pipeline``.
 

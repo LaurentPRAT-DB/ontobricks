@@ -10,7 +10,7 @@ from shared.fastapi.main import app
 
 pytestmark = pytest.mark.unit
 
-va_module = import_module("back.objects.digitaltwin.VirtualAttributeService")
+va_module = import_module("back.objects.digitaltwin.node.VirtualAttributeService")
 
 
 _CLASSES_WITH_VIRTUAL = [

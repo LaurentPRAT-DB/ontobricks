@@ -107,7 +107,7 @@ def _job_wiring(client):
         "back.core.graph_analysis.JobMetrics"
     ) as job_metrics, patch(
         "back.core.helpers.resolve_analytics_job_name", return_value="ob-analytics"
-    ), patch("back.objects.registry.RegistryCfg.from_domain", return_value=rcfg):
+    ), patch("back.objects.registry.RegistryCfg.RegistryCfg.from_domain", return_value=rcfg):
         yield create, runner, job_metrics
 
 

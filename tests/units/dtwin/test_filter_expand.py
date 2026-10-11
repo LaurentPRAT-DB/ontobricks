@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from back.objects.digitaltwin.DigitalTwin import DigitalTwin
-from back.objects.digitaltwin.GraphFilter import (
+from back.objects.digitaltwin.explorer.GraphFilter import (
     EXPLORER_MAX_ENTITIES_DEFAULT,
     EXPLORER_MAX_ENTITIES_MIN,
     EXPLORER_MAX_ENTITIES_UI_MAX,

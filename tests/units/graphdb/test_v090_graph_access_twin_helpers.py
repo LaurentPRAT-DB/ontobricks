@@ -12,7 +12,7 @@ from back.core.errors import InfrastructureError, NotFoundError, ValidationError
 from back.objects.digitaltwin.DigitalTwin import DigitalTwin
 from back.objects.digitaltwin.TwinGraphAccess import TwinGraphAccess
 from back.objects.digitaltwin.TwinResolve import TwinResolve
-from back.objects.digitaltwin.TwinSparqlTranslate import TwinSparqlTranslate
+from back.objects.digitaltwin.query.TwinSparqlTranslate import TwinSparqlTranslate
 
 pytestmark = pytest.mark.unit
 

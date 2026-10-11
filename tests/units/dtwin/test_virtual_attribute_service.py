@@ -6,14 +6,14 @@ from unittest.mock import MagicMock
 import pytest
 
 from back.core.errors import InfrastructureError, ValidationError
-from back.objects.digitaltwin.VirtualAttributeService import (
+from back.objects.digitaltwin.node.VirtualAttributeService import (
     SCALAR_RESULT_COLUMN,
     VirtualAttributeService,
 )
 
 # The package re-exports the class under the module's own name, so a plain
 # import would hand us the class instead of the module to patch.
-va_module = import_module("back.objects.digitaltwin.VirtualAttributeService")
+va_module = import_module("back.objects.digitaltwin.node.VirtualAttributeService")
 
 
 pytestmark = pytest.mark.unit

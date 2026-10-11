@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from shared.fastapi.main import app
+from tests.units.api.test_ui_rendering import ensure_loaded_domain
 
 
 @pytest.fixture
@@ -109,6 +110,7 @@ class TestSettingsRoutes:
 
 class TestOntologyRoutes:
     def test_ontology_page(self, client):
+        ensure_loaded_domain(client)
         response = client.get("/ontology/")
         assert response.status_code == 200
 
@@ -393,6 +395,7 @@ class TestAutoAssignIconsAsync:
 
 class TestMappingRoutes:
     def test_mapping_page(self, client):
+        ensure_loaded_domain(client)
         response = client.get("/mapping/")
         assert response.status_code == 200
 
@@ -473,6 +476,7 @@ class TestMappingRoutes:
 
 class TestDomainRoutes:
     def test_domain_page(self, client):
+        ensure_loaded_domain(client)
         response = client.get("/domain/")
         assert response.status_code == 200
 
@@ -543,6 +547,7 @@ class TestDomainRoutes:
 
 class TestQueryRoutes:
     def test_query_page(self, client):
+        ensure_loaded_domain(client)
         response = client.get("/dtwin/")
         assert response.status_code == 200
 

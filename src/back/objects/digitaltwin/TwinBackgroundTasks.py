@@ -77,7 +77,7 @@ class TwinBackgroundTasks:
 
         Implementation lives in :class:`_BuildPipeline`.
         """
-        from back.objects.digitaltwin._build_pipeline import _BuildPipeline
+        from back.objects.digitaltwin.build._build_pipeline import _BuildPipeline
 
         _BuildPipeline(
             tm,
@@ -390,7 +390,7 @@ class TwinBackgroundTasks:
 
         from back.core.helpers import get_databricks_client, is_uri
         from back.core.reasoning import ReasoningService
-        from back.core.reasoning.models import ReasoningResult as _RR
+        from back.core.reasoning.results.ReasoningResult import ReasoningResult as _RR
         from back.core.graphdb import get_graphdb
 
         is_api = build_kind == "api"

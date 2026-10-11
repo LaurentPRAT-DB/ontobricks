@@ -21,12 +21,10 @@ from back.core.databricks.uc import (  # noqa: F401
 from back.core.databricks.DatabricksClient import DatabricksClient  # noqa: F401
 from back.core.databricks.WorkspaceService import WorkspaceService  # noqa: F401
 from back.core.databricks.DashboardService import DashboardService  # noqa: F401
-from back.core.databricks.DocumentExtractor import DocumentExtractor  # noqa: F401
-from back.core.databricks.DocumentParseService import (  # noqa: F401
-    DocumentParseService,
-    ParseStatus,
-    ParseSubmission,
-)
+from back.core.databricks.document.DocumentExtractor import DocumentExtractor  # noqa: F401
+from back.core.databricks.document.DocumentParseService import DocumentParseService  # noqa: F401
+from back.core.databricks.document.ParseStatus import ParseStatus  # noqa: F401
+from back.core.databricks.document.ParseSubmission import ParseSubmission  # noqa: F401
 
 # Backward-compatible wrappers for previously module-level functions
 is_databricks_app = DatabricksAuth.is_databricks_app

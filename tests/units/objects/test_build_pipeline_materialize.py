@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from back.objects.digitaltwin._build_pipeline import _BuildPipeline
+from back.objects.digitaltwin.build._build_pipeline import _BuildPipeline
 
 
 class _StubTM:

@@ -17,12 +17,12 @@ from back.core.errors import (
     InfrastructureError,
     ValidationError,
 )
-from back.objects.domain.GraphEngineSettings import GraphEngineSettings
-from back.objects.domain.SettingsService import SettingsService
+from back.objects.domain.settings.graphengine.GraphEngineSettings import GraphEngineSettings
+from back.objects.domain.settings.SettingsService import SettingsService
 
 pytestmark = pytest.mark.unit
 
-_ss = importlib.import_module("back.objects.domain.SettingsService")
+_ss = importlib.import_module("back.objects.domain.settings.SettingsService")
 _db_auth_mod = importlib.import_module("back.core.databricks.DatabricksAuth")
 _uc_pkg = importlib.import_module("back.core.databricks.uc")
 _delta_objects_mod = importlib.import_module("back.core.graphdb.delta.objects")

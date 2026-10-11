@@ -80,7 +80,7 @@ Durable draft/entity model, source fingerprinting, and the validation
 primitives consumed by the staged agent entry points
 (``agents.agent_owl_generator.staged``) and the async workflow below.
 
-.. automodule:: back.objects.ontology.GenerateDraft
+.. automodule:: back.objects.ontology.generate.GenerateDraft
    :members:
    :undoc-members:
    :show-inheritance:
@@ -94,7 +94,7 @@ staged agent entry points; exposed via the ``POST /ontology/wizard/
 generate/detect``, ``GET/POST /ontology/wizard/generate/draft(/update|
 /discard)``, and ``POST /ontology/wizard/generate/complete`` routes.
 
-.. automodule:: back.objects.ontology.GenerateWorkflow
+.. automodule:: back.objects.ontology.generate.GenerateWorkflow
    :members:
    :undoc-members:
    :show-inheritance:

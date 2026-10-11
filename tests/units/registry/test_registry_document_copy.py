@@ -2,7 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from back.objects.registry.RegistryService import RegistryCfg, RegistryService
+from back.objects.registry.RegistryCfg import RegistryCfg
+from back.objects.registry.RegistryService import RegistryService
 from tests.fixtures.factories.registry import FakeDocumentStore
 
 

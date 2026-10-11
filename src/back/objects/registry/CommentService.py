@@ -42,7 +42,8 @@ from back.core.errors import (
     ValidationError,
 )
 from back.core.logging import get_logger
-from back.objects.registry.RegistryService import RegistryCfg, RegistryService
+from back.objects.registry.RegistryCfg import RegistryCfg
+from back.objects.registry.RegistryService import RegistryService
 from back.objects.registry.PermissionService import (
     ASSIGNABLE_ROLES,
     ROLE_ADMIN,

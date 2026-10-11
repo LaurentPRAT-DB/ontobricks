@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from back.core.reasoning.SWRLEngine import SWRLEngine
-from back.core.reasoning.SWRLSQLTranslator import SWRLSQLTranslator
-from back.objects.digitaltwin.SqlQualityChecks import SqlQualityChecks
+from back.core.reasoning.swrl.SWRLEngine import SWRLEngine
+from back.core.reasoning.swrl.SWRLSQLTranslator import SWRLSQLTranslator
+from back.objects.digitaltwin.quality.SqlQualityChecks import SqlQualityChecks
 from back.objects.digitaltwin.constants import RDF_TYPE, RDFS_LABEL
 
 pytestmark = pytest.mark.unit

@@ -27,8 +27,8 @@ from typing import Any, Dict, Iterable, List, Sequence, Set
 
 from agents.agent_owl_generator.RelationDeduplicator import RelationDeduplicator
 from back.core.logging import get_logger
-from back.objects.ontology.GenerateDraft import (
-    DraftValidationError,
+from back.objects.ontology.generate.DraftValidationError import DraftValidationError
+from back.objects.ontology.generate.GenerateDraft import (
     GenerateEntity,
     ORIGIN_DETECTED,
     TYPE_CLASS,

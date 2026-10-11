@@ -22,7 +22,7 @@ import staged_contract
 
 from agents.agent_owl_generator import staged
 from agents.engine_base import AgentStep
-from back.objects.ontology.GenerateDraft import GenerateEntity
+from back.objects.ontology.generate.GenerateDraft import GenerateEntity
 
 ROOT = Path(__file__).resolve().parents[2]
 DATASET = ROOT / "tests/eval/datasets/agent_owl_generator/baseline.jsonl"

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from back.core.errors import NotFoundError, ValidationError
-from back.core.reasoning.SWRLSQLTranslator import SWRLSQLTranslator
+from back.core.reasoning.swrl.SWRLSQLTranslator import SWRLSQLTranslator
 from back.core.w3c.owl.OntologyGenerator import OntologyGenerator
 from back.core.w3c.owl.OntologyParser import OntologyParser
 from back.objects.digitaltwin import NodeBusinessRuleService, NodeContextService
@@ -198,7 +198,7 @@ def test_resolve_rejects_undeclared_rule_and_disabled_feature():
 
 
 def _patch_store(monkeypatch, store):
-    module = sys.modules["back.objects.digitaltwin.NodeBusinessRuleService"]
+    module = sys.modules["back.objects.digitaltwin.node.NodeBusinessRuleService"]
     monkeypatch.setattr(module, "get_graphdb", lambda snap, settings: store)
 
 
