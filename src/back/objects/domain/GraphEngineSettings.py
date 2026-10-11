@@ -376,10 +376,7 @@ class GraphEngineSettings:
         _, host, token, registry_cfg = SettingsService._resolve_context(
             session_mgr, settings
         )
-        from back.core.graphdb.engine_config import (
-            list_neo4j_connections,
-            normalize_graph_engine_config,
-        )
+        from back.core.graphdb.engine_config import normalize_graph_engine_config
 
         if not isinstance(config, dict):
             raise ValidationError("graph_engine_config must be a JSON object")
@@ -395,7 +392,7 @@ class GraphEngineSettings:
             previous, config, session_mgr, settings
         )
 
-        conns = list_neo4j_connections({"neo4j": neo})
+        conns = list(neo.get("connections") or [])
         cleaned_conns = []
         seen_names: set[str] = set()
         for entry in conns:

@@ -28,6 +28,8 @@ from back.core.helpers.UIBranding import (  # noqa: F401
 # imports can pull ``back.core.helpers`` again while this module is still
 # initializing (e.g. triplestore → helpers for ``sql_escape``).
 sql_escape = SQLHelpers.sql_escape
+sql_like_escape = SQLHelpers.sql_like_escape
+LIKE_ESCAPE = SQLHelpers.LIKE_ESCAPE
 sql_numeric = SQLHelpers.sql_numeric
 sql_cast = SQLHelpers.sql_cast
 validate_table_name = SQLHelpers.validate_table_name
@@ -98,6 +100,8 @@ __all__ = [
     "require_domain_llm",
     "effective_uc_version_path",
     "sql_escape",
+    "sql_like_escape",
+    "LIKE_ESCAPE",
     "sql_numeric",
     "sql_cast",
     "validate_table_name",

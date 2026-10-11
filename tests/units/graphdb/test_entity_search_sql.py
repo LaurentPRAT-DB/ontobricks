@@ -44,7 +44,7 @@ def test_entity_search_text_clause_empty_value_returns_empty_string() -> None:
 
 def test_entity_search_text_clause_any_contains_both_columns() -> None:
     clause = _entity_search_text_clause(field="any", match_type="contains", value="Jac", escape=_escape)
-    assert clause == "(label_lc LIKE '%jac%' OR uri_lc LIKE '%jac%')"
+    assert clause == "(label_lc LIKE '%jac%' ESCAPE '!' OR uri_lc LIKE '%jac%' ESCAPE '!')"
 
 
 def test_entity_search_text_clause_label_exact() -> None:
@@ -54,7 +54,7 @@ def test_entity_search_text_clause_label_exact() -> None:
 
 def test_entity_search_text_clause_id_starts() -> None:
     clause = _entity_search_text_clause(field="id", match_type="starts", value="Cust", escape=_escape)
-    assert clause == "(uri_lc LIKE 'cust%')"
+    assert clause == "(uri_lc LIKE 'cust%' ESCAPE '!')"
 
 
 def test_entity_search_select_projects_typed_instances() -> None:
@@ -82,8 +82,8 @@ def test_preview_sql_any_contains_and_limit() -> None:
         escape=_escape,
     )
     assert "FROM g_entity_search" in sql
-    assert "label_lc LIKE '%jac%'" in sql
-    assert "uri_lc LIKE '%jac%'" in sql
+    assert "label_lc LIKE '%jac%' ESCAPE '!'" in sql
+    assert "uri_lc LIKE '%jac%' ESCAPE '!'" in sql
     assert "ORDER BY" not in sql
     assert "LIMIT 501" in sql
 
@@ -156,7 +156,7 @@ def test_entity_search_uri_search_sql_adds_text_clause_when_search_given() -> No
         escape=_escape,
     )
     assert "type_uri = 'http://ex.org/Customer'" in sql
-    assert "(label_lc LIKE '%jac%' OR uri_lc LIKE '%jac%')" in sql
+    assert "(label_lc LIKE '%jac%' ESCAPE '!' OR uri_lc LIKE '%jac%' ESCAPE '!')" in sql
     assert " AND " in sql
 
 
@@ -169,7 +169,7 @@ def test_entity_search_seed_sql_matches_type_local_name_suffix() -> None:
     )
     assert sql == (
         "SELECT uri FROM g_entity_search WHERE "
-        "(LOWER(type_uri) LIKE '%#customer' OR LOWER(type_uri) LIKE '%/customer')"
+        "(LOWER(type_uri) LIKE '%#customer' ESCAPE '!' OR LOWER(type_uri) LIKE '%/customer' ESCAPE '!')"
     )
 
 
@@ -180,8 +180,8 @@ def test_entity_search_seed_sql_combines_type_and_search() -> None:
         search="Jac",
         escape=_escape,
     )
-    assert "(LOWER(type_uri) LIKE '%#customer' OR LOWER(type_uri) LIKE '%/customer')" in sql
-    assert "(label_lc LIKE '%jac%' OR uri_lc LIKE '%jac%')" in sql
+    assert "(LOWER(type_uri) LIKE '%#customer' ESCAPE '!' OR LOWER(type_uri) LIKE '%/customer' ESCAPE '!')" in sql
+    assert "(label_lc LIKE '%jac%' ESCAPE '!' OR uri_lc LIKE '%jac%' ESCAPE '!')" in sql
     assert " AND " in sql
     assert "LIMIT" not in sql
     assert "OFFSET" not in sql
@@ -196,7 +196,7 @@ def test_entity_search_seed_sql_search_only_has_no_type_clause() -> None:
     )
     assert sql == (
         "SELECT uri FROM g_entity_search WHERE "
-        "(label_lc LIKE '%ada%' OR uri_lc LIKE '%ada%')"
+        "(label_lc LIKE '%ada%' ESCAPE '!' OR uri_lc LIKE '%ada%' ESCAPE '!')"
     )
 
 

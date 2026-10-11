@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from back.core.helpers import LIKE_ESCAPE, sql_like_escape
 from back.core.helpers import sql_escape as escape_sql_value
 from back.objects.digitaltwin.constants import RDF_TYPE, RDFS_LABEL
 
@@ -87,19 +88,27 @@ class QualitySqlBuilder:
                 f"  AND t1.object = '{class_uri}'\n"
                 f"  AND t2.subject IS NULL"
             )
-        filter_clause = ""
+        like_value = escape_sql_value(sql_like_escape(params.get("check_value", "")))
         if value_check_type == "startsWith":
-            filter_clause = f"AND NOT LOWER(t2.object) LIKE LOWER('{check_value}%')"
+            filter_clause = (
+                f"AND NOT LOWER(t2.object) LIKE LOWER('{like_value}%') {LIKE_ESCAPE}"
+            )
         elif value_check_type == "endsWith":
-            filter_clause = f"AND NOT LOWER(t2.object) LIKE LOWER('%{check_value}')"
+            filter_clause = (
+                f"AND NOT LOWER(t2.object) LIKE LOWER('%{like_value}') {LIKE_ESCAPE}"
+            )
         elif value_check_type == "contains":
-            filter_clause = f"AND NOT LOWER(t2.object) LIKE LOWER('%{check_value}%')"
+            filter_clause = (
+                f"AND NOT LOWER(t2.object) LIKE LOWER('%{like_value}%') {LIKE_ESCAPE}"
+            )
         elif value_check_type == "equals":
             filter_clause = f"AND LOWER(t2.object) != LOWER('{check_value}')"
         elif value_check_type == "notEquals":
             filter_clause = f"AND LOWER(t2.object) = LOWER('{check_value}')"
         elif value_check_type == "matches":
             filter_clause = f"AND NOT t2.object RLIKE '{check_value}'"
+        else:
+            return None
         return (
             f"SELECT t1.subject AS s, t2.object AS val\n"
             f"FROM {table} t1\n"

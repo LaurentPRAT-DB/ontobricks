@@ -367,6 +367,7 @@ class SqlQualityChecks:
             store,
             total,
             violation_limit=violation_limit,
+            offset=len(shapes),
         )
 
         swrl_count = len(swrl_rules) if swrl_rules else 0
@@ -412,6 +413,7 @@ class SqlQualityChecks:
         store,
         total,
         violation_limit=None,
+        offset=0,
     ):
         if not swrl_rules:
             return
@@ -423,13 +425,12 @@ class SqlQualityChecks:
         base_uri = ontology.get("base_uri", "")
         engine = SWRLEngine(ontology=ontology)
         uri_map = engine._build_uri_map()
-        shape_count = total - len(swrl_rules)
         for idx, rule in enumerate(swrl_rules):
             if not rule.get("enabled", True):
                 continue
             label = rule.get("name", f"SWRL Rule {idx + 1}")
             check_id = SqlQualityChecks._rule_check_id(SWRL_ID_PREFIX, rule, idx)
-            progress = int(((shape_count + idx) / total) * 100)
+            progress = int(((offset + idx) / total) * 100)
             tm.update_progress(
                 task.id, progress, f"SWRL {idx + 1}/{len(swrl_rules)}: {label}"
             )

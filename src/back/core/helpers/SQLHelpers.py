@@ -29,6 +29,22 @@ class SQLHelpers:
             return ""
         return str(value).replace("\\", "\\\\").replace("'", "''")
 
+    # ``!`` rather than the default backslash: Spark and Postgres disagree on
+    # backslashes inside string literals, but both honour an explicit ESCAPE.
+    LIKE_ESCAPE = "ESCAPE '!'"
+
+    @staticmethod
+    def sql_like_escape(value: str) -> str:
+        """Make ``%`` and ``_`` in *value* match literally in a LIKE pattern.
+
+        Apply before ``sql_escape`` and append ``LIKE_ESCAPE`` to the clause.
+        """
+        if value is None:
+            return ""
+        return (
+            str(value).replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        )
+
     @staticmethod
     def sql_cast(expr: str, sql_type: str) -> str:
         """Cast a value to *sql_type* without failing the query.

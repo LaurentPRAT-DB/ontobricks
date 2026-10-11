@@ -485,7 +485,7 @@ def test_bfs_traversal_uses_adjacency_and_entity_search_when_ready():
     assert "g_adj_out" in sql
     assert "g_adj_in" in sql
     assert "WITH RECURSIVE" not in sql
-    assert "(LOWER(type_uri) LIKE '%#customer' OR LOWER(type_uri) LIKE '%/customer')" in sql
+    assert "(LOWER(type_uri) LIKE '%#customer' ESCAPE '!' OR LOWER(type_uri) LIKE '%/customer' ESCAPE '!')" in sql
 
 
 def test_bfs_traversal_falls_back_when_adjacency_not_ready():

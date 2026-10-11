@@ -20,6 +20,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple
 
 from back.core.logging import get_logger
+from back.core.helpers import LIKE_ESCAPE, sql_like_escape
 from back.core.helpers import sql_escape as _shared_sql_escape
 from back.core.graphdb.adjacency import expand_entity_neighbors_sql, seeded_bfs_sql
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
@@ -640,12 +641,12 @@ class GraphDBBackend(ABC):
             f"object = '{esc_type}'",
         ]
         if search:
-            esc = self._sql_escape(search).lower()
+            esc = self._sql_escape(sql_like_escape(search)).lower()
             conditions.append(
                 f"subject IN ("
                 f"SELECT DISTINCT subject FROM {self._sql_relation(table_name)} "
                 f"WHERE predicate != '{RDF_TYPE}' "
-                f"AND LOWER(object) LIKE '%{esc}%')"
+                f"AND LOWER(object) LIKE '%{esc}%' {LIKE_ESCAPE})"
             )
         sql = (
             f"SELECT DISTINCT subject FROM {self._sql_relation(table_name)} "
@@ -929,6 +930,7 @@ class GraphDBBackend(ABC):
         """
         esc_type = self._sql_escape(entity_type) if entity_type else ""
         safe_val = self._sql_escape(value.lower()) if value else ""
+        like_val = self._sql_escape(sql_like_escape(value.lower())) if value else ""
         rel = self._sql_relation(table_name)
 
         search_label = field in ("label", "any")
@@ -938,10 +940,10 @@ class GraphDBBackend(ABC):
             if match_type == "exact":
                 return f"{column} = '{safe_val}'"
             if match_type == "starts":
-                return f"{column} LIKE '{safe_val}%'"
+                return f"{column} LIKE '{like_val}%' {LIKE_ESCAPE}"
             if match_type == "ends":
-                return f"{column} LIKE '%{safe_val}'"
-            return f"{column} LIKE '%{safe_val}%'"
+                return f"{column} LIKE '%{like_val}' {LIKE_ESCAPE}"
+            return f"{column} LIKE '%{like_val}%' {LIKE_ESCAPE}"
 
         if entity_type and value:
             # Build a set of candidate subjects matching the text filter,

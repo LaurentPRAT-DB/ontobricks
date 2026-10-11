@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Set
 
+from back.core.helpers import LIKE_ESCAPE, sql_like_escape
 from back.core.helpers import sql_escape as escape_sql_value, extract_local_name
 from back.objects.digitaltwin.constants import RDF_TYPE, RDFS_LABEL
 
@@ -51,22 +52,23 @@ class GraphFind:
         """
         seed_conditions: List[str] = []
         if entity_type:
-            esc = escape_sql_value(entity_type).lower()
+            esc = escape_sql_value(sql_like_escape(entity_type)).lower()
             seed_conditions.append(
                 f"subject IN (SELECT subject FROM {table} "
                 f"WHERE predicate = '{RDF_TYPE}' AND "
-                f"(LOWER(object) LIKE '%#{esc}' OR LOWER(object) LIKE '%/{esc}'))"
+                f"(LOWER(object) LIKE '%#{esc}' {LIKE_ESCAPE} "
+                f"OR LOWER(object) LIKE '%/{esc}' {LIKE_ESCAPE}))"
             )
         if search:
-            esc = escape_sql_value(search).lower()
+            esc = escape_sql_value(sql_like_escape(search)).lower()
             seed_conditions.append(
                 f"(subject IN (SELECT subject FROM {table} "
                 f"WHERE (predicate = '{RDFS_LABEL}' "
                 f"OR predicate LIKE '%#label' OR predicate LIKE '%/label' "
                 f"OR predicate LIKE '%#name' OR predicate LIKE '%/name') "
-                f"AND LOWER(object) LIKE '%{esc}%') "
-                f"OR LOWER(subject) LIKE '%/{esc}%' "
-                f"OR LOWER(subject) LIKE '%#{esc}%')"
+                f"AND LOWER(object) LIKE '%{esc}%' {LIKE_ESCAPE}) "
+                f"OR LOWER(subject) LIKE '%/{esc}%' {LIKE_ESCAPE} "
+                f"OR LOWER(subject) LIKE '%#{esc}%' {LIKE_ESCAPE})"
             )
         return " WHERE " + " AND ".join(seed_conditions)
 

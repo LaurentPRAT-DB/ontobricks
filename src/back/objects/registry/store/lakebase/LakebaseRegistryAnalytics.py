@@ -24,6 +24,8 @@ def _require_psycopg():
 class LakebaseRegistryAnalytics:
     """Cached graph metrics plus append-only analytics run rows."""
 
+    _GRAPH_ANALYTICS_RUNS_CAP = 100
+
     def _ensure_graph_analytics_table(self) -> bool:
         """Lazily create ``graph_analytics`` if it is missing.
 

@@ -311,9 +311,7 @@ class TwinMapping:
                     "table": None,
                     "id_column": id_column,
                     "label_column": label_column,
-                    "uri_template": f"{base_uri}{sanitized_label}/{{"
-                    + id_column
-                    + "}}",
+                    "uri_template": f"{base_uri}{sanitized_label}/{{{id_column}}}",
                     "sql_query": sql_query,
                     "predicates": {},
                 }

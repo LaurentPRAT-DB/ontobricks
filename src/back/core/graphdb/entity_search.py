@@ -5,6 +5,10 @@ from __future__ import annotations
 from typing import Callable
 
 from back.core.graphdb.constants import RDF_TYPE, RDFS_LABEL
+from back.core.helpers.SQLHelpers import SQLHelpers
+
+sql_like_escape = SQLHelpers.sql_like_escape
+LIKE_ESCAPE = SQLHelpers.LIKE_ESCAPE
 
 Escape = Callable[[str], str]
 
@@ -71,6 +75,7 @@ def _entity_search_text_clause(
     if not value:
         return ""
     safe_value = escape(value.lower())
+    like_value = escape(sql_like_escape(value.lower()))
     search_label = field in ("label", "any")
     search_id = field in ("id", "any")
 
@@ -78,10 +83,10 @@ def _entity_search_text_clause(
         if match_type == "exact":
             return f"{column} = '{safe_value}'"
         if match_type == "starts":
-            return f"{column} LIKE '{safe_value}%'"
+            return f"{column} LIKE '{like_value}%' {LIKE_ESCAPE}"
         if match_type == "ends":
-            return f"{column} LIKE '%{safe_value}'"
-        return f"{column} LIKE '%{safe_value}%'"
+            return f"{column} LIKE '%{like_value}' {LIKE_ESCAPE}"
+        return f"{column} LIKE '%{like_value}%' {LIKE_ESCAPE}"
 
     text_clauses = []
     if search_label:
@@ -111,9 +116,10 @@ def entity_search_seed_sql(
     """
     clauses: list[str] = []
     if entity_type:
-        esc = escape(entity_type.lower())
+        esc = escape(sql_like_escape(entity_type.lower()))
         clauses.append(
-            f"(LOWER(type_uri) LIKE '%#{esc}' OR LOWER(type_uri) LIKE '%/{esc}')"
+            f"(LOWER(type_uri) LIKE '%#{esc}' {LIKE_ESCAPE} "
+            f"OR LOWER(type_uri) LIKE '%/{esc}' {LIKE_ESCAPE})"
         )
     text_clause = _entity_search_text_clause(
         field="any", match_type="contains", value=search, escape=escape

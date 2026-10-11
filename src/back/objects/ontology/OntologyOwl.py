@@ -139,16 +139,17 @@ class OntologyOwl:
 
     @staticmethod
     def _turtle_to_camel(words: list, is_pascal: bool) -> str:
-        """Convert a list of words to camelCase or PascalCase."""
+        """Convert a list of words to camelCase or PascalCase.
+
+        Only each word's first letter changes case, so an already camelCase
+        word such as ``OrderLine`` keeps its inner capitals.
+        """
+        words = [w for w in words if w]
         if not words:
             return ""
-        if is_pascal:
-            return "".join(w.capitalize() for w in words if w)
-        result = words[0].lower()
-        for w in words[1:]:
-            if w:
-                result += w.capitalize()
-        return result
+        head, rest = words[0], words[1:]
+        head = (head[0].upper() if is_pascal else head[0].lower()) + head[1:]
+        return head + "".join(w[0].upper() + w[1:] for w in rest)
 
     @staticmethod
     def _fix_snake_kebab_local_names(content: str) -> str:
